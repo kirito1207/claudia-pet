@@ -37,7 +37,7 @@ CC BY-NC-SA 4.0 的素材标注要求署名、非商业性使用以及相同方�
 
 ## 运行组件
 
-- Microsoft Edge WebView2 SDK：构建时从 nuget.org 下载 `Microsoft.Web.WebView2` 1.0.3537.50，不放在仓库里；构建产物 `dist/claudia-pet` 会带上其中的 DLL 和 `WebView2Loader.dll`。如果以后发布打包好的程序，这些文件按微软该包的许可分发，需要随包附上相应许可说明。
+- Microsoft Edge WebView2 SDK：构建时从 nuget.org 下载 `Microsoft.Web.WebView2` 1.0.3537.50，不放在仓库里；构建产物 `dist/claudia-pet` 会带上其中的 DLL 和 `WebView2Loader.dll`。这些文件按微软该包的许可（BSD 式，允许以二进制形式再分发，须附上版权声明和免责声明）分发：构建时把包里的 `LICENSE.txt`、`NOTICE.txt` 复制成程序目录下的 `WebView2-LICENSE.txt`、`WebView2-NOTICE.txt`，GitHub Release 里打包好的程序也带着这两份文件。
 - .NET Framework 4.8：运行依赖，不随本项目复制发行。
 
 ## 商标与关联

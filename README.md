@@ -126,7 +126,9 @@ Windows 的勿扰模式和通知设置会影响任务通知能不能弹出来。
 
 目标平台为 Windows 10/11，目前只在 Windows 11 上实际验证过。运行需要 .NET Framework 4.8（Windows 自带）和 Microsoft Edge WebView2 运行时（Windows 11 自带）。
 
-构建只需要 PowerShell 7，不用装 .NET SDK 或 Visual Studio。第一次构建会从 nuget.org 下载 WebView2 SDK。在项目根目录执行：
+**直接下载**：在 [Releases](https://github.com/kirito1207/claudia-pet/releases) 下载 `claudia-pet-版本号-win.zip`，解压到一个以后不会挪动的文件夹（比如 `%LOCALAPPDATA%\Programs\claudia-pet`），双击里面的 `claudia-pet.exe`，再按下面「接入 Claude」接入。Claude 的接入配置里记着程序所在的位置，以后挪了文件夹，要重新接入一次。
+
+**自己构建**：构建只需要 PowerShell 7，不用装 .NET SDK 或 Visual Studio。第一次构建会从 nuget.org 下载 WebView2 SDK。在项目根目录执行：
 
 ```powershell
 pwsh -NoProfile -File scripts/build.ps1

@@ -92,6 +92,9 @@ if (-not $r.Success) { $r.Diagnostics | Where-Object { $_.Severity -eq 'Error' }
 # ---- lay out the folder ----
 Copy-Item (Join-Path $root 'app\App.config') (Join-Path $Out 'claudia-pet.exe.config')
 Copy-Item (Join-Path $wv2Lib 'Microsoft.Web.WebView2.*.dll') $Out
+# The WebView2 package allows binary redistribution if its copyright notice and disclaimer go along with it.
+Copy-Item (Join-Path $wv2Dir 'LICENSE.txt') (Join-Path $Out 'WebView2-LICENSE.txt')
+Copy-Item (Join-Path $wv2Dir 'NOTICE.txt') (Join-Path $Out 'WebView2-NOTICE.txt')
 foreach ($arch in 'win-x64', 'win-x86', 'win-arm64') {
     $loader = Join-Path $wv2Dir "runtimes\$arch\native\WebView2Loader.dll"
     New-Item -ItemType Directory -Force (Join-Path $Out "runtimes\$arch\native") | Out-Null
