@@ -1,6 +1,6 @@
 # claudia-pet 发布前现状与残留审计
 
-检查日期：2026-11-04。检查对象为当前本地工作区、安装产物及 Git 状态。本次已清理代码残留并更新说明，公开用的 Git 历史已整理为单个初始提交；尚未发布到 GitHub。
+检查日期：2026-11-04。检查对象为当前本地工作区、安装产物及 Git 状态。本次已清理代码残留并更新说明，公开用的 Git 历史已整理为单个初始提交，并已发布到 GitHub。
 
 ## 图标与产品名称
 
@@ -38,7 +38,7 @@
 
 ## Git 与发布状态
 
-- 当前分支为 `main`，没有配置 Git 远端。
+- 当前分支为 `main`，远端 `origin` 为公开仓库 https://github.com/kirito1207/claudia-pet。
 - 2026-11-04 按用户决定整理了公开历史：`main` 只有一个初始提交「claudia-pet 0.1.0」，文件内容与整理前最后一版完全一致。早期提交的交接文档含本机路径和本机配置细节，因此不公开。
 - 整理前的完整开发历史保存在本地分支 `archive/full-history`，只留在本机：推送时只推 `main`，不要用 `git push --all`。
 - 初始提交前检查过：已跟踪文件中无构建产物、大文件、密钥、本机用户路径或个人邮箱；提交作者使用 GitHub noreply 邮箱。
@@ -52,4 +52,4 @@
 
 2026-11-04 提交前复测（Node v24.22.1）：`test-physics`、`test-behavior`、`test-mood`、`test-ui` 四项 Node 测试，正式版编译，以及 `-MotionTests` 的通知策略和 WPF 位置交接测试均通过。改名为 claudia-pet 后再次全部通过；更新关于页后重跑界面测试通过，并已重新安装到本机。
 
-发布前还需配置目标远端；当前未发布到 GitHub。
+2026-11-04 已发布：用 `gh repo create` 新建公开仓库 `kirito1207/claudia-pet`，只推送了 `main`。推送后核对远端：公开、默认分支 `main`、只有 `main` 一个分支、只有初始提交 `af6e614`（与本地一致）、127 个文件；README、NOTICE、LICENSE、`characters/LICENSE.md`、`icon/README.md`、`upstream/CrossPet-LICENSE` 均在。`archive/full-history` 未推送。之后又推送了一次只改交接文档和本审计的更新。

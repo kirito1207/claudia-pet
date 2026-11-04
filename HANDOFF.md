@@ -74,4 +74,4 @@ pwsh -NoProfile -File scripts/build.ps1 -Out build/native-tests -MotionTests
 
 保留现有用户设置、已接受的抛掷手感、来源说明和许可原文。普通修改不需要重做接入；`install.ps1` 不加 `-Connect` 可更新程序而不改 Claude 接入配置。
 
-已清理旧内部命名、其他角色特效、旧层级策略、闲置反馈／皮肤卡片实现、空额度任务及过时注释。额度来自插件文件；没有自动更新器和额度提前恢复庆祝。来源和许可保留。验证与发布状态见 [发布审计](docs/PUBLISHING_AUDIT.md)。尚未设置 Git 远端，也未发布到 GitHub。公开用的 `main` 只有一个初始提交；整理前的完整开发历史在本地分支 `archive/full-history`，只留本机，推送时只推 `main`。
+已清理旧内部命名、其他角色特效、旧层级策略、闲置反馈／皮肤卡片实现、空额度任务及过时注释。额度来自插件文件；没有自动更新器和额度提前恢复庆祝。来源和许可保留。验证与发布状态见 [发布审计](docs/PUBLISHING_AUDIT.md)。2026-11-04 已发布为公开仓库 https://github.com/kirito1207/claudia-pet（远端 `origin`，默认分支 `main`）。整理前的完整开发历史在本地分支 `archive/full-history`，只留本机，不要推送：以后推送只推 `main`，不要用 `git push --all`。本项目的 `.claude/settings.local.json`（不进 git）放行了 `gh repo create kirito1207/claudia-pet *` 和 `git push -u origin main` 两条命令。
