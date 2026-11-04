@@ -57,3 +57,5 @@
 同日按用户要求去掉了提交说明里的 `Co-Authored-By: Claude …` 署名行（GitHub 曾因此把 Claude 官方账号列为贡献者）：两个提交只改说明、不改文件，用带保护的强制推送覆盖远端，此时仓库 0 fork、0 star。核对后远端贡献者只有 `kirito1207`，文件仍为 127 个。改写前的版本备份在本地分支 `archive/before-strip-coauthor`，未推送；本项目 `.claude/settings.local.json` 已关闭提交和 PR 署名。
 
 同日稍晚发现：贡献者接口只有 `kirito1207`，但仓库首页右侧栏仍显示 `claude`。原因是改写前的两个提交（`af6e614`、`de92ba8`，带 `Co-Authored-By: Claude …`）已推送过，强制推送后不在任何分支上，但仍能按提交号在 GitHub 上打开。处理：仓库 0 star、0 fork、没有 Issue 和 PR，用户在 GitHub 设置里自己删除了仓库，再用 `gh repo create` 以同名、同简介、公开新建，只推送 `main`（当时为 `6ec4917`）。核对后：远端只有 `main`，与本地一致；首页贡献者只有 `kirito1207`；两个旧提交按提交号查询返回 HTTP 422（找不到）。
+
+2026-11-04 发布 0.2.0：版本号提交为 `02f0973`「claudia-pet 0.2.0」，构建脚本从此把 WebView2 包里的 `LICENSE.txt`、`NOTICE.txt` 复制成程序目录下的 `WebView2-LICENSE.txt`、`WebView2-NOTICE.txt`（该包许可允许二进制再分发，须附版权声明和免责声明）。发布前全部测试、WPF 窗口测试和构建都通过；zip 内 98 个文件，扫过无本机路径、邮箱或密钥。用 `gh release create` 建了正式 Release `v0.2.0`（标签指向 `02f0973`，非草稿、非预发布），附件 `claudia-pet-0.2.0-win.zip`（7,065,380 字节，SHA-256 `F4D47926C58677F0C1C53C30C907F8F0CB309B0F6A2FA0184EE29003175A18EC`）。发布后下载回附件比对，校验值一致。未用 zip 里的程序单独启动验证。
