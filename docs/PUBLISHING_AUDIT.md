@@ -55,3 +55,5 @@
 2026-11-04 已发布：用 `gh repo create` 新建公开仓库 `kirito1207/claudia-pet`，只推送了 `main`。推送后核对远端：公开、默认分支 `main`、只有 `main` 一个分支、只有初始提交「claudia-pet 0.1.0」（与本地一致）、127 个文件；README、NOTICE、LICENSE、`characters/LICENSE.md`、`icon/README.md`、`upstream/CrossPet-LICENSE` 均在。`archive/full-history` 未推送。之后又推送了一次只改交接文档和本审计的更新。
 
 同日按用户要求去掉了提交说明里的 `Co-Authored-By: Claude …` 署名行（GitHub 曾因此把 Claude 官方账号列为贡献者）：两个提交只改说明、不改文件，用带保护的强制推送覆盖远端，此时仓库 0 fork、0 star。核对后远端贡献者只有 `kirito1207`，文件仍为 127 个。改写前的版本备份在本地分支 `archive/before-strip-coauthor`，未推送；本项目 `.claude/settings.local.json` 已关闭提交和 PR 署名。
+
+同日稍晚发现：贡献者接口只有 `kirito1207`，但仓库首页右侧栏仍显示 `claude`。原因是改写前的两个提交（`af6e614`、`de92ba8`，带 `Co-Authored-By: Claude …`）已推送过，强制推送后不在任何分支上，但仍能按提交号在 GitHub 上打开。处理：仓库 0 star、0 fork、没有 Issue 和 PR，用户在 GitHub 设置里自己删除了仓库，再用 `gh repo create` 以同名、同简介、公开新建，只推送 `main`（当时为 `6ec4917`）。核对后：远端只有 `main`，与本地一致；首页贡献者只有 `kirito1207`；两个旧提交按提交号查询返回 HTTP 422（找不到）。
