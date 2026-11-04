@@ -24,7 +24,9 @@
       if (this.phase !== 'drag' || p.id !== this.id) return;
       // Same as dsh-pet onPointerMove: record screen trajectory, update target, never move here.
       this.trail.push({ t: p.time, x: p.px, y: p.py });
-      this.trail = this.core.trimTrail(this.trail, p.time);
+      // Keep a longer raw trail than dsh-pet's 200ms: when the host lags, points from after the real mouse-up
+      // can arrive before the mouse-up itself. end() cuts them off, then applies dsh-pet's own trimTrail.
+      while (this.trail.length && p.time - this.trail[0].t > 1000) this.trail.shift();
       const b = this.bounds;
       this.target = {
         x: Math.max(b.minX, Math.min(b.maxX, this.origin.x + p.px - this.origin.px)),
@@ -37,6 +39,8 @@
       this.frame = null;
       // Host's actual position is authoritative; never catch up to the pointer on mouse-up.
       this.state.x = p.x; this.state.y = p.y;
+      // Only motion up to the actual mouse-up counts (as in dsh-pet, where no pointermove follows pointerup).
+      this.trail = this.core.trimTrail(this.trail.filter(s => s.t <= p.time), p.time);
       const velocity = this.enabled && this.core.estimateReleaseVelocity(this.trail, p.time, this.cfg);
       this.trail = [];
       if (!velocity) { this.phase = null; this.emit({ id: this.id, phase: 'end', x: p.x, y: p.y }); return; }

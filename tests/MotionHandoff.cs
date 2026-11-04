@@ -30,7 +30,7 @@ namespace Claudia
                 Native.GetWindowRect(pet.hwnd, out var before);
                 pet.motionId = 73;
                 pet.dragging = true;
-                pet.motionClock.Restart();
+                pet.dragTick0 = Environment.TickCount;
                 pet.EndDrag();
                 Native.GetWindowRect(pet.hwnd, out var after);
                 Check(before.Left == after.Left && before.Top == after.Top, "Mouse-up moved the actual HWND");

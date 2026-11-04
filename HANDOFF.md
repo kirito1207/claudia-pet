@@ -29,7 +29,7 @@ Windows 上独立维护的 Claude 桌宠。基于 CrossPet，参考 dsh-pet；�
 - `Pet.Follow.cs`：识别 Claude 主窗口，按物理像素保存相对位置、限制范围和设置层级；不置顶于其他应用。
 - `Ensure.cs` / `Mcp.cs`：通过 `--ensure` / `--mcp` 随 Claude 启动；启动路径使用独立进程以免随 Code 子进程树被回收。
 - `Store.cs` / `SpriteResources.cs`：设置、角色同步、清单与图片资源。
-- `Pet.Physics.cs`：只转发鼠标屏幕坐标、参数、边界及消息代次，接收网页位置并移动 HWND。
+- `Pet.Physics.cs`：只转发鼠标屏幕坐标、参数、边界及消息代次，接收网页位置并移动 HWND。拖动和飞行时窗口线程很忙，而 WPF 里鼠标输入的优先级低于网页消息和脚本回调，松开消息曾晚到 0.15～0.2 秒，导致甩不动、乱飞、松手有延迟。所以（2026-11-04 修）：轨迹点用 `GetMouseMovePointsEx` 取系统鼠标历史（真实坐标和发生时间），每帧统一发给网页一次；松手由每帧检查物理按键状态判断，不等松开消息；开始拖动前也确认按键确实还按着。`pet-motion.js` 松手时剔掉松手之后的点，再按 dsh-pet 原样取松手前 200ms 的轨迹算速度。
 - `dsh-physics.js`：直接摘录的 dsh-pet 物理函数；`pet-motion.js` 用网页帧循环驱动拖动和飞行。不要再混入另一套 C# 物理公式。
 - `idle-policy.js` / `Pet.Behavior.cs`：动作池及频率，安静／标准／活泼约为 90／45／20 秒，带 ±20% 浮动。
 - `click-sequence.js`：220ms Q 弹后才执行原有点击互动；连点保留摸头次数，新工作或拖动优先。

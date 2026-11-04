@@ -32,6 +32,20 @@ for (const dir of [-1, 1]) {
   assert.ok(Math.abs(h.m.state.y - actualY) < 1, 'first step fell instead of flinging');
   h.m.stop();
 }
+// Host lag: 250ms of mouse motion from AFTER the real mouse-up (reversing direction) arrives before the mouse-up.
+// It must be ignored, and must not push the pre-release points out of the trail.
+{
+  const h = harness();
+  h.m.begin({ id: 3, x: 600, y: 300, downX: 700, downY: 400, px: 700, py: 400, time: 0, physics: cfg, bounds, enabled: true });
+  const trail = [{ t: 0, x: 700, y: 400 }];
+  for (let i = 1; i <= 10; i++) { const p = { id: 3, px: 700 + i * 12, py: 400, time: i * 8 }; h.m.pointer(p); trail.push({ t: p.time, x: p.px, y: p.py }); }
+  for (let i = 1; i <= 250; i++) h.m.pointer({ id: 3, px: 820 - i * 3, py: 400 + i, time: 81 + i });
+  const expected = P.estimateReleaseVelocity(P.trimTrail(trail, 81), 81, cfg);
+  assert.ok(expected && expected.vx > 500);
+  h.m.end({ id: 3, x: 610, y: 300, time: 81 });
+  near(h.m.state.vx, expected.vx); near(h.m.state.vy, expected.vy);
+  h.m.stop();
+}
 // Pure back-and-forth motion has no net direction: DSH puts the pet down, without starting gravity.
 const h = harness();
 h.m.begin({ id: 2, x: 600, y: 300, downX: 700, downY: 400, px: 700, py: 400, time: 0, physics: cfg, bounds, enabled: true });

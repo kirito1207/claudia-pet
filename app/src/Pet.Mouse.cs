@@ -50,22 +50,25 @@ namespace Claudia
             Point down = default; bool pressed = false;
             hit.MouseLeftButtonDown += (_, e) =>
             {
-                StopMotion();
+                StopMotion(); releasedEarly = false;
                 var cursor = Forms.Cursor.Position;
                 down = new Point(cursor.X, cursor.Y); pressed = true; hit.CaptureMouse(); e.Handled = true;
             };
             hit.MouseMove += (_, e) =>
             {
-                if (!pressed || e.LeftButton != MouseButtonState.Pressed) return;
-                if (dragging) { SampleDragPointer(); return; }
+                // 已经按系统按键状态松手了：排在松开消息前面的旧移动消息不能再开始一次拖动
+                if (!pressed || releasedEarly || e.LeftButton != MouseButtonState.Pressed) return;
+                if (dragging) return;   // 拖动中的轨迹由每帧的 PumpOnFrame 从系统鼠标历史取
                 var cursor = Forms.Cursor.Position;
                 var p = new Point(cursor.X, cursor.Y);
                 if (Math.Abs(p.X - down.X) + Math.Abs(p.Y - down.Y) <= 4) return;
+                // 积压的旧移动消息晚到时，手可能早就松开了：按键确实还按着才开始拖动
+                if (!PrimaryButtonDown()) return;
                 BeginDrag(down.X, down.Y);
             };
             hit.MouseLeftButtonUp += (_, e) =>
             {
-                var wasDragging = dragging; EndDrag();
+                var wasDragging = dragging || releasedEarly; releasedEarly = false; EndDrag(e.Timestamp);
                 var click = pressed && !wasDragging;
                 pressed = false; hit.ReleaseMouseCapture();
                 if (!click) return;
