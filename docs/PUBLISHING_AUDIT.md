@@ -52,4 +52,6 @@
 
 2026-11-04 提交前复测（Node v24.22.1）：`test-physics`、`test-behavior`、`test-mood`、`test-ui` 四项 Node 测试，正式版编译，以及 `-MotionTests` 的通知策略和 WPF 位置交接测试均通过。改名为 claudia-pet 后再次全部通过；更新关于页后重跑界面测试通过，并已重新安装到本机。
 
-2026-11-04 已发布：用 `gh repo create` 新建公开仓库 `kirito1207/claudia-pet`，只推送了 `main`。推送后核对远端：公开、默认分支 `main`、只有 `main` 一个分支、只有初始提交 `af6e614`（与本地一致）、127 个文件；README、NOTICE、LICENSE、`characters/LICENSE.md`、`icon/README.md`、`upstream/CrossPet-LICENSE` 均在。`archive/full-history` 未推送。之后又推送了一次只改交接文档和本审计的更新。
+2026-11-04 已发布：用 `gh repo create` 新建公开仓库 `kirito1207/claudia-pet`，只推送了 `main`。推送后核对远端：公开、默认分支 `main`、只有 `main` 一个分支、只有初始提交「claudia-pet 0.1.0」（与本地一致）、127 个文件；README、NOTICE、LICENSE、`characters/LICENSE.md`、`icon/README.md`、`upstream/CrossPet-LICENSE` 均在。`archive/full-history` 未推送。之后又推送了一次只改交接文档和本审计的更新。
+
+同日按用户要求去掉了提交说明里的 `Co-Authored-By: Claude …` 署名行（GitHub 曾因此把 Claude 官方账号列为贡献者）：两个提交只改说明、不改文件，用带保护的强制推送覆盖远端，此时仓库 0 fork、0 star。核对后远端贡献者只有 `kirito1207`，文件仍为 127 个。改写前的版本备份在本地分支 `archive/before-strip-coauthor`，未推送；本项目 `.claude/settings.local.json` 已关闭提交和 PR 署名。
