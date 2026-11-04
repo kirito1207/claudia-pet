@@ -1109,17 +1109,30 @@ function tumbleHelpUp() {
   t.i = t.steps.findIndex(s => s[0] === 'getup') - 1
   tumbleStep()
 }
-function tumbleBack() {
+function tumbleBack(standUp) {
   say('')
   const s = charState[charId]
   if (moodContext() === 'work') { setPose(s.pose === 'listening' ? 'thinking' : s.pose); shownAt = Date.now() }
   else setPose(restPose())
+  if (standUp) tumbleStandUp()
+}
+// 爬起之后换回站着的图：和交叉淡入同时，从低处往上伸展一下再回原样，看起来是「站起来」而不是一下跳成站直。
+// 动画加在外层 #impact 上（落地压扁也用它），所以不管换回待机还是干活的样子都一样
+function tumbleStandUp() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  impactAnimation?.cancel()
+  impactAnimation = $('impact').animate([
+    { transform: 'translateY(7%) scale(1.04,.88)' },
+    { transform: 'translateY(-2.5%) scale(.97,1.05)', offset: .55 },
+    { transform: 'translateY(.5%) scale(1.01,.99)', offset: .8 },
+    { transform: 'none' }
+  ], { duration: 520, easing: 'ease-out' })
 }
 function tumbleFinish(interrupted) {
   const t = tumble
   if (!t) return
   clearTimeout(t.timer); tumble = null
-  if (!interrupted && pose === t.pose) tumbleBack()
+  if (!interrupted && pose === t.pose) tumbleBack(t.pose === 'getup')
   motionMood.attempt()
 }
 function tumbleCancel() {

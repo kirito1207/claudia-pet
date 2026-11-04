@@ -34,7 +34,8 @@ SPRITES = {
     "晕乎乎的橙发花饰少女.png": ("stagger-2", F_STAND, True),
     "橙发少女跌倒抱书萌态插画.png": ("fallen", 0.92, False),
     "克劳德趴地脸朝下的可爱场景.png": ("faceplant", 0.95, False),
-    "橙发少女努力起身.png": ("getup", 0.92, False),
+    # Third-edition getup (half-risen, flustered, patting her skirt); the first getup was 橙发少女努力起身.png
+    "01e1ee1d1b70a6f685f511968c8e17fe_720.png": ("getup", 0.88, True),
 }
 
 

@@ -9,8 +9,8 @@
   // 每段停留的毫秒数；撞头那段从停稳时开始算
   const STEPS = {
     bonk: [['bonk', 1500]],
-    fallen: [['fallen', 1200], ['getup', 800]],
-    stagger: [['stagger', 1200], ['faceplant', 1500], ['getup', 800]],
+    fallen: [['fallen', 1200], ['getup', 1200]],
+    stagger: [['stagger', 1200], ['faceplant', 1500], ['getup', 1200]],
   }
   class TumblePolicy {
     constructor(random = Math.random, now = () => Date.now()) {
