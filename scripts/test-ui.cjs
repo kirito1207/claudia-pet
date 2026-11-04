@@ -78,6 +78,12 @@ const root = path.resolve(__dirname, '..');
     assert.equal(await page.locator('#body img.on').count(), 1, 'moving must show just one silhouette');
     await page.evaluate(() => setMotionActive(false));
     assert.equal(await page.locator('#body').evaluate(el => getComputedStyle(el).animationName), 'dizzy');
+    // Edge-hit poses: an opening move, then a loop that keeps going (they must never freeze).
+    for (const [p, intro, loop] of [['bonk','bonk','wince'], ['stagger','stagger','wobble'], ['fallen','plop','breathe'], ['faceplant','flop','breathe'], ['getup','rise','bob-tiny']]) {
+      await page.evaluate(p => setPose(p, true), p);
+      const anim = await page.locator('#body').evaluate(el => ({ name: getComputedStyle(el).animationName, count: getComputedStyle(el).animationIterationCount }));
+      assert.equal(anim.name, `${intro}, ${loop}`, p); assert.equal(anim.count, '1, infinite', p);
+    }
     await page.evaluate(() => {
       petMotion.begin({ id: 99, x: 600, y: 300, downX: 700, downY: 400, px: 700, py: 400, time: 0,
         enabled: true, physics: DshPhysics.DEFAULT_PHYSICS, bounds: { minX: 0, minY: 0, maxX: 1600, maxY: 900 } });

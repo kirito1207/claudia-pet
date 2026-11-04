@@ -331,6 +331,22 @@ const angerPuff = burst(270, 132, -8, -96, 16, '0s', '1.5s') + burst(312, 128, 1
 // 被甩晕：头顶三颗小星星绕圈
 const dizzyStars = [0, 1, 2].map(i => `<g>${star(0, 0, 0.55, `${i * 0.1}s`, '#ffd54a', '2s')}` +
   `<animateMotion path="M290 92 m-70 0 a70 20 0 1 0 140 0 a70 20 0 1 0 -140 0" dur="1.6s" begin="-${(i * 1.6 / 3).toFixed(2)}s" ${loop}/></g>`).join('')
+// 碰边动作（claudia-pet 新加）：撞头时头顶转一圈小星星（比晕乎乎的小、快，绕在举起的双手上方）；
+// 摔倒、站不稳、趴地着地时脚边扬起一团灰，只播一次、散开后消失（和 pokeBurst 一样 fill="freeze"）
+const bonkStars = [0, 1, 2].map(i =>
+  `<g><path d="M0 -12 L3 -3 L12 0 L3 3 L0 12 L-3 3 L-12 0 L-3 -3Z" transform="scale(1.05)" fill="#ffc81f" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>` +
+  `<animateMotion path="M290 96 m-58 0 a58 15 0 1 0 116 0 a58 15 0 1 0 -116 0" dur="1.2s" begin="-${(i * 1.2 / 3).toFixed(2)}s" ${loop}/></g>`).join('')
+const landingDust = (() => {
+  const once = (dur, begin) => `dur="${dur}" begin="${begin}" fill="freeze"`
+  // 一团灰 = 三个叠在一起的圆，从小到大鼓起、往外飘、淡掉
+  const cloud = ([x, dx, s, begin]) => `<g transform="translate(${290 + x} 524)" opacity="0">` +
+    `<g><g fill="#f6efe8" stroke="#bda896" stroke-width="2.4">` +
+    `<circle cx="-14" cy="4" r="15"/><circle cx="12" cy="2" r="17"/><circle cx="0" cy="-10" r="16"/></g>` +
+    `<animateTransform attributeName="transform" type="scale" values="${s * .35};${s}" ${once('.9s', begin)}/></g>` +
+    `<animateTransform attributeName="transform" type="translate" values="0 0;${dx} -18" additive="sum" ${once('.9s', begin)}/>` +
+    `<animate attributeName="opacity" values="0;.95;.8;0" keyTimes="0;.12;.55;1" ${once('.9s', begin)}/></g>`
+  return [[-150, -50, 2.1, '0s'], [150, 50, 2.1, '0s'], [-90, -26, 1.6, '.05s'], [90, 26, 1.6, '.05s']].map(cloud).join('')
+})()
 const named = { victory: fxVictory }
 
 // ---- 按时段 / 节日打招呼的环境特效 ----
@@ -499,6 +515,8 @@ const surroundings = (p      )         => {
     case 'redhot': return angerSteam
     case 'puffed': return angerPuff
     case 'dizzy': return dizzyStars
+    case 'bonk': return bonkStars
+    case 'fallen': case 'stagger': case 'faceplant': return landingDust
     case 'coaxed': case 'forgiven': return heart(440, 160, 1.4, '0s') + heart(110, 200, 1.1, '0.8s')
   }
   return GREET_FX[p]

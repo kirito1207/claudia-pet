@@ -118,6 +118,7 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
 
 <div class="card" data-tab="physics">
   <div class="item"><div class="label">点击 Q 弹<small>先轻轻回弹，再接原有的摸头、惊讶或被哄动作；关闭后直接回应。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="clickBounce" aria-label="点击 Q 弹"><span></span></label></div></div>
+  <div class="item"><div class="label">碰边动作<small>扔出去撞到 Claude 窗口边框时，偶尔会撞头、摔倒或趴地，再自己爬起来；坐着或趴着时点她会扶她起来。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="tumbleActions" aria-label="碰边动作"><span></span></label></div></div>
   <div class="item"><div class="label">拖拽与抛掷<small>在 Claude 窗口内带弹性地追随鼠标，快速松手可抛出；轻放停在当前位置。关闭后直接跟手。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="physicsEnabled" aria-label="拖拽与抛掷"><span></span></label></div></div>
 <div class="item physics-row"><div class="label"><label for="throwPower">拖拽 / 抛掷力度</label><small>越大，拖动跟得越紧、松手后飞得越快</small></div><div class="ctl"><input type="range" id="throwPower" data-physics="throwPower" min="0.2" max="2.5" step="0.05"><output class="val" id="throwPowerVal" for="throwPower"></output></div></div>
 <div class="item physics-row"><div class="label"><label for="gravity">重力</label><small>越大，下落越快；0 为无重力</small></div><div class="ctl"><input type="range" id="gravity" data-physics="gravity" min="0" max="3000" step="50"><output class="val" id="gravityVal" for="gravity"></output></div></div>

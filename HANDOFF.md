@@ -34,7 +34,22 @@ Windows 上独立维护的 Claude 桌宠。基于 CrossPet，参考 dsh-pet；�
 - `idle-policy.js` / `Pet.Behavior.cs`：动作池及频率，安静／标准／活泼约为 90／45／20 秒，带 ±20% 浮动。
 - `click-sequence.js`：220ms Q 弹后才执行原有点击互动；连点保留摸头次数，新工作或拖动优先。
 - `motion-mood.js`：移动期间保存怒气，停稳 800–1200ms 后处理。工作、等待回答及多会话优先；最小化或手动隐藏时延后结算。普通飞行和碰壁不额外加怒气。
+- `tumble.js`：被扔出去碰边时演不演、演哪套（概率 n×50%÷7 封顶 50%，一次扔出最多一次）。碰顶边撞头，碰左右边撞头 / 摔倒 / 摇晃各 1/3，碰底边 6 成摔倒 4 成摇晃；撞头在撞上时换图，其余停稳后才演；每个动作先演开场再接循环动作（同 CrossPet 的 m-jolt 写法）；演完才结算情绪，演过就不再晕乎乎；干活时只闪 0.8 秒，等回答时只说一句，多会话不触发。
 - `Pet.Notices.cs` / `TaskNoticePolicy.cs`：通知分类、前台过滤和去重。新版插件按会话保存短事件队列；旧会话兼容状态文件提醒。
+
+## 进行中：新动作（撞头 / 摇晃 / 摔倒 / 趴地 / 爬起）
+
+2026-11-04 已实现，未提交、未安装：
+- 立绘由 `scripts/prepare-sprites.py` 从 Codex 原图（本机 `D:\claudia图codex生成`）生成到 `characters/claude/`。
+- 碰边判断在 `web/tumble.js`，播放和衔接在 `index.html` 的 `tumble*` 函数，`pet-motion.js` 报出碰到哪条边。
+- 设置开关 `tumbleActions` 默认打开，右键「动作 → 互动」里能单独预览。
+
+台词已由用户审定写进 `character.json`；被晃出火气（或在赌气）时改说 `…Angry` 生气版台词，爬起来再发火。特效在 `effects.js`：撞头时头顶转星星（`bonkStars`），摔倒、站不稳、趴地着地时扬一次灰（`landingDust`）。
+
+还差：
+- 实际甩动的手感（速度下限 200 像素/秒、各段时长）等用户实测后再调。
+
+完整设计见本地文件 `build/new-sprites/交接-新动作.md`（不进 git），提示词和附图已提交在 `docs/prompts/`。
 
 ## 构建与验证
 

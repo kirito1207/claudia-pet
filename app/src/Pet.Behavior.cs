@@ -14,11 +14,11 @@ namespace Claudia
             ? IdleChoices.Where(k => a.Contains(k)).ToArray() : IdleChoices;
         Dictionary<string, object> BehaviorState() => new Dictionary<string, object> {
             ["idleEnabled"] = SettingOn("idleEnabled"), ["idleFrequency"] = IdleFrequency, ["idleActions"] = IdleActions,
-            ["clickBounce"] = SettingOn("clickBounce"),
+            ["clickBounce"] = SettingOn("clickBounce"), ["tumbleActions"] = SettingOn("tumbleActions"),
         };
         void SetBehavior(string key, object value)
         {
-            if (key == "idleEnabled" || key == "clickBounce") { if (!(value is bool)) return; Store.Settings[key] = value; }
+            if (key == "idleEnabled" || key == "clickBounce" || key == "tumbleActions") { if (!(value is bool)) return; Store.Settings[key] = value; }
             else if (key == "idleFrequency") {
                 if (!(value is string s) || !new[] { "quiet", "normal", "lively" }.Contains(s)) return;
                 Store.Settings[key] = s;

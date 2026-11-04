@@ -33,6 +33,24 @@ assert.deepEqual(idle.candidates(idle.normalize({ idleActions: ['clawd'] }), con
 assert.ok(!idle.candidates(defaults, { ...context, quiet: 1000 }).includes('yawn'));
 assert.ok(idle.delay(idle.normalize({idleFrequency:'quiet'}), .5) > idle.delay(defaults, .5));
 assert.ok(idle.delay(idle.normalize({idleFrequency:'lively'}), .5) < idle.delay(defaults, .5));
+{ // Edge hits: chance n x 50% / 7, capped at 50%; one per throw; reset after a trigger or a quiet minute.
+  const Tumble = require('../web/tumble.js');
+  let t = 0, rolls = [];
+  const tp = new Tumble(() => rolls.length ? rolls.shift() : .99, () => t);
+  assert.equal(Tumble.chance(1), .5/7); assert.equal(Tumble.chance(7), .5); assert.equal(Tumble.chance(20), .5);
+  assert.equal(tp.hit('left', 199), null); assert.equal(tp.hits, 0, 'slow hit counted');
+  for (let i = 1; i <= 3; i++) assert.equal(tp.hit('left', 500), null);
+  assert.equal(tp.hits, 3);
+  rolls = [Tumble.chance(4) - .001]; assert.equal(tp.hit('top', 500), 'bonk'); assert.equal(tp.hits, 0);
+  assert.equal(tp.hit('top', 5000), null, 'second trigger in one throw'); assert.equal(tp.hits, 0);
+  tp.throwStarted(); rolls = [0, .59]; assert.equal(tp.hit('bottom', 500), 'fallen');
+  tp.throwStarted(); rolls = [0, .6]; assert.equal(tp.hit('bottom', 500), 'stagger');
+  for (const [roll, kind] of [[.33, 'bonk'], [.34, 'fallen'], [.66, 'fallen'], [.67, 'stagger']])
+    for (const side of ['left', 'right']) { tp.throwStarted(); rolls = [0, roll]; assert.equal(tp.hit(side, 500), kind, `${side} ${roll}`); }
+  tp.throwStarted(); tp.hit('right', 500); tp.hit('right', 500); assert.equal(tp.hits, 2);
+  t += Tumble.RESET_MS + 1; tp.hit('right', 500); assert.equal(tp.hits, 1, 'count survived a quiet minute');
+  assert.deepEqual(Tumble.STEPS.stagger.map(s => s[0]), ['stagger', 'faceplant', 'getup']);
+}
 (async () => {
   const source = stripTypeScriptTypes(fs.readFileSync(require('path').join(__dirname,'../plugin/hooks/register.ts'),'utf8'));
   const { register } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));

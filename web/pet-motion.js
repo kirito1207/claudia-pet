@@ -62,7 +62,7 @@
       if (!this.phase) return;
       const time = this.now(), rawDt = (time - this.last) / 1000; this.last = time;
       const s = this.state, b = this.bounds;
-      let impactX = 0, impactY = 0, atRest = false, shake = false;
+      let impactX = 0, impactY = 0, edge = null, atRest = false, shake = false;
       if (this.phase === 'drag') {
         const dt = Math.min(rawDt, 1 / 30);
         if (this.enabled) {
@@ -83,6 +83,8 @@
         if (next.bounced) {
           if (next.x === b.minX || next.x === b.maxX) impactX = Math.abs(s.vx);
           if (next.y === b.minY || next.y === b.maxY) impactY = Math.abs(s.vy);
+          // Which edge took the harder hit (used by tumble.js).
+          if (impactX || impactY) edge = impactX >= impactY ? (next.x === b.minX ? 'left' : 'right') : (next.y === b.minY ? 'top' : 'bottom');
         }
         this.state = { x: next.x, y: next.y, vx: next.vx, vy: next.vy }; atRest = next.atRest;
       }
@@ -95,7 +97,7 @@
         current.y = Math.max(b.minY, Math.min(b.maxY, current.y)); current.vy = 0;
       }
       const phase = atRest ? 'end' : this.phase;
-      this.emit({ id: this.id, phase, x: current.x, y: current.y, impactX, impactY, shake });
+      this.emit({ id: this.id, phase, x: current.x, y: current.y, impactX, impactY, edge, shake });
       if (atRest) this.phase = null; else this.schedule();
     }
   }

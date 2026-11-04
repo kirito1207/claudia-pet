@@ -6,4 +6,6 @@
 
 `LICENSE.md` 是原始授权文档，保留了原项目全部角色的来源表；当前 claudia-pet 包含的角色以本目录实际文件为准。不要把原作者和授权记录当作无用品牌信息删除。
 
+碰边动作立绘 `bonk.webp`、`stagger.webp`、`stagger-2.webp`、`fallen.webp`、`faceplant.webp`、`getup.webp` 不是 CrossPet 原有的：它们以 CrossPet 的设计参考图和现有立绘为参考，在 OpenAI Codex 中用内置 image_gen 生成，再用 `scripts/prepare-sprites.py` 统一大小、底边对齐。同样沿用 CC BY-NC-SA 4.0，提示词见 [docs/prompts/](../docs/prompts/)。`character.json` 里这几个动作的台词（`bonk`、`stagger`、`fallen`、`faceplant`、`getup`、带 `Angry` 后缀的生气版和 `tumbleAsk`）也是本项目新写的，其余台词与 CrossPet 原版一致。
+
 `avatar.webp`、`portrait.webp`、`portrait-card.webp` 是展示素材，不作为普通动作播放。`clawd.webp` 是抱 Clawd 的现有立绘，也作为 [软件图标](../icon/README.md) 的制作参考。

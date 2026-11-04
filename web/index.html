@@ -150,6 +150,21 @@ html.no-name #caption { display: none; }
 .m-angry { animation: angry .14s linear infinite; }
 .m-angry img { filter: drop-shadow(0 0 7px rgba(255, 60, 30, .75)) saturate(1.15); }
 .m-dizzy { animation: dizzy 1.1s ease-in-out infinite; }
+/* 被扔出去碰边：和 m-jolt 一样先演一下开场，再接一直循环的轻微动作（不会停住）。
+   循环动作都从不变形开始，接开场的结尾时不会跳一下；摇晃以脚为支点（#body 的 transform-origin 在脚下） */
+.m-bonk    { animation: bonk .5s cubic-bezier(.3,1.6,.5,1) 1, wince 1.8s ease-in-out .5s infinite; }
+.m-stagger { animation: stagger 1.2s ease-in-out 1, wobble 1.5s ease-in-out 1.2s infinite; }
+.m-fallen  { animation: plop .45s ease-out 1, breathe 3.4s ease-in-out .45s infinite; }
+.m-faceplant { animation: flop .5s ease-out 1, breathe 4s ease-in-out .5s infinite; }
+.m-getup   { animation: rise .55s cubic-bezier(.3,1.4,.5,1) 1, bob-tiny 4.5s ease-in-out .55s infinite; }
+@keyframes bonk { 0% { transform: translateY(2%) scale(1.05,.92); } 45% { transform: translateY(-1%) scale(.97,1.04); } 100% { transform: none; } }
+@keyframes wince { 0%, 100% { transform: none; } 50% { transform: translateY(.6%) scale(1.01,.985); } }
+@keyframes stagger { 0%, 100% { transform: rotate(0); } 18% { transform: rotate(-7deg); } 42% { transform: rotate(6deg); } 66% { transform: rotate(-4deg); } 86% { transform: rotate(2deg); } }
+@keyframes wobble { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-2.5deg); } 75% { transform: rotate(2.5deg); } }
+@keyframes plop { 0% { transform: translateY(-5%) scale(.96,1.05); } 45% { transform: scale(1.07,.91); } 75% { transform: scale(.99,1.02); } 100% { transform: none; } }
+@keyframes flop { 0% { transform: translateY(-6%) scale(.95,1.08); } 40% { transform: scale(1.06,.86); } 70% { transform: scale(.99,1.03); } 100% { transform: none; } }
+@keyframes breathe { 0%, 100% { transform: none; } 50% { transform: scale(1.008,1.022); } }
+@keyframes rise { 0% { transform: translateY(4%) scale(1.04,.93); } 60% { transform: translateY(-2%) scale(.98,1.03); } 100% { transform: none; } }
 /* 多会话时被甩：小卡片东倒西歪 */
 #cards.shaken .scard { animation: card-wobble .22s ease-in-out 4 alternate; }
 #cards.shaken .scard:nth-child(even) { animation-direction: alternate-reverse; }
@@ -203,6 +218,7 @@ addEventListener('unhandledrejection', e => window.chrome?.webview?.postMessage(
 <script src="idle-policy.js"></script>
 <script src="click-sequence.js"></script>
 <script src="motion-mood.js"></script>
+<script src="tumble.js"></script>
 <script>
 // Claudia 画面：由 Windows 外壳（Claudia.exe）调用这几个函数
 //   init(manifest)          角色清单（characters/*/character.json + 立绘）
@@ -222,6 +238,8 @@ const MOTION = {
   asking: 'm-hop', update: 'm-gift',
   // 甩她 / 红温
   annoyed: 'm-rock', puffed: 'm-jolt', redhot: 'm-angry', sulk: 'm-slow', dizzy: 'm-dizzy', coaxed: 'm-sway', forgiven: 'm-hop',
+  // 被扔出去碰边（tumble.js）
+  bonk: 'm-bonk', stagger: 'm-stagger', fallen: 'm-fallen', faceplant: 'm-faceplant', getup: 'm-getup',
   // 按时段 / 节日打招呼
   greet_morning: 'm-hop', greet_noon: 'm-bob', greet_afternoon: 'm-sway', greet_evening: 'm-sway', greet_night: 'm-slow', greet_dawn: 'm-slow',
   fest_halloween: 'm-gift', fest_christmas: 'm-gift', fest_newyear: 'm-jump', fest_spring: 'm-gift', fest_lantern: 'm-gift',
@@ -234,7 +252,8 @@ const LOCAL_LINES = {
 // 新加的姿态还没画立绘时，先用哪张顶上
 const POSE_FALLBACK = { compact: 'writing', sorry: 'listening', asking: 'listening', update: 'happy', bye: 'happy',
   busy_left: 'thinking', busy_right: 'thinking', swamped_left: 'busy_left', swamped_right: 'busy_right',
-  annoyed: 'surprised', puffed: 'surprised', redhot: 'surprised', sulk: 'surprised', dizzy: 'oops', coaxed: 'pat', forgiven: 'happy' }
+  annoyed: 'surprised', puffed: 'surprised', redhot: 'surprised', sulk: 'surprised', dizzy: 'oops', coaxed: 'pat', forgiven: 'happy',
+  bonk: 'surprised', stagger: 'dizzy', fallen: 'dizzy', faceplant: 'dizzy', getup: 'pat' }
 const TRANSIENT = { happy: 5000, proud: 6000, oops: 4000, surprised: 3000, pat: 4000, hum: 4000, stretch: 3200, yawn: 3000,
   annoyed: 4500, puffed: 5000, dizzy: 3000, coaxed: 3500, forgiven: 5000 }
 for (const p of Object.keys(MOTION)) if (p.startsWith('greet_')) TRANSIENT[p] = 5500; else if (p.startsWith('fest_')) TRANSIENT[p] = 6500
@@ -869,6 +888,7 @@ function handleClick(kind, x, y) {
 }
 function performClick(kind, x, y) {
   lastActive = Date.now()
+  if (tumble) { tumbleHelpUp(); return }
   if (pose === 'sleeping') { show('yawn', true); say('唔…你回来啦'); return }
   if (kind === 'pat' && (sulking || angerNow() >= 20)) { coaxHer(); return }   // 生着气的时候摸她 = 哄她
   const pokePose = char()?.pokePose && hasPose(char().pokePose) ? char().pokePose : 'surprised'
@@ -879,6 +899,7 @@ function performClick(kind, x, y) {
 let impactAnimation = null
 function setMotionActive(on) {
   if (on) {
+    tumbleCancel(); tumbled = false; tumblePolicy.throwStarted()
     motionMood.begin()
     clearTimeout(shakeEndTimer)
     if (sulking || ['dizzy','annoyed','puffed','redhot','sulk'].includes(pose)) {
@@ -886,6 +907,7 @@ function setMotionActive(on) {
     }
   } else motionMood.end()
   document.documentElement.classList.toggle('moving', !!on)
+  if (!on) tumbleLanded()
   if (on) {
     clickSequence.cancel()
     impactAnimation?.cancel()
@@ -963,6 +985,7 @@ function moodContext() {
 }
 function resolveMotionMood() {
   if (farewellLine !== null) { motionMood.clear(); return }
+  if (tumble) return // Body reaction first; tumbleFinish() asks again.
   const state = charState[charId]
   const resultAge = Date.now() / 1000 - (state?.ts || 0)
   if (state?.event === 'Stop' && (state.pose === 'oops' || state.pose === 'surprised') && resultAge < 4) return
@@ -984,7 +1007,8 @@ function resolveMotionMood() {
   if (angerLevel(anger) || sulking) {
     if (sulking && anger >= 75) sulking = false // Replay an interrupted red-hot sequence in full.
     react(pending.afterWork)
-  } else show('dizzy', true)
+  } else if (!tumbled) show('dizzy', true)
+  tumbled = false
 }
 // 甩停了：回到手上的活（AI 最新的那个动作；不换台词，抱怨还留在气泡里）
 function resumeWork() {
@@ -1035,11 +1059,83 @@ function forgive() {
 }
 
 
+// ---- 被扔出去碰边：撞头 / 摇晃 → 趴地 / 摔倒 → 爬起（判断在 tumble.js） ----
+// 撞头在撞上那一刻换图，停稳后再保持一会儿；碰底边先记下，停稳后才开始演（弹跳、滑行时保持原样）。
+// 身体动作演完再结算情绪（resolveMotionMood 会等）；演过就不再演「晕乎乎」。
+// Claude 在干活：只闪 0.8 秒就回去干活；在等回答：不换图，只说一句；多个会话在忙：不触发。
+// 演到一半被拖走、别的状态把图换掉、或在设置里关掉：直接中断。
+const tumblePolicy = new TumblePolicy()
+const TUMBLE_FLASH = 800
+let tumbleOn = true, tumble = null, tumbled = false
+const isMoving = () => document.documentElement.classList.contains('moving')
+function tumbleHit(m) {
+  if (!tumbleOn || tumble || !m.edge || m.phase === 'drag' || farewellLine !== null || multi) return
+  const speed = m.edge === 'left' || m.edge === 'right' ? m.impactX : m.impactY
+  const kind = tumblePolicy.hit(m.edge, speed)
+  if (!kind) return
+  tumbled = true
+  const context = moodContext()
+  if (context === 'asking') { complain('tumbleAsk', ['好痛…']); return }
+  clearTimeout(pending); clearTimeout(revertTimer)
+  // 被晃出火气（或正在赌气）时说生气版台词（bonkAngry …），和爬起来之后的发火接得上
+  tumble = { kind, steps: TumblePolicy.STEPS[kind], i: -1, flash: context === 'work', pose: null, timer: null,
+    angry: sulking || !!angerLevel(angerNow()) }
+  if (kind === 'bonk') tumbleStep()
+}
+function tumbleStep() {
+  const t = tumble
+  if (!t) return
+  clearTimeout(t.timer)
+  const step = t.steps[++t.i]
+  if (!step || (t.flash && t.i > 0)) return tumbleFinish()
+  const [p, ms] = step
+  setPose(p); shownAt = Date.now(); t.pose = p
+  const lines = (t.angry && linesOf(p + 'Angry')) || linesOf(p); say(lines ? pick(lines) : '')
+  if (t.flash) t.timer = characterTimeout(tumbleFinish, TUMBLE_FLASH)
+  else if (!isMoving()) t.timer = characterTimeout(tumbleNext, ms)
+}
+// 下一段之前确认图还是她的：被新的工作、提问之类换掉了就不再接着演
+function tumbleNext() { if (tumble && pose === tumble.pose) tumbleStep(); else tumbleFinish(true) }
+function tumbleLanded() {
+  const t = tumble
+  if (!t) return
+  if (t.i < 0) tumbleStep()
+  else if (!t.flash) { clearTimeout(t.timer); t.timer = characterTimeout(tumbleNext, t.steps[t.i][1]) }
+}
+// 坐着、趴着时单击 = 扶她起来；其他时候点她不打断
+function tumbleHelpUp() {
+  const t = tumble
+  if (!t || t.flash || (pose !== 'fallen' && pose !== 'faceplant')) return
+  t.i = t.steps.findIndex(s => s[0] === 'getup') - 1
+  tumbleStep()
+}
+function tumbleBack() {
+  say('')
+  const s = charState[charId]
+  if (moodContext() === 'work') { setPose(s.pose === 'listening' ? 'thinking' : s.pose); shownAt = Date.now() }
+  else setPose(restPose())
+}
+function tumbleFinish(interrupted) {
+  const t = tumble
+  if (!t) return
+  clearTimeout(t.timer); tumble = null
+  if (!interrupted && pose === t.pose) tumbleBack()
+  motionMood.attempt()
+}
+function tumbleCancel() {
+  const t = tumble
+  if (!t) return
+  clearTimeout(t.timer); tumble = null
+  if (t.pose && pose === t.pose) tumbleBack()
+}
+
 // Idle behavior is configurable and never interrupts work, dragging or explicit interactions.
 let idleSettings = IdlePolicy.normalize({}), idleTimer = null, clickBounce = true
 function setBehavior(settings) {
   idleSettings = IdlePolicy.normalize(settings); clickBounce = settings?.clickBounce !== false
   if (!clickBounce) clickSequence.cancel()
+  tumbleOn = settings?.tumbleActions !== false
+  if (!tumbleOn) tumbleCancel()
   scheduleIdle()
 }
 function scheduleIdle() {
@@ -1050,7 +1146,7 @@ function idleTick() {
   const quiet = Date.now() - lastActive
   const available = IdlePolicy.candidates(idleSettings, { pose, quiet, available: ['hum','stretch','yawn','clawd'].filter(hasPose),
     hidden: pageHidden, moving: document.documentElement.classList.contains('moving'), working: !!aiActivity(), multi: !!multi,
-    farewell: farewellLine !== null, clicking: clickSequence.busy || motionMood.pending })
+    farewell: farewellLine !== null, clicking: clickSequence.busy || motionMood.pending || !!tumble })
   if (!available.length) return
   if (quiet > SLEEP_AFTER) { setPose('sleeping'); say(pick(linesOf('sleeping') || [''])); return }
   const action = pick(available)
@@ -1101,6 +1197,7 @@ const clickSequence = new ClickSequence(done => {
 }, active => { document.documentElement.classList.toggle('clicking', active); if (!active) queueMicrotask(() => motionMood.attempt()) })
 // Browser frame loop mirrors dsh-pet's desktop renderer; the host is only a bounds broker.
 const petMotion = new PetMotion(DshPhysics, message => {
+  tumbleHit(message)
   window.chrome?.webview?.postMessage({ motion: message })
 }, callback => requestAnimationFrame(callback), id => cancelAnimationFrame(id), () => performance.now())
 </script>

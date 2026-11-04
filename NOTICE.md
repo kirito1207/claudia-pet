@@ -10,7 +10,7 @@ claudia-pet 作为独立项目维护，基于 [CrossPet](https://github.com/loki
 
 ## 角色素材与图标
 
-本项目随附的 Claude 娘立绘、角色设定、台词和展示图全部来自 CrossPet v1.3.8（`characters/claude/`），立绘与台词文件和原版一致，只把默认显示名从「Claude」改为「claudia」，并删去了不再使用的贴边立绘。按 CrossPet README「致谢与授权」一节的说明：
+本项目随附的 Claude 娘立绘、角色设定、台词和展示图（`characters/claude/`）除下文的碰边动作立绘和台词外都来自 CrossPet v1.3.8：原有立绘和台词与原版一致，只把默认显示名从「Claude」改为「claudia」，删去了不再使用的贴边立绘，并在 `character.json` 里新增了碰边动作的台词（`bonk`、`stagger`、`fallen`、`faceplant`、`getup`、带 `Angry` 后缀的生气版和 `tumbleAsk`，由本项目新写）。按 CrossPet README「致谢与授权」一节的说明：
 
 - 这些立绘由 CrossPet 用 AI 生图工具绘制；
 - Claude 娘形象参考社区流行的 AI 娘设定，CrossPet 列出的参考为 [ai-school-op](https://github.com/lshhhhhhh/ai-school-op) 和 [openpet-ai-girls](https://github.com/AwesomeHou/openpet-ai-girls)；
@@ -20,11 +20,15 @@ claudia-pet 作为独立项目维护，基于 [CrossPet](https://github.com/loki
 
 软件图标（claudia 抱 Clawd 的单人透明头像）是本项目制作的衍生图：以 CrossPet 原四人图标中右下角的 Claude 娘头像、CrossPet 立绘 `characters/claude/clawd.webp` 为参考，在 OpenAI Codex 中用其内置的 image_gen 图像编辑工具生成，之后只做了 PNG / WebP / ICO 格式与尺寸转换。图标沿用 CC BY-NC-SA 4.0，使用的完整提示词保存在 [icon/README.md](icon/README.md)。
 
+碰边动作立绘（`bonk.webp`、`stagger.webp`、`stagger-2.webp`、`fallen.webp`、`faceplant.webp`、`getup.webp`：撞头、摇晃、摔倒、趴地、爬起）也是本项目制作的衍生图：以 CrossPet 的 Claude 娘设计参考图 `ref-claude.webp` 和 CrossPet 现有立绘为参考，在 OpenAI Codex 中用其内置的 image_gen 工具生成，之后由 `scripts/prepare-sprites.py` 去掉画面里的晃动线、统一缩放和底边对齐并转成 WebP。提示词的写法沿用 CrossPet 的角色生图提示词，「通用格式规则」和「角色锁定」两段大部分取自 CrossPet 原文。这些立绘沿用 CC BY-NC-SA 4.0，提示词和附图保存在 [docs/prompts/](docs/prompts/)。
+
 | 内容 | 来源 | 授权 |
 |---|---|---|
 | 源代码 | claudia-pet，基于 CrossPet；`web/dsh-physics.js` 摘录自 dsh-pet | MIT；保留 claudia-pet、CrossPet 及 dsh-pet 的版权与许可声明 |
 | 角色立绘、设定、台词 | CrossPet v1.3.8 | CC BY-NC-SA 4.0 |
 | 抱 Clawd 图标 | 本项目以 CrossPet 素材为参考生成 | CC BY-NC-SA 4.0 |
+| 碰边动作立绘（撞头、摇晃、摔倒、趴地、爬起） | 本项目以 CrossPet 素材为参考生成 | CC BY-NC-SA 4.0 |
+| 碰边动作台词 | 本项目新写，加在 CrossPet 的 `character.json` 里 | CC BY-NC-SA 4.0（随所在文件） |
 | Clawd 形象 | Anthropic（Claude Code 使用的橙色像素螃蟹） | 权利归 Anthropic；本项目不主张任何权利 |
 
 原始 [角色授权说明](characters/LICENSE.md) 保持不变，其中还列有原项目其他角色；这些条目是来源记录，不表示 claudia-pet 包含那些角色。当前素材范围另见 [characters/README.md](characters/README.md)。

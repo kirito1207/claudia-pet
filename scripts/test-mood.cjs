@@ -14,6 +14,7 @@ const {pathToFileURL}=require('url');
     async function reset(context=null) {
       await page.evaluate(context=>{
         motionMood.clear();setMotionActive(false);setPageHidden(false);clickSequence.cancel();
+        tumbleCancel();tumbled=false;tumblePolicy.hits=0;tumblePolicy.throwStarted();window.seen=[];
         for(const t of [pending,thinkTimer,revertTimer,sulkTimer,shakeEndTimer,stuckTimer])clearTimeout(t);
         for(const key of Object.keys(charState))delete charState[key];
         sulking=false;anger=0;angerAt=Date.now();coax=0;shownAt=0;
@@ -49,7 +50,54 @@ const {pathToFileURL}=require('url');
     await shake();await page.evaluate(()=>setMotionActive(false));await page.waitForTimeout(1200);
     assert.equal(await page.evaluate(()=>!!multi),true);assert.equal(await page.evaluate(()=>motionMood.pending),true);
     await page.evaluate(()=>setSessions('claude',{}));await page.waitForFunction(()=>pose==='redhot');
+    // ---- Edge hits (tumble.js): rolls[0] decides whether it triggers, rolls[1] picks fallen (<.6) or stagger ----
+    await page.evaluate(()=>{const keep=setPose;window.setPose=(p,i)=>{if(p!==pose)(window.seen||=[]).push(p);return keep(p,i)};});
+    async function hit(edge,rolls=[0,0]) {
+      await page.evaluate(({edge,rolls})=>{tumblePolicy.random=()=>rolls.length?rolls.shift():0;
+        tumbleHit({phase:'flight',edge,impactX:edge==='left'||edge==='right'?900:0,impactY:edge==='top'||edge==='bottom'?900:0});},{edge,rolls});
+    }
+    const seen=()=>page.evaluate(()=>window.seen);
+    await reset();await page.evaluate(()=>setMotionActive(true));await hit('top');
+    assert.equal(await page.evaluate(()=>pose),'bonk','bump did not show at the hit');
+    await hit('bottom');assert.equal(await page.evaluate(()=>tumble.kind),'bonk','second trigger in one throw');
+    await page.evaluate(()=>setMotionActive(false));await page.waitForTimeout(1200);
+    assert.equal(await page.evaluate(()=>pose),'bonk','bump not held after settling');
+    await page.waitForFunction(()=>pose==='idle'&&!tumble);
+    await reset();await page.evaluate(()=>setMotionActive(true));await hit('bottom',[0,.59]);
+    assert.equal(await page.evaluate(()=>pose),'idle','floor sequence started before settling');
+    await page.evaluate(()=>setMotionActive(false));
+    await page.waitForFunction(()=>pose==='idle'&&!tumble,null,{timeout:5000});
+    assert.deepEqual(await seen(),['fallen','getup','idle']);
+    await reset();await page.evaluate(()=>setMotionActive(true));await hit('bottom',[0,.6]);await page.evaluate(()=>setMotionActive(false));
+    await page.waitForFunction(()=>pose==='idle'&&!tumble,null,{timeout:6000});
+    assert.deepEqual(await seen(),['stagger','faceplant','getup','idle']);
+    await reset();await page.evaluate(()=>setMotionActive(true));await hit('bottom');await page.evaluate(()=>setMotionActive(false));
+    await page.waitForTimeout(300);await page.evaluate(()=>handleClick('pat'));
+    assert.equal(await page.evaluate(()=>pose),'getup','click did not help her up');
+    await reset();await shake(1);await hit('bottom');await page.evaluate(()=>setMotionActive(false));
+    await page.waitForTimeout(4000);
+    assert.deepEqual(await seen(),['fallen','getup','idle'],'dizzy played after a fall');
+    const bubble=()=>page.evaluate(()=>$('bubble').textContent);
+    await reset();await page.evaluate(()=>setMotionActive(true));await hit('bottom');await page.evaluate(()=>setMotionActive(false));
+    assert.ok(info.lines.fallen.includes(await bubble()),'calm fall used the wrong lines');
+    await reset();await shake();await hit('bottom');await page.evaluate(()=>setMotionActive(false));
+    assert.ok(info.lines.fallenAngry.includes(await bubble()),'angry fall used the sweet lines');
+    await page.waitForFunction(()=>pose==='getup');assert.ok(info.lines.getupAngry.includes(await bubble()));
+    await page.waitForFunction(()=>pose==='redhot',null,{timeout:6000});
+    assert.deepEqual(await seen(),['fallen','getup','idle','redhot'],'anger did not wait for the fall');
+    await reset('reading');await page.evaluate(()=>setMotionActive(true));await hit('top');
+    assert.equal(await page.evaluate(()=>pose),'bonk');await page.waitForTimeout(1000);
+    assert.equal(await page.evaluate(()=>pose),'reading','work not resumed after a flash');
+    await reset('asking');await page.evaluate(()=>setMotionActive(true));await hit('top');
+    assert.equal(await page.evaluate(()=>pose),'asking','question pose replaced');
+    assert.equal(await page.evaluate(()=>$('bubble').textContent),'好痛…');
+    await reset();await page.evaluate(()=>setMotionActive(true));await hit('bottom');await page.evaluate(()=>setMotionActive(false));
+    await page.waitForTimeout(200);await page.evaluate(()=>setMotionActive(true));
+    assert.equal(await page.evaluate(()=>pose),'idle','drag did not cancel the fall');
+    await reset();await page.evaluate(()=>{setBehavior({idleEnabled:false,clickBounce:false,tumbleActions:false});setMotionActive(true)});await hit('top');
+    assert.equal(await page.evaluate(()=>!!tumble),false,'switched-off setting still triggered');
+    assert.ok(await page.evaluate(()=>['bonk','fallen','stagger','faceplant'].every(p=>ClaudiaFx.surroundings(p))),'edge-hit effects missing');
     assert.deepEqual(errors,[]);
-    console.log('PASS: flight/settling delay, full red-hot playback, work/question priority, mild dizziness, hidden deferral and calming pats');
+    console.log('PASS: flight/settling delay, full red-hot playback, work/question priority, mild dizziness, hidden deferral and calming pats; edge-hit bump/fall sequences, help-up click, mood after falls, work/question/drag/setting rules');
   } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});
