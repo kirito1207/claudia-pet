@@ -1,0 +1,1107 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+@property --aura { syntax: '<color>'; inherits: true; initial-value: #ffd9b0; }
+/* --k：文字区域（气泡、名牌、额度）相对人物再放大多少，外壳调 setSizes 设；锁着时 1 */
+:root { --aura: #ffd9b0; --aura-o: .35; --k: 1; }
+html, body { margin: 0; background: transparent; overflow: hidden; -webkit-user-select: none; cursor: default;
+  font-family: -apple-system, "PingFang SC", sans-serif; }
+/* 从下往上排：底栏（名牌 + 额度）固定高度贴着窗口底边，人物在它上面，气泡从人物头顶往上长。
+   这样名牌开关、额度有几行、台词有多长，人物都不挪位置，额度也不会被长台词挤出窗口
+   （Windows 上微软雅黑行高大，之前开着名牌、台词折两三行时额度会被挤出去） */
+#wrap { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100vh; }
+#wrap > * { flex-shrink: 0; }
+/* 底栏最小高度按 max(1, k)：字比人小时不缩，人物不往下掉 */
+#foot { min-height: calc(62px * max(1, var(--k))); flex-shrink: 0; display: flex; flex-direction: column; align-items: center; }
+#bubble { position: relative; z-index: 3; margin-bottom: calc(-10px * var(--k)); max-width: calc(228px * var(--k)); min-height: calc(18px * var(--k));
+  margin-top: calc(4px * var(--k)); padding: calc(5px * var(--k)) calc(11px * var(--k)); border-radius: calc(12px * var(--k));
+  background: rgba(255,255,255,.95); border: calc(1.5px * var(--k)) solid var(--accent, #e0b48a); color: #4a2418;
+  font-size: calc(13px * var(--k)); line-height: 1.35; text-align: center; box-shadow: 0 2px 6px rgba(0,0,0,.12);
+  transition: opacity .3s, transform .3s; }
+#bubble.hide { opacity: 0; transform: translateY(4px); }
+#stage { position: relative; width: 250px; height: 241px; transition: transform .32s ease, opacity .32s ease; }
+#stage.swap { transform: scale(.9) translateY(4%); opacity: 0; }
+#aura { position: absolute; left: 50%; top: 50%; width: 240px; height: 240px; margin: -120px 0 0 -120px;
+  border-radius: 50%; opacity: var(--aura-o);
+  background: radial-gradient(circle closest-side, var(--aura) 0%, color-mix(in srgb, var(--aura) 45%, transparent) 45%, transparent 100%);
+  transition: --aura 0.8s, opacity .8s; animation: pulse 3s ease-in-out infinite; }
+@keyframes pulse { 50% { transform: scale(1.04); } }
+/* 背景光晕：浅色背景上是柔和的氛围，深色背景上会变成一圈发亮的圆盘（像佛光）。
+   html 上的 aura-on / aura-off 由宿主按右键菜单的选择设；都没有（自动）时跟着系统深浅色，深色模式下不显示 */
+html.aura-off #aura, html.aura-off .aura-rings { display: none; }
+@media (prefers-color-scheme: dark) { html:not(.aura-on) #aura, html:not(.aura-on) .aura-rings { display: none; } }
+#shadow { position: absolute; left: 50%; bottom: 7px; width: 110px; height: 10px; margin-left: -55px;
+  border-radius: 50%; background: rgba(0,0,0,.13); }
+#impact { position: absolute; inset: 0; transform-origin: 50% 94%; }
+#body { position: absolute; left: 17.8%; top: 21.1%; width: 64.5%; height: 75%; transform-origin: 50% 100%; }
+/* The host already moves the whole window: avoid a second moving/resampled body inside it. */
+html.clicking #body { animation-play-state: paused !important; }
+html.moving #body { animation: none !important; transform: none !important; }
+html.moving #body img { transition: none !important; }
+html.moving #cards .scard { animation: none !important; }
+/* 立绘按高度占满人物框；比框宽的（张开翅膀、带小帮手、抱大碗……）往左右多伸出去，最多到整个舞台宽，
+   而不是整体缩小——这样所有姿态里人物一样高 */
+#body img { position: absolute; top: 0; bottom: 0; left: -27.5%; width: 155%; height: 100%; object-fit: contain; object-position: 50% 100%;
+  opacity: 0; transition: opacity .35s ease; }
+#body img.on { opacity: 1; }
+#body img#blink { transition: none; }
+#fx { position: absolute; inset: 0; transition: opacity .3s; pointer-events: none; }
+/* 闲着久了：身边的特效淡出（见「特效省电」） */
+#fx.rest { opacity: 0; transition: opacity 1.2s; }
+/* 看不见（被挡住、锁屏）：所有动画暂停 */
+html.frozen *, html.frozen *::before, html.frozen *::after { animation-play-state: paused !important; }
+/* 多会话：每个正在干活的对话一张小卡片，放在桌宠两侧 / 四个角 */
+#cards { position: absolute; inset: 0; pointer-events: none; }
+.scard { position: absolute; width: 66px; height: 56px; transition: left .35s ease, top .35s ease, opacity .35s ease, transform .35s ease; opacity: 0; transform: scale(.6); }
+.scard.on { opacity: .72; transform: scale(.92); }
+.scard.on.focus { opacity: 1; transform: scale(1.06); }
+.scard svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 1px 2px rgba(0,0,0,.18)); }
+.scard .badge { position: absolute; right: -4px; bottom: -2px; width: 20px; height: 20px; border-radius: 50%; color: #fff; font: bold 13px/20px sans-serif; text-align: center; opacity: 0; transform: scale(.4); transition: opacity .25s, transform .25s; }
+.scard.done .badge { background: #3dbb6a; opacity: 1; transform: none; }
+.scard.error svg { filter: drop-shadow(0 0 3px #ff5a5a); }
+.scard.error { animation: cardShake .45s ease 2; }
+.scard.ask { animation: cardBounce .9s ease-in-out infinite; }
+@keyframes cardShake { 25% { translate: -4px 0; } 75% { translate: 4px 0; } }
+@keyframes cardBounce { 50% { translate: 0 -5px; } }
+#more { position: absolute; right: 2px; bottom: 6px; padding: 1px 7px; border-radius: 9px; background: rgba(255,255,255,.9); color: #4a2418;
+  font: bold 11px/16px sans-serif; box-shadow: 0 1px 3px rgba(0,0,0,.15); opacity: 0; transition: opacity .3s; }
+#more.on { opacity: 1; }
+
+#fx.hide { opacity: 0; }
+#fx svg { width: 100%; height: 100%; overflow: visible; }
+#poof { position: absolute; left: 50%; top: 55%; width: 0; height: 0; pointer-events: none; }
+#poof i { position: absolute; width: 46px; height: 46px; margin: -23px; border-radius: 50%; background: #fff;
+  box-shadow: 0 0 0 2px rgba(74,36,24,.25); opacity: 0; }
+#poof.go i { animation: puff .6s ease-out forwards; }
+@keyframes puff { 0% { opacity: .95; transform: translate(0,0) scale(.3); } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.3); } }
+.m-dash  { animation: dash 2.2s ease-in-out forwards; }
+.m-leave { animation: leave 1s ease-in forwards; }
+@keyframes leave { 0% { transform: none; } 100% { transform: translateX(28%) rotate(4deg); opacity: 0; } }
+@keyframes dash { 0%, 55% { transform: none; } 100% { transform: translateX(28%) rotate(4deg); opacity: 0; } }
+#caption { margin-top: calc(-2px * var(--k)); padding: calc(2px * var(--k)) calc(9px * var(--k)); border-radius: calc(8px * var(--k)); background: rgba(255,255,255,.85);
+  color: #6b4a3a; font-size: calc(11px * var(--k)); min-height: calc(14px * var(--k));
+  max-width: calc(236px * var(--k)); box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#caption:empty { visibility: hidden; }
+html.no-name #caption { display: none; }
+#quota { max-width: calc(236px * var(--k)); text-align: center; line-height: 1.35; margin-top: calc(2px * var(--k)); padding: calc(1px * var(--k)) calc(8px * var(--k));
+  border-radius: calc(7px * var(--k)); background: rgba(255,255,255,.8); color: #6b4a3a; font-size: calc(10px * var(--k)); }
+#quota:empty { display: none; }
+#quota div { white-space: nowrap; }
+#quota.low { color: #c0392b; background: rgba(255,236,236,.92); }
+#quota .notice { color: #6b4a3a; font-weight: 600; }   /* 重置提醒那一行：不跟着额度紧张变红 */
+/* 额度条样式（quota-bars.js）：每个额度一行——名字、条、剩余百分比、重置时间；条按剩余分三档变色 */
+#quota.bars:not(:empty) { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; text-align: left; min-width: calc(170px * var(--k)); }
+#quota .qbar { display: contents; white-space: nowrap; }   /* 一行四格：名字、条、百分比、时间，各行对齐成表 */
+#quota.bars > div:not(.qbar) { grid-column: 1 / -1; }   /* 文字行（余额）、重置提醒、峰谷条、备注占满一行 */
+#quota .ql { padding-right: calc(4px * var(--k)); white-space: nowrap; }
+#quota .qtrack { min-width: calc(30px * var(--k)); height: calc(5px * var(--k)); border-radius: calc(3px * var(--k)); background: #e4dcd6; overflow: hidden; }
+#quota .qtrack i { display: block; height: 100%; border-radius: inherit; background: var(--bar); }
+#quota .qp { padding-left: calc(4px * var(--k)); font-weight: 700; color: var(--bar); text-align: right; white-space: nowrap; }
+#quota .qt { padding-left: calc(4px * var(--k)); font-size: calc(8.5px * var(--k)); color: #a8958a; white-space: nowrap; }
+#quota .qc.qbarcell { display: flex; align-items: center; gap: calc(3px * var(--k)); }   /* 合并显示里的短条格子 */
+#quota .qc.qbarcell .ql { padding-right: 0; }
+#quota .qc.qbarcell .qtrack { width: calc(34px * var(--k)); min-width: 0; flex: none; }
+#quota.tight .qc.qbarcell .qtrack { width: calc(20px * var(--k)); }   /* 四家都开、并成三格时放不下：条短一点 */
+#quota .qc.qbarcell .qp { padding-left: 0; }
+#quota .ok { --bar: #4f7fd8; }
+#quota .mid { --bar: #e0902f; }
+#quota .low { --bar: #c0392b; }
+#quota .qnote { font-size: calc(8.5px * var(--k)); color: #a8958a; }
+/* 峰谷时段（设置里选款式）。时间条：一天 24 小时，红 = 高峰、绿 = 空闲，竖线 = 现在（北京时间）；颜色要够深，浅色桌面上也看得清 */
+#quota .peak { padding: calc(2px * var(--k)) 0 0; }
+#quota .peakbar { position: relative; width: calc(150px * var(--k)); height: calc(6px * var(--k)); margin: 0 auto; border-radius: calc(3px * var(--k)); overflow: hidden; background: #7cc493; box-shadow: inset 0 0 0 calc(.5px * var(--k)) rgba(74,36,24,.35); }
+#quota .peakbar i { position: absolute; top: 0; bottom: 0; }
+#quota .peakbar i.peak-on { background: #ec8174; }
+#quota .peakbar i.valley-on { background: #7cc493; }
+#quota .peaknow { position: absolute; top: calc(-1px * var(--k)); width: calc(150px * var(--k)); left: 50%; margin-left: calc(-75px * var(--k)); height: calc(8px * var(--k)); pointer-events: none; }
+#quota .peaknow b { position: absolute; top: 0; bottom: 0; width: calc(2px * var(--k)); margin-left: calc(-1px * var(--k)); background: #3a2219; border-radius: 1px; box-shadow: 0 0 0 calc(1px * var(--k)) #fff; }
+#quota .peakwrap { position: relative; }
+#quota .peakticks { position: relative; width: calc(150px * var(--k)); height: calc(11px * var(--k)); margin: 0 auto; font-size: calc(8px * var(--k)); color: #6b4a3a; }
+#quota .peakticks span { position: absolute; top: 0; transform: translateX(-50%); }
+#quota .peakticks span:first-child { transform: none; }
+#quota .peakticks span:last-child { transform: translateX(-100%); }
+/* 文字款：一行「● 高峰」或「● 空闲」 */
+#quota .peaktext { font-weight: 600; }
+#quota .peaktext.peak-on { color: #dc5f51; }
+#quota .peaktext.valley-on { color: #4aa265; }
+#quota .peaktext::before { content: ''; display: inline-block; width: calc(7px * var(--k)); height: calc(7px * var(--k)); margin-right: calc(4px * var(--k)); border-radius: 50%; background: currentColor; vertical-align: calc(.5px * var(--k)); }
+/* 额度合并显示：一家 AI 一行，名字一列、每个额度窗口一列（quota-aggregate.js），只有紧张的百分比变红 */
+#quota.agg:not(:empty) { display: grid; justify-content: center; text-align: left; font-variant-numeric: tabular-nums; }
+#quota .qn { white-space: nowrap; padding-right: calc(7px * var(--k)); font-weight: 600; }
+#quota .qc { white-space: nowrap; padding: 0 calc(6px * var(--k)); }
+#quota .qn + .qc { padding-left: 0; }
+#quota .qc + .qc { border-left: 1px solid rgba(107,74,58,.25); }
+#quota .qc .low { color: #c0392b; font-weight: 700; }
+/* 四家都有时 4 行要塞进底栏（#foot 的 62px 预算里额度小窗最多约 43px），人物才不会被顶上去；字放大时预算也按 k 放大 */
+#quota.tight { font-size: calc(9px * var(--k)); line-height: 1.1; }
+#quota.tight .qc { padding: 0 calc(4px * var(--k)); }
+#quota.tight .qn { padding-right: calc(5px * var(--k)); }
+
+/* 身体动作：切换时用 animation 平滑接上 */
+.m-bob   { animation: bob 3.2s ease-in-out infinite; }
+.m-hop   { animation: bob-big .8s ease-in-out infinite; }
+.m-jump  { animation: jump .7s ease-in-out infinite; }
+.m-quick { animation: bob-small .45s ease-in-out infinite; }
+.m-rock  { animation: rock 3s ease-in-out infinite; }
+.m-sway  { animation: rock 1.8s ease-in-out infinite; }
+.m-slow  { animation: bob-tiny 4.5s ease-in-out infinite; }
+.m-shake { animation: shake 1.4s ease-in-out infinite; }
+/* 红温：浑身发抖、泛红光；被甩晕：东倒西歪 */
+.m-angry { animation: angry .14s linear infinite; }
+.m-angry img { filter: drop-shadow(0 0 7px rgba(255, 60, 30, .75)) saturate(1.15); }
+.m-dizzy { animation: dizzy 1.1s ease-in-out infinite; }
+/* 多会话时被甩：小卡片东倒西歪 */
+#cards.shaken .scard { animation: card-wobble .22s ease-in-out 4 alternate; }
+#cards.shaken .scard:nth-child(even) { animation-direction: alternate-reverse; }
+@keyframes card-wobble { from { transform: scale(.92) translate(-5px, 2px) rotate(-16deg); } to { transform: scale(.92) translate(5px, -3px) rotate(16deg); } }
+@keyframes angry { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(-1.2%, .4%); } 50% { transform: translate(1.2%, -.4%); } 75% { transform: translate(-.8%, -.3%); } }
+@keyframes dizzy { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(6deg); } }
+.m-squish{ animation: squish 1.6s ease-in-out infinite; }
+.m-gift  { animation: gift .65s cubic-bezier(.3,1.6,.5,1) 1, bob-big 1.1s ease-in-out .65s infinite; }
+.m-jolt  { animation: jolt .55s cubic-bezier(.3,1.6,.5,1) 1, bob 3.2s ease-in-out .55s infinite; }
+@keyframes bob { 50% { transform: translateY(-2.5%); } }
+@keyframes bob-big { 50% { transform: translateY(-5%); } }
+@keyframes bob-small { 50% { transform: translateY(-1.8%); } }
+@keyframes bob-tiny { 50% { transform: translateY(-.8%) scale(1.01, 1.015); } }
+@keyframes jump { 0%,100% { transform: translateY(0) scale(1.02,.98); } 50% { transform: translateY(-9%) scale(.98,1.02); } }
+@keyframes rock { 0%,100% { transform: rotate(-2.5deg); } 50% { transform: rotate(2.5deg); } }
+@keyframes shake { 0%,50%,100% { transform: translateX(0); } 10% { transform: translateX(-3%); } 20% { transform: translateX(3%); }
+  30% { transform: translateX(-2%); } 40% { transform: translateX(2%); } }
+@keyframes squish { 50% { transform: scale(.96, 1.05); } }
+@keyframes gift { 0% { transform: translateY(3%) scale(1.05,.93); } 45% { transform: translateY(-9%) scale(.97,1.04); } 100% { transform: none; } }
+@keyframes jolt { 0% { transform: translate(0,0) rotate(0); } 25% { transform: translate(-3%, -4%) rotate(-4deg) scale(.97,1.04); } 60% { transform: translate(1%, 0) rotate(1.5deg); } 100% { transform: none; } }
+</style></head>
+<body>
+<div id="wrap">
+  <div id="bubble" class="hide"></div>
+  <div id="stage">
+    <div id="aura"></div><div id="shadow"></div>
+    <div id="impact"><div id="body"><img id="a" class="on"><img id="b"><img id="blink"></div></div>
+    <div id="fx"></div>
+    <div id="cards"><div id="more"></div></div>
+    <div id="poof"><i style="--dx:-60px;--dy:-30px"></i><i style="--dx:55px;--dy:-35px"></i><i style="--dx:-45px;--dy:40px"></i><i style="--dx:50px;--dy:35px"></i><i style="--dx:0;--dy:-60px"></i></div>
+  </div>
+  <div id="foot"><div id="caption"></div><div id="quota"></div></div>
+</div>
+<script>
+addEventListener('error', e => {
+  if (!(e.target && e.target.tagName === 'IMG' && e.target.src)) return
+  window.chrome?.webview?.postMessage({ imageError: e.target.src })
+}, true)
+// 脚本出错：交给外壳记进日志（Claudia 加的，方便发现删改后漏掉的引用）
+addEventListener('error', e => {
+  if (e.target && e.target.tagName) return   // 图片之类的资源错误上面处理
+  window.chrome?.webview?.postMessage({ jsError: `${e.message} @ ${(e.filename || '').split('/').pop()}:${e.lineno}` })
+})
+addEventListener('unhandledrejection', e => window.chrome?.webview?.postMessage({ jsError: 'promise: ' + (e.reason?.message || e.reason) }))
+</script>
+<script src="effects.js"></script>
+<script src="text-size.js"></script>
+<script src="quota-bars.js"></script>
+<script src="dsh-physics.js"></script>
+<script src="pet-motion.js"></script>
+<script src="idle-policy.js"></script>
+<script src="click-sequence.js"></script>
+<script src="motion-mood.js"></script>
+<script>
+// Claudia 画面：由 Windows 外壳（Claudia.exe）调用这几个函数
+//   init(manifest)          角色清单（characters/*/character.json + 立绘）
+//   setCharacter(id)        设定角色（Claudia 只有 Claude 娘）
+//   applyCharState(id, s)   Claude 的工作状态（插件写的 claude-state.json）
+//   setQuota(id, q)         Claude 的额度（插件写的 claude-quota.json）
+//   setQuotaStyle(s)        额度怎么显示：'text' 文字（默认）/ 'bars' 额度条（quota-bars.js）
+//   handleClick(kind)       单击 = pat（摸摸头），右键菜单「戳一下」= poke
+
+const MOTION = {
+  idle: 'm-bob', listening: 'm-hop', thinking: 'm-rock', reading: 'm-rock', writing: 'm-bob', running: 'm-quick',
+  searching: 'm-sway', delegating: 'm-sway', happy: 'm-jump', proud: 'm-hop', oops: 'm-shake', surprised: 'm-jolt',
+  pat: 'm-sway', sleeping: 'm-slow', tired: 'm-slow', hum: 'm-sway', stretch: 'm-squish', yawn: 'm-squish', drawing: 'm-rock',
+  bye: 'm-dash',
+  // 角色专属姿态（没列出的默认轻轻浮动）
+  compact: 'm-squish', sorry: 'm-slow', clawd: 'm-sway',
+  asking: 'm-hop', update: 'm-gift',
+  // 甩她 / 红温
+  annoyed: 'm-rock', puffed: 'm-jolt', redhot: 'm-angry', sulk: 'm-slow', dizzy: 'm-dizzy', coaxed: 'm-sway', forgiven: 'm-hop',
+  // 按时段 / 节日打招呼
+  greet_morning: 'm-hop', greet_noon: 'm-bob', greet_afternoon: 'm-sway', greet_evening: 'm-sway', greet_night: 'm-slow', greet_dawn: 'm-slow',
+  fest_halloween: 'm-gift', fest_christmas: 'm-gift', fest_newyear: 'm-jump', fest_spring: 'm-gift', fest_lantern: 'm-gift',
+  fest_dragonboat: 'm-gift', fest_midautumn: 'm-gift', fest_national: 'm-hop',
+}
+const LOCAL_LINES = {
+  idle: ['……', '在呢'], pat: ['嘿嘿', '（蹭蹭）'], surprised: ['诶？！'], hum: ['♪～'], stretch: ['伸个懒腰～'],
+  yawn: ['哈啊……'], sleeping: ['zZz'], tired: ['有点累了…'],
+}
+// 新加的姿态还没画立绘时，先用哪张顶上
+const POSE_FALLBACK = { compact: 'writing', sorry: 'listening', asking: 'listening', update: 'happy', bye: 'happy',
+  busy_left: 'thinking', busy_right: 'thinking', swamped_left: 'busy_left', swamped_right: 'busy_right',
+  annoyed: 'surprised', puffed: 'surprised', redhot: 'surprised', sulk: 'surprised', dizzy: 'oops', coaxed: 'pat', forgiven: 'happy' }
+const TRANSIENT = { happy: 5000, proud: 6000, oops: 4000, surprised: 3000, pat: 4000, hum: 4000, stretch: 3200, yawn: 3000,
+  annoyed: 4500, puffed: 5000, dizzy: 3000, coaxed: 3500, forgiven: 5000 }
+for (const p of Object.keys(MOTION)) if (p.startsWith('greet_')) TRANSIENT[p] = 5500; else if (p.startsWith('fest_')) TRANSIENT[p] = 6500
+const DWELL = 2500              // 每个状态至少停留这么久，太快的切换合并成最后一个
+const BACK_TO_THINKING = 1500   // 工具做完后等这么久没有新工具，才回到「思考」
+const LISTEN_TO_THINKING = 1800 // 收到消息先「听」，稍后自动转「思考」
+const SLEEP_AFTER = 10 * 60 * 1000
+
+const $ = id => document.getElementById(id)
+const pick = list => list[Math.floor(Math.random() * list.length)]
+let manifest = { characters: {} }
+let charId = null, pose = null, poseSince = 0, currentUrl = '', swappedAt = 0
+let active = document.getElementById('a'), spare = document.getElementById('b')
+let shownAt = 0, pending = null, thinkTimer = null, revertTimer = null
+let characterGeneration = 0, characterTimer = null, characterTarget = null
+function characterTimeout(fn, ms, owner = charId, generation = characterGeneration) {
+  return setTimeout(() => { if (owner === charId && generation === characterGeneration) fn() }, ms)
+}
+let lastActive = Date.now()
+const charState = {}, quota = {}, seenTool = {}, lastTrouble = {}
+
+const char = () => manifest.characters[charId]
+const linesOf = p => (char()?.lines && char().lines[p]) || LOCAL_LINES[p]
+function framesFor(p) {
+  const c = char(); if (!c) return []
+  for (let q = p, i = 0; q && i < 4; q = POSE_FALLBACK[q], i++) if (c.poses[q]) return c.poses[q]   // 没画的顺着替补往下找
+  return c.poses.idle || c.poses.default || []
+}
+
+// ---- 画面 ----
+// 没有眨眼图时去掉地址：设成空字符串，浏览器会拿网页自己的地址去当图片加载，日志里多一条误导人的「立绘加载失败: …/index.html」
+function setBlinkSrc(u) { if (u) $('blink').src = u; else $('blink').removeAttribute('src') }
+// 两张图轮流交叉淡入：新图加载好之后再盖上来，旧图淡出，不会出现空白。
+// 每次换图都清掉旧的 onload，回调里再核对一次身份，避免过期回调把两张图的前后顺序搅乱。
+const imgA = $('a'), imgB = $('b')
+function showImage(url, instant) {
+  if (!url || url === currentUrl) return
+  currentUrl = url
+  swappedAt = Date.now()
+  imgA.onload = imgB.onload = null
+  if (instant) {  // 换角色时舞台是隐藏的，直接换图，不要和上一个角色叠在一起
+    spare.classList.remove('on'); spare.removeAttribute('src')
+    active.src = url; active.classList.add('on')
+    return
+  }
+  const next = spare
+  next.onload = () => {
+    next.onload = null
+    if (currentUrl !== url || next !== spare) return
+    next.classList.add('on'); active.classList.remove('on')
+    spare = active; active = next
+    swappedAt = Date.now()
+  }
+  next.src = url
+}
+// 兜底：任何时候都保证正好有一张图在显示
+setInterval(() => {
+  if (active === spare) spare = active === imgA ? imgB : imgA
+  if (!active.classList.contains('on') && !spare.classList.contains('on')) {
+    if (!active.getAttribute('src') && currentUrl) active.src = currentUrl
+    active.classList.add('on')
+  }
+}, 2000)
+
+// instant：同一个姿态里只是数字变了（比如更新进度），直接换掉，不淡出淡入
+function setFx(p, instant) {
+  const fx = $('fx'), owner = charId, poseAt = p, generation = characterGeneration
+  const render = () => {
+    if (owner !== charId || generation !== characterGeneration || pose !== poseAt || multi) return
+    // character.json 的 fx 可以为姿态选择特效，例如 proud 使用金色闪光
+    const named = char()?.fx?.[p]
+    const inner = !window.ClaudiaFx ? '' : named && ClaudiaFx.named?.[named] ? ClaudiaFx.named[named] : ClaudiaFx.surroundings(p)
+    fx.innerHTML = inner ? `<svg viewBox="0 0 ${ClaudiaFx.CW} ${ClaudiaFx.CH}" xmlns="http://www.w3.org/2000/svg">${inner}</svg>` : ''
+    fx.classList.remove('hide')
+  }
+  if (instant) { render(); return }
+  fx.classList.add('hide')
+  setTimeout(render, 220)
+}
+function setPose(p, instant) {
+  if (p === pose) return
+  pose = p; poseSince = Date.now()
+  const frames = framesFor(p)
+  instant = instant || document.documentElement.classList.contains('moving')
+  showImage(instant ? frames[0] : pick(frames), instant)
+  $('body').className = MOTION[p] || 'm-bob'
+  noteRest(p)
+  const aura = (window.ClaudiaFx && ClaudiaFx.AURA[p]) || ['#ffd9b0', .35]
+  document.documentElement.style.setProperty('--aura', aura[0])
+  document.documentElement.style.setProperty('--aura-o', Math.min(.75, aura[1] * 1.4))
+  setFx(p)
+}
+// 名牌上的名字：设置里可以关掉（额度照常显示）
+function setShowName(on) { document.documentElement.classList.toggle('no-name', !on) }
+// 文字大小（设置里和人物大小分开调）：外壳交来人物大小、文字大小、锁没锁；这里定好文字区域放大多少（--k），
+// 把画布尺寸交回外壳去设窗口（窗口 = 画布 × 人物大小）。规则在 text-size.js；锁着时 k = 1，和以前一样
+function setSizes(size, textSize, linked) {
+  const L = TextSize.layout(size, TextSize.effectiveText(size, textSize, linked))
+  document.documentElement.style.setProperty('--k', String(L.k))
+  return JSON.stringify({ w: L.w, h: L.h, foot: L.foot })
+}
+// 背景光晕：'auto'（跟着系统深浅色）/ 'on' / 'off'，由宿主调用
+function setAuraMode(mode) {
+  const c = document.documentElement.classList
+  c.toggle('aura-on', mode === 'on')
+  c.toggle('aura-off', mode === 'off')
+}
+// 能点到的区域（网页像素，[x, y, 宽, 高]）：桌宠本体、气泡、名牌、额度。窗口其余透明的地方让点击穿过去，
+// 点到后面的窗口（窗口比桌宠大，是给动作、气泡留的空间）
+function hitRects() {
+  const out = []
+  for (const id of ['body', 'bubble', 'caption', 'quota']) {
+    const el = $(id)
+    if (!el || (id === 'bubble' && el.classList.contains('hide')) || el.classList.contains('hidden')) continue
+    const cs = getComputedStyle(el)
+    if (cs.display === 'none' || cs.visibility === 'hidden') continue
+    const r = el.getBoundingClientRect()
+    if (r.width < 1 || r.height < 1) continue
+    out.push([r.left - 4, r.top - 4, r.width + 8, r.height + 8].map(Math.round))
+  }
+  return JSON.stringify(out)
+}
+// 手动退出前的告别：这句话钉住，退出前不让别的台词或清空盖掉
+let farewellLine = null
+// 从菜单退出：挥手道别（没画 bye 立绘的先用 happy），最后一秒转身走开。
+// line 为空时说一句她自己的道别台词；ms 是外壳多久之后退出
+function farewell(line, ms = 2000) {
+  motionMood.clear()
+  clickSequence.cancel()
+  if (multi) { const m = multi; multi = null; clearInterval(m.flipTimer); clearTimeout(m.recheck); clearTimeout(m.chatter); clearTimeout(m.sayTimer); for (const c of m.cards.values()) c.el.remove(); $('more').classList.remove('on') }
+  clearTimeout(thinkTimer); clearTimeout(stuckTimer)
+  show('bye', true)
+  $('body').className = 'm-bob'   // 先挥着手轻轻晃，别一上来就走
+  setTimeout(() => { $('body').className = 'm-leave' }, Math.max(0, ms - 1100))
+  farewellLine = line || pick(linesOf('bye') || ['']) || ''
+  say(farewellLine)
+}
+function say(line) {
+  if (farewellLine !== null && line !== farewellLine) return
+  const b = $('bubble')
+  if (!line) { b.classList.add('hide'); return }
+  b.textContent = line
+  b.classList.remove('hide')
+}
+// ---- 额度：Claude 的 5 小时 / 每周窗口（插件写 claude-quota.json）。'text' 文字（默认）/ 'bars' 额度条（quota-bars.js）----
+let quotaStyle = 'text'
+function setQuotaStyle(s) { quotaStyle = s === 'bars' ? 'bars' : 'text'; renderQuota() }
+function renderQuota() {
+  const el = $('quota')
+  el.style.gridTemplateColumns = ''
+  const q = quota[charId]
+  const bars = quotaStyle === 'bars' && QuotaBars.of(q, Date.now() / 1000)
+  if (bars) {
+    QuotaBars.render(el, bars)
+    el.className = 'bars'   // 不加 low：快用完的那一行自己变红，整块不变红底
+    // 底栏（#foot）有高度预算，超了人物会被顶上去：额度条放不下就这一次按文字画
+    const k = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--k')) || 1
+    if ($('foot').offsetHeight <= 62 * Math.max(1, k) + 0.5) return
+  }
+  // 多个额度窗口用「｜」隔开，每个占一行，不在半中间折行
+  el.replaceChildren(...(q?.text || '').split(/\s*｜\s*/).filter(Boolean).map(t => {
+    const line = document.createElement('div'); line.textContent = t; return line
+  }))
+  el.className = q?.low ? 'low' : ''
+}
+// 临时动作（打招呼、开心、被摸头……）演完回到哪：AI 还在干活 / 等你回答就回到那个样子，
+// 不然一条要跑好几分钟的命令中途她演了个招呼，之后一直没有新事件，就会站着不动
+function restPose() {
+  if (aiActivity()) { const p = charState[charId].pose; return p === 'listening' ? 'thinking' : p }
+  return quota[charId]?.low ? 'tired' : 'idle'
+}
+// 这个角色有没有某个姿态的专属立绘
+const hasPose = p => !!char()?.poses?.[p]
+// 角色外观相关的 CSS 变量：气泡边框、读书时飘的字符颜色
+function applyLook(c) {
+  const root = document.documentElement.style
+  root.setProperty('--accent', c.accent || '#e0b48a')
+  root.setProperty('--glyph', c.glyph?.fill || '#b5651d')
+  root.setProperty('--glyph-stroke', c.glyph?.stroke || 'none')
+}
+
+// 换到某个状态：遵守最短停留；短暂状态过后回到常态（闲着 / 额度紧张时累了）
+function show(p, urgent) {
+  if (farewellLine !== null) return   // 正在道别：Claude 的工作事件先不打断
+  if (p === 'idle') p = restPose()   // Claude 发来「闲着」时也要看额度：快用完了就是累的样子
+  const wait = shownAt + DWELL - Date.now()
+  clearTimeout(pending)
+  if (!urgent && wait > 0) { pending = characterTimeout(() => show(p, true), wait); return }
+  shownAt = Date.now()
+  clearTimeout(revertTimer)
+  if (p !== pose) {
+    setPose(p)
+    const lines = linesOf(p)
+    say(lines ? pick(lines) : '')
+  }
+  if (TRANSIENT[p]) revertTimer = characterTimeout(() => { setPose(restPose()); say(''); motionMood.attempt() }, TRANSIENT[p])
+}
+
+// ---- Windows 外壳接口 ----
+function init(m) {
+  manifest = m
+  for (const c of Object.values(m.characters))
+    for (const list of Object.values(c.poses)) for (const u of list) { const i = new Image(); i.onerror = () => window.chrome?.webview?.postMessage({ imageError: u }); i.src = u }   // 预加载失败也报（页面里的监听收不到）
+  // 没有当前角色时按 id 排序，保证初始化顺序稳定
+  // 正在换角色、要换上的那个还在新清单里：让它换完（换衣服时外壳会重新 init）
+  if (characterTarget && manifest.characters[characterTarget]) return
+  if (characterTarget) { ++characterGeneration; clearTimeout(characterTimer); characterTimer = null; characterTarget = null; $('stage').classList.remove('swap') }
+  if (!charId || !manifest.characters[charId]) setCharacter(Object.keys(m.characters).sort()[0], true)
+  else { $('caption').textContent = char().name }
+}
+
+// 登场台词冷却：同一个角色 30 分钟内只打一次招呼，在几个 AI 的 App 之间来回切时不用每次都听「XX 来了」
+const GREET_COOLDOWN = 30 * 60 * 1000
+const greetedAt = {}
+function greetDue(id) {
+  if (Date.now() - (greetedAt[id] || 0) < GREET_COOLDOWN) return false
+  greetedAt[id] = Date.now()
+  return true
+}
+
+function setCharacter(id, quiet) {
+  if (!manifest.characters[id] || id === characterTarget) return
+  if (id === charId && !characterTimer) return
+  const generation = ++characterGeneration
+  clearTimeout(characterTimer)
+  // 上一个角色还没跑完的定时动作（听完转思考、工具结束回思考、排队等着换的动作、演完回待机）全部作废：
+  // 不然会落到换上来的角色身上——她明明闲着，却突然开始思考 / 写东西（PR #26 @KQYaili 报的「串台」）
+  const dropTimers = () => { clearTimeout(thinkTimer); clearTimeout(pending); clearTimeout(revertTimer); clearTimeout(stuckTimer) }
+  const endMulti = () => {
+    if (!multi) return
+    const m = multi; multi = null
+    clearInterval(m.flipTimer); clearTimeout(m.recheck); clearTimeout(m.chatter); clearTimeout(m.sayTimer)
+    for (const c of m.cards.values()) c.el.remove(); $('more').classList.remove('on')
+  }
+  dropTimers()
+  characterTarget = id
+  endMulti()
+  characterTimeout(refreshMulti, 700, id, generation)   // 换过去的角色如果也有好几个对话在干活，接着演
+  const stage = $('stage')
+  const p = $('poof'); p.classList.remove('go'); void p.offsetWidth; p.classList.add('go')
+  stage.classList.add('swap')
+  characterTimer = setTimeout(() => {
+    if (generation !== characterGeneration) return
+    characterTimer = null
+    characterTarget = null
+    if (!manifest.characters[id]) { $('stage').classList.remove('swap'); return }
+    dropTimers()   // 冒烟这 0.33 秒里，上一个角色的事件可能又排了新的
+    endMulti()
+    lastActive = Date.now()
+    charId = id; pose = null; currentUrl = ''; shownAt = 0
+    const c = char()
+    applyLook(c)
+    setBlinkSrc(c.blink)
+    $('caption').textContent = c.name
+    const s = charState[id]
+    const busy = s && Date.now() / 1000 - s.ts < 60 && !TRANSIENT[s.pose] && s.pose !== 'idle'
+    setPose(busy ? s.pose : restPose(), true)
+    if (busy) watchStuck()   // 接着演她自己的活：卡住兜底按她自己的时间重新算
+    if (busy && s.pose === 'listening') thinkTimer = characterTimeout(() => show('thinking'), LISTEN_TO_THINKING)
+    // 这个时段 / 节日还没打过招呼：演专属的登场动作；打过了就用平常那句（30 分钟冷却）
+    if (quiet) say('')
+    else if (!timeGreet(id, busy)) say(greetDue(id) ? (c.greeting || `${c.name} 在这儿～`) : '')
+    renderQuota()
+    // 新立绘加载好再淡入，避免先看到空白
+    const reveal = () => stage.classList.remove('swap')
+    if (active.complete && spare.complete) characterTimeout(reveal, 60); else characterTimeout(reveal, 160)
+  }, 330)
+}
+
+// ---- 按时段 / 节日打招呼 ----
+// 每个角色在每个时段（早上、中午、下午、晚上、深夜、凌晨）第一次见面时演一次专属动作；节日当天第一次见面换成节日装扮。
+// 打过招呼的记在本机（localStorage），重启 App 不会重复。没画立绘的角色只说台词；连台词都没有就用平常那句。
+// 农历节日的公历日期（春节、元宵、端午、中秋），用 lunardate 算好写死，2036 年之后需要补
+const LUNAR = {
+  2026: ['02-17', '03-03', '06-19', '09-25'], 2027: ['02-06', '02-20', '06-09', '09-15'], 2028: ['01-26', '02-09', '05-28', '10-03'],
+  2029: ['02-13', '02-27', '06-16', '09-22'], 2030: ['02-03', '02-17', '06-05', '09-12'], 2031: ['01-23', '02-06', '06-24', '10-01'],
+  2032: ['02-11', '02-25', '06-12', '09-19'], 2033: ['01-31', '02-14', '06-01', '09-08'], 2034: ['02-19', '03-05', '06-20', '09-27'],
+  2035: ['02-08', '02-22', '06-10', '09-16'], 2036: ['01-28', '02-11', '05-30', '10-04'],
+}
+const pad2 = n => String(n).padStart(2, '0')
+const ymd = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+function timeSlot(d) {
+  const h = d.getHours()
+  return h >= 23 || h < 2 ? 'night' : h < 5 ? 'dawn' : h < 11 ? 'morning' : h < 14 ? 'noon' : h < 18 ? 'afternoon' : 'evening'
+}
+function festivalOf(d) {
+  const y = d.getFullYear(), md = ymd(d).slice(5), [spring, lantern, dragonboat, midautumn] = LUNAR[y] || []
+  // 单日的节日优先（中秋偶尔落在国庆假期里）
+  if (md === lantern) return 'lantern'
+  if (md === dragonboat) return 'dragonboat'
+  if (md === midautumn) return 'midautumn'
+  if (md === '10-31') return 'halloween'
+  if (md === '12-24' || md === '12-25') return 'christmas'
+  if (md === '01-01') return 'newyear'
+  if (spring) {
+    const days = (d - new Date(`${y}-${spring}T00:00:00`)) / 86400000
+    if (days >= 0 && days < 7) return 'spring'   // 初一到初七
+  }
+  if (md >= '10-01' && md <= '10-07') return 'national'
+  return null
+}
+function greetMemory(update) {
+  let m = {}
+  try { m = JSON.parse(localStorage.getItem('claudia-greeted')) || {} } catch {}
+  if (update) { update(m); try { localStorage.setItem('claudia-greeted', JSON.stringify(m)) } catch {} }
+  return m
+}
+// 返回 true = 打过招呼了（演了专属动作或说了专属台词）
+function timeGreet(id, busy) {
+  const c = manifest.characters[id]
+  if (!c) return false
+  const now = new Date(), fest = festivalOf(now), slot = timeSlot(now)
+  const day = ymd(new Date(now - 5 * 3600000))   // 凌晨 5 点前还算前一天：深夜 23–2 点是同一个时段
+  const slotKey = `slot:${day}:${slot}`, festKey = `fest:${ymd(now)}:${fest}`
+  const done = greetMemory()[id] || []
+  const has = p => !!(c.poses?.[p] || c.lines?.[p])
+  let p = null
+  if (fest && !done.includes(festKey) && has('fest_' + fest)) p = 'fest_' + fest
+  else if (!done.includes(slotKey) && has('greet_' + slot)) p = 'greet_' + slot
+  if (!p) return false
+  greetMemory(m => { m[id] = [...(m[id] || []).filter(k => k.includes(day) || k.includes(ymd(now))), slotKey, ...(fest ? [festKey] : [])] })
+  greetedAt[id] = Date.now()
+  const line = pick(c.lines?.[p] || [c.greeting || ''])
+  if (!busy && c.poses?.[p]) { show(p, true); say(line) }   // 正在干活时不打断，只说一句
+  else say(line)
+  return true
+}
+// 一直开着的时候，进入新的时段 / 节日也打个招呼：只在闲着、最近有人在（没睡着）的时候
+setInterval(() => {
+  if (!charId) return
+  if ((pose !== 'idle' && pose !== 'tired') || Date.now() - lastActive > SLEEP_AFTER) return
+  timeGreet(charId, false)
+}, 60000)
+
+// 换了衣服（皮肤）：外壳重新 init 过立绘清单后调它，正在显示的就是这个角色就重新换上
+function refreshLook(id) {
+  if (charId !== id || (characterTarget && characterTarget !== id)) return
+  charId = null
+  setCharacter(id, true)
+}
+
+function setName(id, name) {
+  if (!manifest.characters[id]) return
+  manifest.characters[id].name = name
+  if (id === charId) $('caption').textContent = name
+}
+
+// 兜底：干活的样子（思考、读写、跑命令……）停了这么久没有任何新事件，就当这一轮已经停了，回去待机。
+// Claude 被你中途打断时不一定发「结束」，不然她会一直停在思考。
+// 「等你回答」不算：那是在等你，本来就可能很久
+const STUCK_AFTER = 3 * 60 * 1000
+const NOT_WORKING = new Set(['idle', 'sleeping', 'asking', 'tired', 'hungry', 'happy', 'proud', 'oops', 'surprised'])
+let stuckTimer = null
+function watchStuck() {
+  clearTimeout(stuckTimer)
+  stuckTimer = characterTimeout(() => {
+    if (multi || !pose || NOT_WORKING.has(pose) || pose.startsWith('greet_') || pose.startsWith('fest_')) return
+    clearTimeout(thinkTimer)
+    show('idle', true)
+    say('')
+    motionMood.attempt()
+  }, STUCK_AFTER)
+}
+
+// ---- 特效省电 ----
+// 实测（M 系列 Mac）：身边的 SVG 特效（星星、思考云、小卡片）是耗电大头，SVG 自己的时钟跑时整个桌宠占一个核的 16%～19%，
+// 停掉特效只剩 1.5%；人物浮动、光晕是 CSS 变换，几乎不花钱。所以只管特效：
+// - 暂停 SVG 自己的时钟，跟着屏幕刷新按帧推进（#fx、多会话卡片都算）：平时 60 帧（干活时约 11%），省电模式 30 帧（约 8%）。
+//   15 帧时画笔、终端里的字明显一顿一顿，用户反馈过，所以省电模式也不再往下压
+// - 闲着（待机 / 累 / 睡着）超过 30 秒（省电模式 10 秒）：特效淡出并停下；睡着的 zZz 保留，每秒 5 帧
+// - 窗口看不见（被挡住、锁屏、屏幕休眠）：外壳调 setPageHidden(true)，全部暂停
+const RESTING = new Set(['idle', 'tired', 'sleeping'])
+let powerSave = false, fxResting = false, pageHidden = false, fxClock = null, fxFps = 0, restTimer = null
+function fxTick() {
+  const now = performance.now()
+  for (const s of document.querySelectorAll('#fx svg, #cards svg')) {
+    if (s._fxT === undefined) { s.pauseAnimations(); s._fxT = s.getCurrentTime(); s._fxS = now }
+    else if (!s.animationsPaused()) {
+      // 窗口藏起来再露出来时，重新核对 SVG 动画的暂停状态：
+      // 它自己的时钟和这里按帧拨的时间交替生效，终端里的字一帧在一帧不见、zZz 错位（#9 @SkywingJam 发现并录屏对照）。
+      // 重新停住，从上一帧的时间接着走（也不跨过藏起来的那段）
+      s.pauseAnimations(); s._fxT = s._fxLast ?? s.getCurrentTime(); s._fxS = now
+    }
+    s._fxLast = s._fxT + (now - s._fxS) / 1000
+    s.setCurrentTime(s._fxLast)
+  }
+}
+function applyFxRate() {
+  const fps = pageHidden ? 0 : fxResting ? (pose === 'sleeping' ? 5 : 0) : powerSave ? 30 : 60
+  $('fx').classList.toggle('rest', fxResting && pose !== 'sleeping' && !pageHidden)
+  document.documentElement.classList.toggle('frozen', pageHidden)
+  if (fps === fxFps && (fps === 0 || fxClock)) return
+  // 停过表（藏起来、闲着歇了）再开：从停下时的那一帧接着走，不一下子跳过停着的那段
+  if (fxFps <= 0 && fps > 0) { const now = performance.now(); for (const s of document.querySelectorAll('#fx svg, #cards svg')) if (s._fxLast !== undefined) { s._fxT = s._fxLast; s._fxS = now } }
+  fxFps = fps
+  clearInterval(fxClock); fxClock = null
+  fxTick()   // 新出现的先接管（停住自己的时钟）
+  if (fps > 0) {
+    // 跟着屏幕刷新出帧（隔几帧出一帧），节拍均匀；单用定时器和屏幕刷新对不齐，一帧停得长一帧停得短，移动的文字、画笔看着一抖一抖
+    if (!fxRaf) fxRaf = requestAnimationFrame(fxLoop)
+    // 兜底：窗口在后台、刚从全屏回来时 requestAnimationFrame 可能不触发，这时按定时器走
+    fxClock = setInterval(() => {
+      if (performance.now() - fxLast > 250) { fxLast = performance.now(); fxTick(); if (!fxRaf) fxRaf = requestAnimationFrame(fxLoop) }
+    }, 1000 / Math.min(fps, 10))
+  }
+}
+let fxRaf = 0, fxLast = 0
+function fxLoop(t) {
+  fxRaf = 0
+  if (fxFps <= 0) return
+  if (t - fxLast >= 1000 / fxFps - 4) { fxLast = t; fxTick() }
+  fxRaf = requestAnimationFrame(fxLoop)
+}
+// 新画上去的特效马上接管，别先按 60 帧跑一下
+new MutationObserver(() => fxTick()).observe(document.getElementById('stage'), { childList: true, subtree: true })
+function noteRest(p) {
+  clearTimeout(restTimer)
+  if (fxResting) { fxResting = false; applyFxRate() }
+  if (RESTING.has(p)) restTimer = setTimeout(() => { if (RESTING.has(pose)) { fxResting = true; applyFxRate() } }, powerSave ? 10000 : 30000)
+}
+function setPowerSave(on) { powerSave = !!on; fxFps = -1; noteRest(pose); applyFxRate() }
+function setPageHidden(h) { pageHidden = !!h; motionMood.setHidden(pageHidden); if (pageHidden) clickSequence.cancel(); applyFxRate() }
+applyFxRate()
+
+// ---- 多会话：同一个 AI 好几个对话同时在干活 ----
+// 外壳把 <角色>-sessions.json（{会话id: {pose, event, ts}}）交过来。两个以上同时在干活时她「手忙脚乱」：
+// 左右两帧来回切（busy_left / busy_right；三个以上换更崩溃的 swamped_*），每个对话一张小卡片演它正在做的事，
+// 她转向哪边，哪边的卡片就亮。干完的卡片打绿勾、出错的变红抖一下，停几秒后消失；有对话在等你回答时她换成「等你回答」
+const sessions = {}         // 角色 → {会话id: {pose, event, ts}}
+const SESSION_DONE_SHOW = 4  // 干完 / 出错的卡片停几秒
+const SESSION_FLIP = 1500    // 左右两帧多久换一次
+let multi = null             // 正在演：{ side, flipTimer, cards: Map(会话id → {el, pose, shownAt, pending}), order: [会话id] }
+
+function setSessions(id, map) {
+  if (id === 'current') id = charId
+  sessions[id] = map || {}
+  refreshMulti()
+}
+function sessionKind(e, now) {
+  const age = now - Number(e.ts || 0)
+  if (e.pose === 'asking') return age < 600 ? 'ask' : null
+  if (e.pose === 'happy' || e.pose === 'proud') return age < SESSION_DONE_SHOW ? 'done' : null
+  if ((e.pose === 'oops' || e.pose === 'surprised') && e.event === 'Stop') return age < SESSION_DONE_SHOW ? 'error' : null
+  if (e.pose === 'idle' || e.pose === 'sleeping') return null
+  return age < STUCK_AFTER / 1000 ? 'work' : null   // 一轮中途某个工具出错：还在干活，只是卡片变红
+}
+// 当前角色要演的会话：她自己的，加上她响应的各家 AI 的（会话 id 各家不重复，直接合在一起）
+function currentSessions() {
+  const out = { ...(sessions[charId] || {}) }
+  for (const [host, map] of Object.entries(sessions)) if (host === charId) Object.assign(out, map)
+  return out
+}
+function refreshMulti() {
+  const map = currentSessions(), now = Date.now() / 1000
+  const live = Object.entries(map).map(([sid, e]) => [sid, e, sessionKind(e, now)]).filter(x => x[2])
+  const busy = live.filter(x => x[2] === 'work' || x[2] === 'ask').length
+  if (!multi && (busy < 2 || farewellLine !== null)) return
+  // 只剩一个（或没有）对话在干活：等干完 / 出错的卡片演完（几秒），她就恢复成平常一个对话的样子
+  if (multi && busy < 2 && !live.some(x => x[2] === 'done' || x[2] === 'error')) return endMulti()
+  if (!multi) startMulti()
+  lastActive = Date.now()
+  // 卡片顺序固定（先来的在前），不会跳来跳去；最多 4 张，多的显示「+N」
+  for (const [sid] of live) if (!multi.order.includes(sid)) multi.order.push(sid)
+  multi.order = multi.order.filter(sid => live.some(x => x[0] === sid))
+  const shown = multi.order.slice(0, 4)
+  const slots = shown.length <= 2 ? [[-6, 92], [190, 92]] : [[-6, 34], [190, 34], [-6, 152], [190, 152]]
+  for (const [sid, c] of multi.cards) if (!shown.includes(sid)) { c.el.classList.remove('on'); setTimeout(() => c.el.remove(), 400); multi.cards.delete(sid) }
+  shown.forEach((sid, i) => {
+    const [, e, kind] = live.find(x => x[0] === sid)
+    let c = multi.cards.get(sid)
+    if (!c) {
+      c = { el: document.createElement('div'), pose: null, shownAt: 0 }
+      c.el.className = 'scard'; c.el.innerHTML = '<svg></svg><div class="badge">✓</div>'
+      $('cards').appendChild(c.el); multi.cards.set(sid, c)
+      requestAnimationFrame(() => c.el.classList.add('on'))
+    }
+    c.el.style.left = slots[i][0] + 'px'; c.el.style.top = slots[i][1] + 'px'
+    c.side = i % 2 ? 'right' : 'left'
+    flipCard(c)
+    c.el.classList.toggle('done', kind === 'done')
+    c.el.classList.toggle('ask', kind === 'ask')
+    const bad = kind === 'error' || e.pose === 'oops'
+    if (bad && !c.el.classList.contains('error')) c.el.classList.add('error')
+    if (!bad) c.el.classList.remove('error')
+    setCardPose(c, kind === 'done' ? 'happy' : e.pose)
+  })
+  const extra = multi.order.length - shown.length
+  $('more').textContent = extra > 0 ? `+${extra}` : ''
+  $('more').classList.toggle('on', extra > 0)
+  multi.busy = busy
+  multi.asking = live.some(x => x[2] === 'ask')
+  multiPose()
+  // 干完的卡片过几秒自己消失：到时候再看一遍
+  clearTimeout(multi.recheck); multi.recheck = setTimeout(refreshMulti, 1000)
+}
+// 卡片换内容：同一张卡片至少停 1.2 秒，快的工具不会闪
+function setCardPose(c, p) {
+  if (c.pose === p) return
+  clearTimeout(c.pending)
+  const wait = c.shownAt + 1200 - Date.now()
+  if (wait > 0) { c.pending = setTimeout(() => setCardPose(c, p), wait); return }
+  c.pose = p; c.shownAt = Date.now()
+  const svg = c.el.querySelector('svg')
+  svg.setAttribute('viewBox', `0 0 ${ClaudiaFx.CW} ${ClaudiaFx.CH}`)
+  svg.innerHTML = ClaudiaFx.cardProp(p)
+  try {   // 只留道具本身：按它实际占的范围裁。沿路径移动的小东西（画画的笔刷）原点在画布角上，量的时候先藏起来
+    const moving = [...svg.querySelectorAll('animateMotion')].map(a => a.parentNode)
+    moving.forEach(n => n.setAttribute('display', 'none'))
+    const b = svg.getBBox(), pad = 8
+    moving.forEach(n => n.removeAttribute('display'))
+    if (b.width > 0) svg.setAttribute('viewBox', `${b.x - pad} ${b.y - pad} ${b.width + pad * 2} ${b.height + pad * 2}`)
+  } catch {}
+  flipCard(c)
+}
+// 思考云是画在她右上方的，小尾巴朝左下指向她：卡片在她左边时左右翻过来，小尾巴才朝着她（有字的卡片不翻）
+function flipCard(c) {
+  const cloud = c.pose && ClaudiaFx.cardProp(c.pose) === ClaudiaFx.cardProp('thinking')
+  c.el.querySelector('svg').style.transform = cloud && c.side === 'left' ? 'scaleX(-1)' : ''
+}
+function startMulti() {
+  clearTimeout(thinkTimer); clearTimeout(pending); clearTimeout(revertTimer); clearTimeout(stuckTimer)
+  multi = { side: 'left', cards: new Map(), order: [], busy: 0, asking: false }
+  $('fx').classList.add('hide')
+  multi.flipTimer = setInterval(() => { if (multi && !multi.asking) { multi.side = multi.side === 'left' ? 'right' : 'left'; multiPose() } }, SESSION_FLIP)
+  chatterLater()
+}
+// 多会话的台词：刚手忙脚乱时、升级成太忙时、有对话开始等你回答时各说一句（台词在 character.json 的 busy / swamped / asking），4 秒后收起
+// 一直忙着的时候（比如多个 Claude Code 会话长时间工作）：隔 35～55 秒再嘟囔一句，不然开头那句说完就一直不吭声
+function chatterLater() {
+  if (!multi) return
+  clearTimeout(multi.chatter)
+  multi.chatter = setTimeout(() => {
+    if (!multi) return
+    if (!multi.asking && $('bubble').classList.contains('hide')) multiSay(multi.busy >= 3 ? 'swamped' : 'busy')
+    chatterLater()
+  }, 35000 + Math.random() * 20000)
+}
+function multiSay(kind) {
+  const line = pick(linesOf(kind) || [''])
+  if (!line) return
+  say(line)
+  clearTimeout(multi.sayTimer)
+  multi.sayTimer = setTimeout(() => { if ($('bubble').textContent === line) say('') }, 4000)
+}
+function multiPose() {
+  if (!multi) return
+  const level = multi.asking ? 'asking' : multi.busy >= 3 ? 'swamped' : 'busy'
+  if (level !== multi.said && (level !== 'busy' || !multi.said)) multiSay(level)   // 从太忙降回两个时不再说
+  multi.said = level
+  if (multi.asking) { if (pose !== 'asking') { setPose('asking'); $('fx').classList.add('hide') } }
+  else {
+    const p = `${multi.busy >= 3 ? 'swamped' : 'busy'}_${multi.side}`
+    if (pose !== p) { setPose(p, true); $('fx').classList.add('hide') }
+  }
+  for (const c of multi.cards.values()) c.el.classList.toggle('focus', !multi.asking ? c.side === multi.side : c.el.classList.contains('ask'))
+}
+function endMulti() {
+  if (!multi) return
+  clearInterval(multi.flipTimer); clearTimeout(multi.recheck); clearTimeout(multi.sayTimer); clearTimeout(multi.chatter)
+  for (const c of multi.cards.values()) { c.el.classList.remove('on'); setTimeout(() => c.el.remove(), 400) }
+  $('more').classList.remove('on')
+  multi = null
+  shownAt = 0
+  // 回到只剩的那一个对话的样子（没有就是待机）
+  const left = Object.values(currentSessions()).filter(e => sessionKind(e, Date.now() / 1000) === 'work' || sessionKind(e, Date.now() / 1000) === 'ask')
+  show(left.length ? left[0].pose : 'idle', true)
+  watchStuck()
+  motionMood.attempt()
+}
+
+function applyCharState(id, s) {
+  charState[id] = s
+  if (id !== charId || !s.pose) return
+  clickSequence.cancel()
+  queueMicrotask(() => motionMood.attempt())
+  lastActive = Date.now()
+  if (multi) return   // 正在演多会话：她的样子由各对话的状态决定（refreshMulti），这里不动
+  if (Date.now() < shakingUntil && s.event !== 'Stop') return   // 正被甩着：先只记下状态，甩停了 resumeWork 回到最新的活上
+  clearTimeout(thinkTimer)
+  watchStuck()
+  const ev = s.event || ''
+  if (s.pose === 'oops' || (ev === 'Stop' && s.pose === 'surprised')) lastTrouble[id] = Date.now()
+  else if (ev === 'Stop' && (s.pose === 'happy' || s.pose === 'proud')) lastTrouble[id] = 0  // 最后顺利完成了，不算
+  // 工具动作被紧跟着的「思考」盖掉时，状态里会捎带上它（after）：没演过的话先演，停够了再思考
+  if (ev === 'PreToolUse') seenTool[id] = s.ts
+  if (s.after && s.afterTs !== seenTool[id]) {
+    seenTool[id] = s.afterTs
+    show(s.after, true)
+    show(s.pose)
+    return
+  }
+  if (ev === 'PostToolUse' || ev === 'SubagentStop') {
+    if (s.pose === 'oops') show('oops')
+    else thinkTimer = characterTimeout(() => show('thinking'), BACK_TO_THINKING)
+  } else if (ev === 'UserPromptSubmit') {
+    // 刚出错 / 被打断后你又发了消息（多半是在纠正她）：有 correctedPose 的角色先认个错
+    // （Claude 的「You're absolutely right!」）
+    const sorry = char()?.correctedPose
+    if (sorry && Date.now() - (lastTrouble[id] || 0) < 3 * 60 * 1000) {
+      lastTrouble[id] = 0
+      show(sorry, true)
+      thinkTimer = characterTimeout(() => show('thinking'), DWELL + 500)
+      return
+    }
+    show('listening', true)
+    thinkTimer = characterTimeout(() => show('thinking'), LISTEN_TO_THINKING)
+  } else if (ev === 'Stop' && (s.pose === 'happy' || s.pose === 'proud') && motionMood.pending) {
+    motionMood.afterWork = true
+    motionMood.attempt()
+  } else if (ev === 'Stop' && (s.pose === 'happy' || s.pose === 'proud') && !sulking && angerLevel(angerNow())) {
+    // 干活时被甩、憋着的火还没消：干完不庆祝，直接按火气生气，说「干活时被你晃」的那套台词（秋后算账）
+    clearTimeout(shakeEndTimer)
+    react('work')
+  } else {
+    show(s.pose)
+  }
+}
+
+function setQuota(id, q) {
+  const wasLow = quota[id]?.low
+  quota[id] = q
+  if (id !== charId) return
+  renderQuota()
+  if (q?.low && pose === 'idle') { setPose('tired'); if (!wasLow) say(pick(linesOf('tired') || [''])) }
+  if (!q?.low && pose === 'tired') setPose('idle')
+}
+
+// x、y：外壳交来的点击位置（网页坐标）；Claudia 用不到，保留参数是为了和外壳的调用方式一致
+function handleClick(kind, x, y) {
+  lastActive = Date.now()
+  clickSequence.play(() => performClick(kind, x, y), clickBounce && !matchMedia('(prefers-reduced-motion: reduce)').matches)
+}
+function performClick(kind, x, y) {
+  lastActive = Date.now()
+  if (pose === 'sleeping') { show('yawn', true); say('唔…你回来啦'); return }
+  if (kind === 'pat' && (sulking || angerNow() >= 20)) { coaxHer(); return }   // 生着气的时候摸她 = 哄她
+  const pokePose = char()?.pokePose && hasPose(char().pokePose) ? char().pokePose : 'surprised'
+  show(kind === 'poke' ? pokePose : 'pat', true)
+}
+
+// Only the character deforms; name and quota keep their normal shape.
+let impactAnimation = null
+function setMotionActive(on) {
+  if (on) {
+    motionMood.begin()
+    clearTimeout(shakeEndTimer)
+    if (sulking || ['dizzy','annoyed','puffed','redhot','sulk'].includes(pose)) {
+      clearTimeout(revertTimer); clearTimeout(sulkTimer); motionMood.mark()
+    }
+  } else motionMood.end()
+  document.documentElement.classList.toggle('moving', !!on)
+  if (on) {
+    clickSequence.cancel()
+    impactAnimation?.cancel()
+    // Finish an in-progress crossfade so dragging never carries two overlapping silhouettes.
+    active.classList.add('on'); spare.classList.remove('on')
+  }
+}
+function physicsImpact(vx, vy, amount) {
+  if (clickSequence.busy || !amount || matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  const depth = Math.min(1, Math.max(vx, vy) / 1400) * amount
+  if (depth < .015) return
+  impactAnimation?.cancel()
+  const vertical = vy >= vx
+  const x = vertical ? 1 + depth * .5 : 1 - depth
+  const y = vertical ? 1 - depth : 1 + depth * .5
+  impactAnimation = $('impact').animate([
+    { transform: 'scale(1)' }, { transform: `scale(${x},${y})`, offset: .25 },
+    { transform: `scale(${1 + (1-x)*.25},${1 + (1-y)*.25})`, offset: .65 },
+    { transform: 'scale(1)' }
+  ], { duration: 240, easing: 'ease-out' })
+}
+// ---- 甩她 / 红温 ----
+// 按住她快速来回甩，红温值往上加（甩 1 秒左右不耐烦，3～4 秒红温）：
+// 20 不耐烦（annoyed）→ 45 鼓脸（puffed）→ 75 红温（redhot，冒蒸汽、发抖），红温后背过身去赌气（sulk）。
+// 生气时摸她就是哄（coaxed）：赌气时摸三下原谅你（forgiven），没到红温时摸一下降一档。红温值不管它会慢慢降
+let anger = 0, angerAt = Date.now(), sulking = false, coax = 0, sulkTimer = null, shakeEndTimer = null
+// 已经是这个动作时 show 不会换台词：哄她时每下都说一句
+const showSay = p => { const was = pose; show(p, true); if (was === p) say(pick(linesOf(p) || [''])) }
+const ANGER_DECAY = 2   // 每秒降多少（赌气时不降，要哄）
+function angerNow() {
+  anger = Math.max(0, anger - (sulking || motionMood.pending ? 0 : (Date.now() - angerAt) / 1000 * ANGER_DECAY))
+  angerAt = Date.now()
+  return anger
+}
+function angerLevel(a) { return a >= 75 ? 'redhot' : a >= 45 ? 'puffed' : a >= 20 ? 'annoyed' : null }
+function addAnger(n) { angerNow(); anger = Math.min(100, anger + n) }
+const angerBlocked = () => multi || farewellLine !== null
+// 按现在的红温值做反应
+// afterWork：干活时被甩、干完才发作，换成 work 开头的那套台词（workAnnoyed / workPuffed / workRedhot）
+function react(afterWork) {
+  if (motionMood.blocked) { motionMood.mark(afterWork); return }
+  if (angerBlocked()) return
+  const lv = angerLevel(angerNow())
+  if (!lv) return
+  if (sulking) { show('sulk', true); return }
+  const said = () => { if (afterWork) { const l = linesOf('work' + lv[0].toUpperCase() + lv.slice(1)); if (l) say(pick(l)) } }
+  if (lv !== 'redhot') { show(lv, true); said(); return }
+  sulking = true; coax = 0
+  show('redhot', true)
+  said()
+  clearTimeout(sulkTimer)
+  sulkTimer = setTimeout(() => {
+    if (!sulking) return
+    show('sulk', true)
+    // 赌气太久没人哄：自己慢慢消气（不再说话，回到平常）
+    sulkTimer = setTimeout(() => { if (sulking) { sulking = false; anger = 30; angerAt = Date.now(); show('idle', true) } }, 45000)
+  }, 3500)
+}
+// 外壳检测到正在被甩（按住快速来回拖）时隔一会儿调一次；停下来就按红温值反应。
+// AI 正在干活时被甩：晕着抱怨一句，停手就回去干活；火憋着，干完不庆祝、直接按火气生气（见 applyCharState 的 Stop）。
+// 在等你回答：不切走提问的样子，只催你一句。多会话手忙脚乱：小卡片被甩得东倒西歪
+function shaken() {
+  if (farewellLine !== null) return
+  lastActive = Date.now()
+  addAnger(7)
+  motionMood.mark(moodContext() === 'work')
+}
+function moodContext() {
+  const s = charState[charId]
+  if (!s?.pose) return null
+  // An unanswered question stays important even if the user leaves it open for a long time.
+  if (s.pose === 'asking') return 'asking'
+  if (Date.now() / 1000 - (s.ts || 0) > STUCK_AFTER / 1000) return null
+  return NOT_WORKING.has(s.pose) ? null : 'work'
+}
+function resolveMotionMood() {
+  if (farewellLine !== null) { motionMood.clear(); return }
+  const state = charState[charId]
+  const resultAge = Date.now() / 1000 - (state?.ts || 0)
+  if (state?.event === 'Stop' && (state.pose === 'oops' || state.pose === 'surprised') && resultAge < 4) return
+  if (clickSequence.busy || pose === 'oops' || (pose === 'surprised' && charState[charId]?.event === 'Stop')) return
+  const context = multi ? 'multi' : moodContext()
+  if (context) {
+    if (context === 'work') motionMood.afterWork = true
+    if (motionMood.contextSaid !== context) {
+      motionMood.contextSaid = context
+      if (context === 'multi') { complain('shakeMulti', ['我已经够乱了！']); wobbleCards() }
+      else if (context === 'asking') { if (pose !== 'asking') show('asking', true); complain('shakeAsk', ['别晃啦，快回答我呀！']) }
+      else complain('shakeWork', ['别晃啦，我在干活呢！'])
+    }
+    return // Work and unanswered questions retain priority; keep the emotion for later.
+  }
+  angerNow() // Freeze accumulated anger until its response can actually be seen.
+  const pending = motionMood.take()
+  if (!pending) return
+  if (angerLevel(anger) || sulking) {
+    if (sulking && anger >= 75) sulking = false // Replay an interrupted red-hot sequence in full.
+    react(pending.afterWork)
+  } else show('dizzy', true)
+}
+// 甩停了：回到手上的活（AI 最新的那个动作；不换台词，抱怨还留在气泡里）
+function resumeWork() {
+  if (aiActivity() !== 'work') return react()
+  const p = charState[charId].pose
+  setPose(p === 'listening' ? 'thinking' : p)
+  shownAt = Date.now()
+}
+// AI 现在在干嘛：'asking'（等你回答）/ 'work'（干活）/ null（闲着）。看 AI 写来的最新状态，太久没动静的不算
+function aiActivity() {
+  const s = charState[charId]
+  if (!s?.pose || Date.now() / 1000 - (s.ts || 0) > STUCK_AFTER / 1000) return null
+  if (pose === 'idle' || pose === 'sleeping' || pose === 'tired') return null   // 卡住的状态被兜底送回待机了
+  if (s.pose === 'asking') return 'asking'
+  return NOT_WORKING.has(s.pose) ? null : 'work'
+}
+// 抱怨一句：同一种 4 秒内只说一次，3.5 秒后收起
+const complainedAt = {}
+let complainTimer = null, wobbleTimer = null, shakingUntil = 0
+function complain(key, fallback) {
+  if (Date.now() - (complainedAt[key] || 0) < 4000) return
+  complainedAt[key] = Date.now()
+  const line = pick(linesOf(key) || fallback)
+  say(line)
+  clearTimeout(complainTimer)
+  complainTimer = setTimeout(() => { if ($('bubble').textContent === line) say('') }, 3500)
+}
+function wobbleCards() {
+  const c = $('cards')
+  c.classList.remove('shaken'); void c.offsetWidth; c.classList.add('shaken')   // 重新触发动画
+  clearTimeout(wobbleTimer)
+  wobbleTimer = setTimeout(() => c.classList.remove('shaken'), 1000)
+}
+function coaxHer() {
+  if (sulking) {
+    if (++coax >= 3) return forgive()
+    showSay('coaxed')
+    return
+  }
+  anger = Math.max(0, anger - 25); angerAt = Date.now()
+  showSay(angerLevel(anger) ? 'coaxed' : 'forgiven')
+}
+function forgive() {
+  motionMood.clear()
+  sulking = false; coax = 0; anger = 0; angerAt = Date.now()
+  clearTimeout(sulkTimer)
+  show('forgiven', true)
+}
+
+
+// Idle behavior is configurable and never interrupts work, dragging or explicit interactions.
+let idleSettings = IdlePolicy.normalize({}), idleTimer = null, clickBounce = true
+function setBehavior(settings) {
+  idleSettings = IdlePolicy.normalize(settings); clickBounce = settings?.clickBounce !== false
+  if (!clickBounce) clickSequence.cancel()
+  scheduleIdle()
+}
+function scheduleIdle() {
+  clearTimeout(idleTimer)
+  idleTimer = setTimeout(() => { idleTick(); scheduleIdle() }, IdlePolicy.delay(idleSettings))
+}
+function idleTick() {
+  const quiet = Date.now() - lastActive
+  const available = IdlePolicy.candidates(idleSettings, { pose, quiet, available: ['hum','stretch','yawn','clawd'].filter(hasPose),
+    hidden: pageHidden, moving: document.documentElement.classList.contains('moving'), working: !!aiActivity(), multi: !!multi,
+    farewell: farewellLine !== null, clicking: clickSequence.busy || motionMood.pending })
+  if (!available.length) return
+  if (quiet > SLEEP_AFTER) { setPose('sleeping'); say(pick(linesOf('sleeping') || [''])); return }
+  const action = pick(available)
+  if (!TRANSIENT[action]) TRANSIENT[action] = 4000
+  show(action, true)
+}
+scheduleIdle()
+
+// 想得久了换成专属的「深度思考」：character.json 里 longThink: { after: 秒, pose: 姿态 }
+setInterval(() => {
+  const lt = char()?.longThink
+  if (!lt || pose !== 'thinking' || !hasPose(lt.pose)) return
+  if (Date.now() - poseSince > (lt.after || 20) * 1000) show(lt.pose, true)
+}, 1000)
+
+
+// ---- 生动一点：同一状态有多张图时停留久了换一张；有眨眼帧就偶尔眨眼 ----
+setInterval(() => {
+  const frames = framesFor(pose)
+  if (frames.length > 1 && Date.now() - poseSince > 8000) {
+    poseSince = Date.now()
+    showImage(pick(frames.filter(u => u !== currentUrl)))
+  }
+}, 2000)
+;(function blinkLoop() {
+  setTimeout(() => {
+    const blink = $('blink'), c = char()
+    // 只在显示的正是眨眼帧对应的那张 idle、而且换图淡入已经结束时眨眼，否则会和别的图叠在一起
+    if (c && c.blink && c.blinkBase && (pose === 'idle' || pose === 'listening') && currentUrl === c.blinkBase
+        && active.getAttribute('src') === c.blinkBase && !spare.classList.contains('on') && Date.now() - swappedAt > 600) {
+      blink.classList.add('on')
+      setTimeout(() => blink.classList.remove('on'), 140)
+    }
+    blinkLoop()
+  }, 3000 + Math.random() * 3500)
+})()
+const motionMood = new MotionMood(resolveMotionMood)
+const clickSequence = new ClickSequence(done => {
+  impactAnimation?.cancel()
+  const animation = $('impact').animate([
+    { transform: 'scale(1)' },
+    { transform: 'scale(1.045,.9)', offset: .35 },
+    { transform: 'scale(.99,1.025)', offset: .75 },
+    { transform: 'scale(1)' }
+  ], { duration: 220, easing: 'ease-out' })
+  animation.onfinish = done
+  return () => { animation.onfinish = null; animation.cancel() }
+}, active => { document.documentElement.classList.toggle('clicking', active); if (!active) queueMicrotask(() => motionMood.attempt()) })
+// Browser frame loop mirrors dsh-pet's desktop renderer; the host is only a bounds broker.
+const petMotion = new PetMotion(DshPhysics, message => {
+  window.chrome?.webview?.postMessage({ motion: message })
+}, callback => requestAnimationFrame(callback), id => cancelAnimationFrame(id), () => performance.now())
+</script>
+</body></html>

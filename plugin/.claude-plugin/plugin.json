@@ -1,0 +1,6 @@
+{
+  "name": "claudia-pet",
+  "version": "0.1.0",
+  "description": "claudia-pet（Claude 娘桌宠 claudia）：把 Claude Code 的工作状态和额度交给桌宠，会话开始时把她叫出来",
+  "license": "MIT"
+}

@@ -1,0 +1,8 @@
+# build output
+build/
+dist/
+*.exe
+*.tmp
+# local tooling
+.claude/
+*.log

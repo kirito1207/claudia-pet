@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>claudia-pet 设置</title>
+<style>
+/* 跟着系统深浅色 */
+:root { --bg: #f6f3ee; --panel: #fff; --ink: #3b2a22; --muted: #8a7a70; --line: #e7dfd5; --accent: #c8792f; --ok: #2f9e5b; --warn: #b07a00; --field: #fffdfa; --hover: #faf5ee; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1f1b18; --panel: #2a2522; --ink: #efe6dd; --muted: #a8998d; --line: #3d3631; --accent: #e09a52; --ok: #5cc184; --warn: #e3b341; --field: #241f1c; --hover: #332c28; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); }
+body { font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei UI", "Segoe UI", sans-serif; color: var(--ink); padding: 14px 16px 20px; }
+h1 { font-size: 15px; margin: 0 0 2px; }
+.sub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 12px; overflow: hidden; }
+.card h2 { font-size: 11px; font-weight: 600; color: var(--muted); margin: 0; padding: 8px 14px 4px; letter-spacing: .04em; }
+.item { display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-top: 1px solid var(--line); min-height: 42px; }
+.card h2 + .item, .card > .item:first-child { border-top: none; }
+/* 标签页：一次只看一组设置 */
+.tabs { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
+.tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); padding: 6px 12px 7px; margin-bottom: -1px; }
+.tabs button:hover { color: var(--ink); }
+.tabs button:focus:not(:focus-visible) { outline: none; }
+.tabs button.on { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+.card[data-tab]:not(.on) { display: none; }
+.item.flash { animation: flash 1.5s ease; }
+@keyframes flash { 0%, 40% { background: color-mix(in srgb, var(--accent) 22%, transparent); } 100% { background: transparent; } }
+.item .label { flex: 1; min-width: 0; }
+.item .label small { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+.item .ctl { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+button { font: inherit; border: 1px solid var(--line); background: var(--field); color: var(--ink); border-radius: 7px; padding: 4px 11px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: .5; cursor: default; }
+input[type=text], select { font: inherit; color: var(--ink); background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: 3px 7px; }
+input[type=text] { width: 150px; }
+input[type=range] { width: 150px; accent-color: var(--accent); }
+.val { width: 40px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* 文字大小旁边的锁：像 PS 改图像大小的锁链。锁着 = 文字跟着人物 */
+.link { padding: 2px 6px; line-height: 0; color: var(--muted); }
+/* 锁按钮和上一行的「还原」一样宽，两根滑块才对得齐（两个平台字体不同，用最小宽度） */
+[data-reset-size], .link { min-width: 52px; }
+.link svg { width: 16px; height: 16px; }
+.srclink { all: unset; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }   /* 说明文字里的来源链接 */
+.link.on { color: var(--accent); border-color: var(--accent); }
+/* 开关 */
+.switch { position: relative; width: 38px; height: 22px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+.switch span { position: absolute; inset: 0; border-radius: 11px; background: var(--line); transition: background .15s; cursor: pointer; }
+.switch span::after { content: ''; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .15s; }
+.switch input:checked + span { background: var(--accent); }
+.switch input:checked + span::after { transform: translateX(16px); }
+/* 三选一 */
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { border: none; border-radius: 0; padding: 3px 10px; background: var(--field); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.on { background: var(--accent); color: #fff; }
+.tag { font-size: 11px; padding: 0 7px; border-radius: 9px; background: var(--hover); color: var(--muted); white-space: nowrap; }
+.tag.ok { color: var(--ok); }
+.item .label small.warn { color: #c0392b; }
+.hidden { display: none !important; }
+#toast { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 6px 14px; border-radius: 8px; font-size: 12px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90%; }
+#toast.show { opacity: .92; }
+
+.about p { margin: 0; padding: 9px 14px; border-top: 1px solid var(--line); color: var(--ink); }
+.about p:first-child { border-top: none; }
+.about small { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.5; margin-top: 2px; }
+.name-ctl { flex-wrap: wrap; }
+.name-ctl input { width: 140px; }
+.idle-choices { flex-wrap: wrap; max-width: 260px; }
+.idle-choices label { display: inline-flex; align-items: center; gap: 3px; }
+input[type=checkbox] { accent-color: var(--accent); }
+.physics-row .ctl { width: 238px; }
+.physics-row input[type=range] { flex: 1; min-width: 70px; width: auto; }
+.physics-row .val { width: 58px; }
+input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 510px) {
+  body { padding: 12px; }
+  .tabs button { padding: 6px 9px; }
+  .item { flex-wrap: wrap; gap: 8px; }
+  .item .label { flex-basis: 100%; }
+  .item .ctl { max-width: 100%; }
+  .physics-row .ctl { width: 100%; }
+}
+</style></head>
+<body>
+<h1>claudia-pet 设置</h1>
+<div class="sub" id="version"></div>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="look">外观</button><button data-tab="quota">额度</button><button data-tab="claude">接入 Claude</button><button data-tab="physics">互动</button><button data-tab="daily">日常</button><button data-tab="general">通用</button><button data-tab="about">关于</button>
+</nav>
+
+<div class="card" data-tab="look">
+  <div class="item"><div class="label">人物大小</div>
+    <div class="ctl"><input type="range" id="size" min="0.6" max="1.6" step="0.01"><span class="val" id="sizeVal"></span><button data-reset-size>还原</button></div></div>
+  <div class="item"><div class="label">文字大小<small id="textNote">名牌、气泡、额度的字；锁着时跟人物一样大</small></div>
+    <div class="ctl"><input type="range" id="textSize" min="0.6" max="1.6" step="0.01"><span class="val" id="textSizeVal"></span>
+      <button class="link" id="textLink" title="锁着时文字跟着人物大小"></button></div></div>
+  <div class="item"><div class="label">显示名字<small>名牌下面的额度不受影响</small></div>
+    <div class="ctl"><label class="switch"><input type="checkbox" data-key="showName"><span></span></label></div></div>
+  <div class="item"><div class="label"><label for="customName">自定义名字</label><small>显示在人物下方、额度上方；最多 20 个字符，留空恢复默认名字。</small></div>
+    <div class="ctl name-ctl"><input type="text" id="customName" maxlength="20" placeholder="claudia" autocomplete="off"><button id="saveName" disabled>保存</button><button id="resetName" disabled>还原</button></div></div>
+  <div class="item"><div class="label">背景光晕<small>深色背景上会变成一圈亮光，「自动」时深色模式下不显示</small></div>
+    <div class="ctl"><div class="seg" id="aura"><button data-v="auto">自动</button><button data-v="on">始终显示</button><button data-v="off">关闭</button></div></div></div>
+</div>
+
+<div class="card" data-tab="quota">
+  <div class="item"><div class="label">额度显示样式<small>Claude 的 5 小时 / 每周额度（Claude Code 插件读到的）。额度条：每个额度一条，后面是剩余百分比和重置时间，剩得越少颜色越暖</small></div>
+    <div class="ctl"><div class="seg" id="quotaStyle"><button data-v="text">文字</button><button data-v="bars">额度条</button></div></div></div>
+</div>
+
+<div class="card" data-tab="claude">
+  <div id="integrations"></div>
+</div>
+
+<div class="card" data-tab="physics">
+  <div class="item"><div class="label">点击 Q 弹<small>先轻轻回弹，再接原有的摸头、惊讶或被哄动作；关闭后直接回应。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="clickBounce" aria-label="点击 Q 弹"><span></span></label></div></div>
+  <div class="item"><div class="label">拖拽与抛掷<small>在 Claude 窗口内带弹性地追随鼠标，快速松手可抛出；轻放停在当前位置。关闭后直接跟手。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="physicsEnabled" aria-label="拖拽与抛掷"><span></span></label></div></div>
+<div class="item physics-row"><div class="label"><label for="throwPower">拖拽 / 抛掷力度</label><small>越大，拖动跟得越紧、松手后飞得越快</small></div><div class="ctl"><input type="range" id="throwPower" data-physics="throwPower" min="0.2" max="2.5" step="0.05"><output class="val" id="throwPowerVal" for="throwPower"></output></div></div>
+<div class="item physics-row"><div class="label"><label for="gravity">重力</label><small>越大，下落越快；0 为无重力</small></div><div class="ctl"><input type="range" id="gravity" data-physics="gravity" min="0" max="3000" step="50"><output class="val" id="gravityVal" for="gravity"></output></div></div>
+<div class="item physics-row"><div class="label"><label for="restitution">反弹系数</label><small>越大，碰到边框后保留的速度越多</small></div><div class="ctl"><input type="range" id="restitution" data-physics="restitution" min="0" max="0.95" step="0.01"><output class="val" id="restitutionVal" for="restitution"></output></div></div>
+<div class="item physics-row"><div class="label"><label for="groundFriction">地面摩擦</label><small>越大，落地后横向滑动停得越快</small></div><div class="ctl"><input type="range" id="groundFriction" data-physics="groundFriction" min="0.5" max="12" step="0.1"><output class="val" id="groundFrictionVal" for="groundFriction"></output></div></div>
+<div class="item physics-row"><div class="label"><label for="elasticity">弹性幅度</label><small>只改变人物的挤压变形；0 为关闭</small></div><div class="ctl"><input type="range" id="elasticity" data-physics="elasticity" min="0" max="0.25" step="0.01"><output class="val" id="elasticityVal" for="elasticity"></output></div></div>
+<div class="item"><div class="label">顶部反弹<small>关闭后碰顶会停住向上的速度，再自然下落；始终留在 Claude 窗口内。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="ceilingBounce" aria-label="顶部反弹"><span></span></label></div></div>
+<div class="item"><div class="label">恢复默认手感<small>恢复本页全部参数</small></div><div class="ctl"><button id="resetPhysics">恢复默认</button></div></div>
+</div>
+
+<div class="card" data-tab="daily">
+  <div class="item"><div class="label">随机小动作<small>只在闲着时触发；不会打断工作、拖动或手动点播。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="idleEnabled" aria-label="随机小动作"><span></span></label></div></div>
+  <div class="item"><div class="label">活跃程度<small>闲着时约每 90 / 45 / 20 秒做一次小动作，时间会略有变化。</small></div><div class="ctl"><div class="seg" id="idleFrequency"><button data-v="quiet">安静</button><button data-v="normal">标准</button><button data-v="lively">活泼</button></div></div></div>
+  <div class="item"><div class="label">允许的动作<small>打哈欠在闲置三分钟后参与随机选择；全部取消则不做随机动作。</small></div><div class="ctl idle-choices">
+    <label><input type="checkbox" data-idle-action="hum">哼歌</label><label><input type="checkbox" data-idle-action="stretch">伸懒腰</label><label><input type="checkbox" data-idle-action="yawn">打哈欠</label><label><input type="checkbox" data-idle-action="clawd">抱 Clawd</label>
+  </div></div>
+</div>
+
+<div class="card" data-tab="general">
+  <h2>任务通知</h2>
+  <div class="item"><div class="label">任务完成或出错<small>Claude Code 一轮工作结束时发送 Windows 通知；中断不提醒。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="notifyResults" aria-label="任务完成或出错通知"><span></span></label></div></div>
+  <div class="item"><div class="label">等待授权或回答<small>有授权申请或问题需要你处理时提醒。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="notifyWaiting" aria-label="等待授权或回答通知"><span></span></label></div></div>
+  <div class="item"><div class="label">仅在 Claude 不在前台时通知<small>正在使用 Claude 时不额外打扰。Windows 的勿扰或通知设置也会影响显示。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="notifyBackgroundOnly" aria-label="仅在后台通知"><span></span></label></div></div>
+</div>
+<div class="card" data-tab="general">
+  <div class="item hidden" data-only="hotkeys"><div class="label">隐藏 / 显示的快捷键<small id="hotkeyNote">按一下藏起来，再按一下出来；也可以双击托盘图标叫她出来</small></div>
+    <div class="ctl"><select id="hideHotkey" aria-label="隐藏快捷键"></select></div></div>
+  <div class="item"><div class="label">省电模式<small>身边的小特效刷新慢一点、闲着时更快停下；人物动作照旧。笔记本用电池时可以打开</small></div>
+    <div class="ctl"><label class="switch"><input type="checkbox" data-key="powerSave"><span></span></label></div></div>
+  <div class="item"><div class="label">文件夹<small>角色立绘、设置和日志都在这里</small></div>
+    <div class="ctl"><button data-action="openCharacters">角色</button><button data-action="openData">数据和日志</button></div></div>
+</div>
+
+<div class="card about" data-tab="about">
+  <p><b>claudia-pet</b> · Claude 娘桌宠<small>桌宠 claudia 贴着 Claude 窗口陪你写代码、聊天。只认 Claude，不联网，不收集任何数据。</small></p>
+  <p>基于 CrossPet 修改<small>claudia-pet 基于 lokicorvus 的 CrossPet 开发，沿用其基础代码与设计，遵循 MIT 协议。</small>
+    <small><button class="srclink" data-action="openUpstream">github.com/lokicorvus/crosspet</button></small></p>
+  <p>参考 dsh-pet<small>拖拽、抛掷的物理公式摘录自 PC2005-cloud 的 dsh-pet，右键动作菜单和菜单样式参照了 dsh-pet（MIT 协议）。</small>
+    <small><button class="srclink" data-action="openDshPet">github.com/PC2005-cloud/dsh-pet</button></small></p>
+  <p>角色立绘<small>Claude 娘的立绘、设定和台词来自 CrossPet（由 CrossPet 用 AI 生图工具绘制，形象参考社区流行的 Claude 娘设定），采用 CC BY-NC-SA 4.0：可以转载和二次创作，但要署名、不能商用，衍生作品也要用同样的协议。</small></p>
+  <p>软件图标<small>以 CrossPet 的 Claude 娘头像和抱 Clawd 立绘为参考，用 OpenAI Codex 内置的图像工具生成，同样采用 CC BY-NC-SA 4.0。</small></p>
+  <p>商标<small>「Claude」是 Anthropic 的商标，Clawd 形象的权利也归 Anthropic。claudia-pet 是非官方同人项目，和 Anthropic 无关。</small></p>
+</div>
+
+<div id="toast"></div>
+
+<script src="text-size.js"></script>
+<script>
+// 和外壳（Windows 的 WebView2）通信：页面发 {cmd, ...}，外壳改完设置后调 setState(state) 把最新状态推回来
+const post = msg => window.chrome?.webview?.postMessage(msg)
+const $ = id => document.getElementById(id)
+let state = null
+function physicsLabel(el) {
+  const n = +el.value
+  $(el.id + 'Val').textContent = el.id === 'gravity' ? n : el.id === 'elasticity' ? Math.round(n * 100) + '%' : n.toFixed(el.id === 'groundFriction' ? 1 : 2)
+}
+for (const el of document.querySelectorAll('[data-physics]')) {
+  el.oninput = () => physicsLabel(el)
+  el.onchange = () => post({ cmd: 'set', key: el.id, value: +el.value })
+}
+$('resetPhysics').onclick = () => post({ cmd: 'resetPhysics' })
+
+function toast(text) {
+  const t = $('toast'); t.textContent = text; t.classList.add('show')
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), 2200)
+}
+
+function setState(s) {
+  state = s
+  $('version').textContent = `版本 ${s.version}`
+  const character = s.characters?.find(c => c.id === s.character)
+  if (document.activeElement !== $('customName')) $('customName').value = character?.custom || ''
+  $('customName').placeholder = character?.defaultName || 'claudia'
+  $('saveName').disabled = $('resetName').disabled = !s.character
+  if (document.activeElement !== $('size')) $('size').value = s.size
+  $('sizeVal').textContent = Math.round(s.size * 100) + '%'
+  // 文字大小：锁着时显示的就是人物大小（规则在 text-size.js）
+  const linked = s.textLinked !== false, text = TextSize.effectiveText(s.size, s.textSize, s.textLinked)
+  if (document.activeElement !== $('textSize')) $('textSize').value = text
+  $('textSizeVal').textContent = Math.round(text * 100) + '%'
+  showLink(linked)
+  for (const el of document.querySelectorAll('input[data-key]')) el.checked = !!s[el.dataset.key]
+  for (const el of document.querySelectorAll('[data-only]')) el.classList.toggle('hidden', s[el.dataset.only] === undefined || s[el.dataset.only] === null)
+  for (const b of $('aura').children) b.classList.toggle('on', b.dataset.v === s.aura)
+  for (const b of $('quotaStyle').children) b.classList.toggle('on', b.dataset.v === (s.quotaStyle || 'text'))
+  if (s.hotkeys) {
+    $('hideHotkey').replaceChildren(...s.hotkeys.map(h => new Option(h.label, h.id, false, h.id === s.hideHotkey)))
+    const n = $('hotkeyNote')
+    n.textContent = s.hotkeyFailed ? '这个快捷键被别的程序占用了，换一个试试' : '按一下藏起来，再按一下出来；也可以双击托盘图标叫她出来'
+    n.classList.toggle('warn', !!s.hotkeyFailed)
+  }
+  for (const el of document.querySelectorAll('[data-physics]')) {
+    const value = s.physics?.[el.id]
+    if (document.activeElement !== el && value != null) el.value = value
+    physicsLabel(el)
+    el.disabled = !s.physicsEnabled
+  }
+  document.querySelector('[data-key="ceilingBounce"]').disabled = !s.physicsEnabled
+  const idleOn = s.idleEnabled !== false
+  for (const b of $('idleFrequency').children) { b.classList.toggle('on', b.dataset.v === (s.idleFrequency || 'normal')); b.disabled = !idleOn }
+  for (const el of document.querySelectorAll('[data-idle-action]')) { el.checked = (s.idleActions || ['hum','stretch','yawn','clawd']).includes(el.dataset.idleAction); el.disabled = !idleOn }
+  renderIntegrations(s.integrations)
+}
+
+// 接入 Claude：每一项 { id, label, note, installed, detail }，外壳自己改配置（不跑任何脚本）
+function renderIntegrations(list) {
+  if (!list) return
+  $('integrations').replaceChildren(...list.map(i => {
+    const row = document.createElement('div'); row.className = 'item'
+    row.innerHTML = `<div class="label"></div><div class="ctl"><span class="tag"></span><button data-i="install"></button><button data-i="uninstall">撤销</button></div>`
+    row.querySelector('.label').textContent = i.label
+    const shown = i.detail || i.note
+    if (shown) { const n = document.createElement('small'); n.textContent = shown; if (i.warn) n.className = 'warn'; row.querySelector('.label').appendChild(n) }
+    const tag = row.querySelector('.tag')
+    tag.textContent = i.installed ? '已接入' : '未接入'
+    tag.classList.toggle('ok', !!i.installed)
+    const install = row.querySelector('[data-i=install]'); install.textContent = i.installed ? '重新接入' : '接入'
+    const uninstall = row.querySelector('[data-i=uninstall]'); uninstall.disabled = !i.installed
+    for (const b of [install, uninstall]) b.onclick = () => {
+      b.disabled = true; toast(`正在${b.dataset.i === 'install' ? '接入' : '撤销'} ${i.label}…`)
+      post({ cmd: 'integrate', target: i.id, action: b.dataset.i })
+    }
+    return row
+  }))
+}
+
+// 外壳做完一件事后的提示（接入结果等）
+function notice(text) { toast(text) }
+
+for (const el of document.querySelectorAll('input[data-key]')) el.onchange = () => post({ cmd: 'set', key: el.dataset.key, value: el.checked })
+for (const b of $('aura').children) b.onclick = () => post({ cmd: 'set', key: 'aura', value: b.dataset.v })
+for (const b of $('quotaStyle').children) b.onclick = () => post({ cmd: 'set', key: 'quotaStyle', value: b.dataset.v })
+for (const b of document.querySelectorAll('[data-action]')) b.onclick = () => post({ cmd: 'action', name: b.dataset.action })
+// 锁链图标：锁着 = 两节扣在一起；解开 = 断开
+const LINK_ON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6.5 9.5l3-3M7 4.5l1-1a2.5 2.5 0 013.5 3.5l-1 1M9 11.5l-1 1a2.5 2.5 0 01-3.5-3.5l1-1"/></svg>'
+const LINK_OFF = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M7 4.5l1-1a2.5 2.5 0 013.5 3.5l-1 1M9 11.5l-1 1a2.5 2.5 0 01-3.5-3.5l1-1M3 3l1.5 1.5M13 13l-1.5-1.5"/></svg>'
+function showLink(linked) {
+  const b = $('textLink'); b.innerHTML = linked ? LINK_ON : LINK_OFF; b.classList.toggle('on', linked)
+  b.title = linked ? '锁着：文字跟着人物大小。点一下解开，单独调文字' : '已解开：文字单独调。点一下锁上，文字回到和人物一样大'
+}
+const pct = v => Math.round(v * 100) + '%'
+$('size').oninput = () => {
+  const v = +$('size').value
+  $('sizeVal').textContent = pct(v)
+  if (state?.textLinked !== false) { $('textSize').value = v; $('textSizeVal').textContent = pct(v) }   // 锁着：文字滑块跟着动
+  post({ cmd: 'set', key: 'size', value: v })
+}
+// 单独拖文字：外壳收到 textSize 就记为解锁
+$('textSize').oninput = () => {
+  const v = +$('textSize').value
+  $('textSizeVal').textContent = pct(v); showLink(false)
+  if (state) state.textLinked = false
+  post({ cmd: 'set', key: 'textSize', value: v })
+}
+// 点锁：锁着时解开（文字先等于当前人物大小，看着不变）；解开时锁上（文字回到和人物一样）
+$('textLink').onclick = () => state?.textLinked === false
+  ? post({ cmd: 'set', key: 'textLinked', value: true })
+  : post({ cmd: 'set', key: 'textSize', value: +$('size').value })
+// 还原：人物、文字都回 100%，并锁上
+document.querySelector('[data-reset-size]').onclick = () => { post({ cmd: 'set', key: 'size', value: 1 }); post({ cmd: 'set', key: 'textLinked', value: true }) }
+for (const b of $('idleFrequency').children) b.onclick = () => post({ cmd: 'set', key: 'idleFrequency', value: b.dataset.v })
+for (const el of document.querySelectorAll('[data-idle-action]')) el.onchange = () => post({ cmd: 'set', key: 'idleActions', value: [...document.querySelectorAll('[data-idle-action]:checked')].map(x => x.dataset.idleAction) })
+function saveCustomName(reset = false) {
+  if (!state?.character) return
+  const name = reset ? '' : $('customName').value.trim()
+  $('customName').value = name
+  post({cmd:'rename', id:state.character, name})
+}
+$('saveName').onclick = () => saveCustomName()
+$('resetName').onclick = () => saveCustomName(true)
+$('customName').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); saveCustomName() } }
+$('hideHotkey').onchange = () => post({ cmd: 'set', key: 'hideHotkey', value: $('hideHotkey').value })
+
+// 标签页：记住上次看的是哪一页（存不下也没关系）
+function showTab(tab) {
+  if (!document.querySelector(`.card[data-tab="${tab}"]`)) tab = 'look'
+  for (const el of document.querySelectorAll('[data-tab]')) el.classList.toggle('on', el.dataset.tab === tab)
+  try { localStorage.setItem('claudia-settings-tab', tab) } catch {}
+}
+for (const b of $('tabs').children) b.onclick = () => showTab(b.dataset.tab)
+let lastTab = null
+try { lastTab = localStorage.getItem('claudia-settings-tab') } catch {}
+showTab(lastTab || 'look')
+
+post({ cmd: 'get' })
+</script>
+</body></html>
