@@ -45,6 +45,11 @@ html.moving #cards .scard { animation: none !important; }
   opacity: 0; transition: opacity .35s ease; }
 #body img.on { opacity: 1; }
 #body img#blink { transition: none; }
+/* 动画动作（claude-pet 动作包的精灵图，逐帧画到 canvas 上）：两块画布轮流交叉淡入；播放时静态立绘淡出 */
+#body canvas.sheet { position: absolute; pointer-events: none; opacity: 0; transition: opacity .35s ease; }
+#body canvas.sheet.on { opacity: 1; }
+html.sheet-on #body img { opacity: 0 !important; }
+html.moving #body canvas.sheet { transition: none !important; }
 #fx { position: absolute; inset: 0; transition: opacity .3s; pointer-events: none; }
 /* 闲着久了：身边的特效淡出（见「特效省电」） */
 #fx.rest { opacity: 0; transition: opacity 1.2s; }
@@ -78,16 +83,18 @@ html.frozen *, html.frozen *::before, html.frozen *::after { animation-play-stat
 .m-leave { animation: leave 1s ease-in forwards; }
 @keyframes leave { 0% { transform: none; } 100% { transform: translateX(28%) rotate(4deg); opacity: 0; } }
 @keyframes dash { 0%, 55% { transform: none; } 100% { transform: translateX(28%) rotate(4deg); opacity: 0; } }
-#caption { margin-top: calc(-2px * var(--k)); padding: calc(2px * var(--k)) calc(9px * var(--k)); border-radius: calc(8px * var(--k)); background: rgba(255,255,255,.85);
-  color: #6b4a3a; font-size: calc(11px * var(--k)); min-height: calc(14px * var(--k));
+/* 名牌和额度不垫白底：透明背景，字带一圈白色描边，落在 Claude 窗口浅色、深色背景上都看得清 */
+#caption, #quota { --halo: calc(1px * var(--k)); text-shadow: 0 0 var(--halo) #fff, 0 0 calc(var(--halo) * 2) #fff, 0 0 calc(var(--halo) * 3) rgba(255,255,255,.9), 0 0 calc(var(--halo) * 4) rgba(255,255,255,.7); }
+#caption { margin-top: calc(-2px * var(--k)); padding: calc(2px * var(--k)) calc(9px * var(--k)); border-radius: calc(8px * var(--k)); background: transparent;
+  color: #6b4a3a; font-weight: 600; font-size: calc(11px * var(--k)); min-height: calc(14px * var(--k));
   max-width: calc(236px * var(--k)); box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #caption:empty { visibility: hidden; }
 html.no-name #caption { display: none; }
 #quota { max-width: calc(236px * var(--k)); text-align: center; line-height: 1.35; margin-top: calc(2px * var(--k)); padding: calc(1px * var(--k)) calc(8px * var(--k));
-  border-radius: calc(7px * var(--k)); background: rgba(255,255,255,.8); color: #6b4a3a; font-size: calc(10px * var(--k)); }
+  border-radius: calc(7px * var(--k)); background: transparent; color: #6b4a3a; font-weight: 600; font-size: calc(10px * var(--k)); }
 #quota:empty { display: none; }
 #quota div { white-space: nowrap; }
-#quota.low { color: #c0392b; background: rgba(255,236,236,.92); }
+#quota.low { color: #c0392b; background: transparent; }
 #quota .notice { color: #6b4a3a; font-weight: 600; }   /* 重置提醒那一行：不跟着额度紧张变红 */
 /* 额度条样式（quota-bars.js）：每个额度一行——名字、条、剩余百分比、重置时间；条按剩余分三档变色 */
 #quota.bars:not(:empty) { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; text-align: left; min-width: calc(170px * var(--k)); }
@@ -191,7 +198,7 @@ html.no-name #caption { display: none; }
   <div id="bubble" class="hide"></div>
   <div id="stage">
     <div id="aura"></div><div id="shadow"></div>
-    <div id="impact"><div id="body"><img id="a" class="on"><img id="b"><img id="blink"></div></div>
+    <div id="impact"><div id="body"><img id="a" class="on"><img id="b"><img id="blink"><canvas class="sheet" id="sheetA"></canvas><canvas class="sheet" id="sheetB"></canvas></div></div>
     <div id="fx"></div>
     <div id="cards"><div id="more"></div></div>
     <div id="poof"><i style="--dx:-60px;--dy:-30px"></i><i style="--dx:55px;--dy:-35px"></i><i style="--dx:-45px;--dy:40px"></i><i style="--dx:50px;--dy:35px"></i><i style="--dx:0;--dy:-60px"></i></div>
@@ -243,7 +250,7 @@ const MOTION = {
   // 按时段 / 节日打招呼
   greet_morning: 'm-hop', greet_noon: 'm-bob', greet_afternoon: 'm-sway', greet_evening: 'm-sway', greet_night: 'm-slow', greet_dawn: 'm-slow',
   fest_halloween: 'm-gift', fest_christmas: 'm-gift', fest_newyear: 'm-jump', fest_spring: 'm-gift', fest_lantern: 'm-gift',
-  fest_dragonboat: 'm-gift', fest_midautumn: 'm-gift', fest_national: 'm-hop',
+  fest_dragonboat: 'm-gift', fest_midautumn: 'm-gift',
 }
 const LOCAL_LINES = {
   idle: ['……', '在呢'], pat: ['嘿嘿', '（蹭蹭）'], surprised: ['诶？！'], hum: ['♪～'], stretch: ['伸个懒腰～'],
@@ -325,7 +332,7 @@ function setFx(p, instant) {
     if (owner !== charId || generation !== characterGeneration || pose !== poseAt || multi) return
     // character.json 的 fx 可以为姿态选择特效，例如 proud 使用金色闪光
     const named = char()?.fx?.[p]
-    const inner = !window.ClaudiaFx ? '' : named && ClaudiaFx.named?.[named] ? ClaudiaFx.named[named] : ClaudiaFx.surroundings(p)
+    const inner = !window.ClaudiaFx || anim(p) ? '' : named && ClaudiaFx.named?.[named] ? ClaudiaFx.named[named] : ClaudiaFx.surroundings(p)
     fx.innerHTML = inner ? `<svg viewBox="0 0 ${ClaudiaFx.CW} ${ClaudiaFx.CH}" xmlns="http://www.w3.org/2000/svg">${inner}</svg>` : ''
     fx.classList.remove('hide')
   }
@@ -335,17 +342,214 @@ function setFx(p, instant) {
 }
 function setPose(p, instant) {
   if (p === pose) return
+  if (walking && p !== walking.pose) stopWalk()   // 走着走着换了别的状态：停下
+  if (exiting && p !== exiting.pose) cancelExit()   // 离场动作演到一半被拖动、碰边等直接换走
+  if (p !== pose) exitedFrom = null
   pose = p; poseSince = Date.now()
-  const frames = framesFor(p)
-  instant = instant || document.documentElement.classList.contains('moving')
-  showImage(instant ? frames[0] : pick(frames), instant)
-  $('body').className = MOTION[p] || 'm-bob'
+  const a = anim(p)
+  if (a) {   // 动画自己在动、画面里自带道具和特效：不叠 CSS 晃动和我们画的特效
+    playSheet(a, framesFor(p)[0])
+    $('body').className = ''
+  } else {
+    stopSheet()
+    const frames = framesFor(p)
+    instant = instant || document.documentElement.classList.contains('moving')
+    showImage(instant ? frames[0] : pick(frames), instant)
+    $('body').className = MOTION[p] || 'm-bob'
+  }
   noteRest(p)
   const aura = (window.ClaudiaFx && ClaudiaFx.AURA[p]) || ['#ffd9b0', .35]
   document.documentElement.style.setProperty('--aura', aura[0])
   document.documentElement.style.setProperty('--aura-o', Math.min(.75, aura[1] * 1.4))
   setFx(p)
 }
+// ---- 动画动作：claude-pet 动作包（作者 hunmer，hunmer/aboutme-pets 的 pets/claude，CC BY-NC-SA 4.0）----
+// 精灵图放在角色目录\anim，外壳把「文件名 → 地址」交在 char().sheets；character.json 的 animations 写每个姿态用哪几张、播哪几帧：
+//   sheets 随机选一张；from / to 播放范围；loop 播完从头再来；hold [a, b] 播到 to 后在 a～b 之间来回（睡着时一直睡）；
+//   full 让临时状态停满整段（不然按 TRANSIENT 的时长换回去，靠交叉淡入盖住）。
+// 每张 8 列、每帧 640×360、12 fps；作者每个动作第 1 帧里人物在 x 206–444、y 40–321，按人物高、脚底、中线和静态立绘对齐。
+// 被动画替换的静态立绘已经挪出项目（只留待机图 idle.webp 兜底）：系统要求减少动画时退回静态立绘（没有就是待机图）；
+// 省电模式下的待机 / 累了 / 睡觉，有静态图的才用静态图。animOn 只给测试和以后的开关用，外壳不再发 animatedSprites
+const SHEET = { cols: 8, w: 640, h: 360, frames: 120, fps: 12, charH: 281, feetY: 321, centerX: 325 }
+const REDUCED_MOTION = matchMedia('(prefers-reduced-motion: reduce)')
+const sheetCanvases = [$('sheetA'), $('sheetB')]
+let animOn = true, sheet = null, sheetFront = null, sheetReleaseTimer = null
+function anim(p) {
+  const c = char(), a = c?.animations?.[p]
+  if (!a || !animOn || REDUCED_MOTION.matches || (powerSave && RESTING.has(p) && c.poses?.[p])) return null
+  const urls = (a.sheets || []).map(n => c.sheets?.[n]).filter(Boolean)
+  return urls.length ? { ...a, urls } : null
+}
+function transientMs(p) {
+  const a = anim(p), base = TRANSIENT[p]
+  if (!a || !a.full) return base
+  const clip = a.ms || Math.round(((a.to ?? SHEET.frames - 1) - (a.from ?? 0) + 1) / SHEET.fps * 1000) + 150
+  return Math.max(base || 0, clip)
+}
+function sheetPlace(cv) {
+  const b = $('body'), S = b.offsetHeight * 638 / 640 / SHEET.charH   // 静态待机立绘里人物约占立绘高的 638/640
+  const w = SHEET.w * S, h = SHEET.h * S, dpr = window.devicePixelRatio || 1
+  cv.style.width = w + 'px'; cv.style.height = h + 'px'
+  cv.style.left = (b.offsetWidth / 2 - SHEET.centerX * S) + 'px'
+  cv.style.top = (b.offsetHeight - SHEET.feetY * S) + 'px'
+  const W = Math.max(1, Math.round(w * dpr)), H = Math.max(1, Math.round(h * dpr))
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H }
+}
+function sheetDraw() {
+  const s = sheet
+  if (!s?.img) return
+  sheetPlace(s.canvas)
+  const ctx = s.canvas.getContext('2d'), c = s.frame % SHEET.cols, r = Math.floor(s.frame / SHEET.cols)
+  ctx.clearRect(0, 0, s.canvas.width, s.canvas.height)
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(s.img, c * SHEET.w, r * SHEET.h, SHEET.w, SHEET.h, 0, 0, s.canvas.width, s.canvas.height)
+}
+function sheetTick() {
+  const s = sheet
+  if (!s?.img || pageHidden) return
+  if (s.holding) {   // 来回播，没有接缝
+    if (s.frame >= s.hold[1]) s.dir = -1; else if (s.frame <= s.hold[0]) s.dir = 1
+    s.frame += s.dir
+  } else if (s.cycle && s.frame >= s.cycle[1]) s.frame = s.cycle[0]   // 走路的步伐循环
+  else if (s.frame < s.to) s.frame++
+  else if (s.hold) { s.holding = true; s.dir = -1; s.frame-- }
+  else if (s.loop) s.frame = s.from
+  else return   // 播完停在最后一帧（作者的动作都回到标准站姿），等计时换回去
+  sheetDraw()
+  if (s.cycle && !s.cycled && s.frame >= s.cycle[0]) { s.cycled = true; s.onCycle?.() }   // 起步动作演完、开始迈步
+}
+// still：这个姿态的静态图。动画淡入、静态图淡出之后，把底下藏着的静态图换成它，动画停下时露出来的是对的那张
+function playSheet(a, still, key = null) {
+  const from = a.from ?? 0
+  const s = { key, url: pick(a.urls), from, to: a.to ?? SHEET.frames - 1, hold: a.hold, loop: !!a.loop, cycle: a.cycle, cycled: false, onCycle: null,
+    frame: from, dir: 1, holding: false,
+    canvas: sheetCanvases.find(c => c !== sheetFront), img: null, timer: null }
+  if (sheet) clearInterval(sheet.timer)
+  sheet = s
+  clearTimeout(sheetReleaseTimer)
+  const img = new Image()
+  // 用 onload 不用 decode()：页面在后台时 decode() 可能一直不返回
+  img.onload = () => {
+    if (sheet !== s) return
+    s.img = img
+    sheetDraw()
+    const old = sheetFront
+    s.canvas.classList.add('on'); if (old && old !== s.canvas) old.classList.remove('on')
+    sheetFront = s.canvas
+    document.documentElement.classList.add('sheet-on')
+    s.timer = setInterval(sheetTick, 1000 / SHEET.fps)
+    if (still) setTimeout(() => { if (sheet === s) showImage(still, true) }, 450)
+    if (old && old !== s.canvas) setTimeout(() => { if (sheetFront !== old) { old.width = 1; old.height = 1 } }, 450)   // 淡出后放掉旧画布
+  }
+  img.onerror = () => {
+    window.chrome?.webview?.postMessage({ imageError: s.url })
+    if (sheet !== s) return
+    stopSheet()
+    showImage(framesFor(pose)[0]); $('body').className = MOTION[pose] || 'm-bob'   // 读不到就用静态立绘
+  }
+  img.src = s.url
+}
+function stopSheet() {
+  if (sheet) { clearInterval(sheet.timer); sheet = null }
+  if (!sheetFront && !document.documentElement.classList.contains('sheet-on')) return
+  for (const c of sheetCanvases) c.classList.remove('on')
+  sheetFront = null
+  document.documentElement.classList.remove('sheet-on')
+  clearTimeout(sheetReleaseTimer)
+  sheetReleaseTimer = setTimeout(() => { if (!sheet) for (const c of sheetCanvases) { c.width = 1; c.height = 1 } }, 450)
+}
+// 设置、省电、减少动画变了：当前姿态按新规则重画一次
+function refreshAnim() { const p = pose; if (!p || multi || farewellLine !== null) return; pose = null; setPose(p, true) }
+REDUCED_MOTION.addEventListener?.('change', refreshAnim)
+// 拖着她时播「被拎起来」（不换姿态，只盖一层动画）；被甩出火气、赌气、碰边、道别、多会话时照旧
+const NO_DRAG_SHEET = new Set(['annoyed', 'puffed', 'redhot', 'sulk', 'dizzy'])
+function dragSheet(m) {
+  if (m.phase === 'drag') {
+    const a = anim('drag')
+    if (a && sheet?.key !== 'drag' && !tumble && farewellLine === null && !multi && !sulking && !NO_DRAG_SHEET.has(pose)) playSheet(a, null, 'drag')
+  } else if (sheet?.key === 'drag') {
+    // 不先关掉「被拎起来」：等接下来的动画读好再交叉淡入盖上，不然读图那零点几秒会露出底下的静态立绘
+    clearTimeout(revertTimer)
+    const p = pose
+    if (transientMs(p) || anim(p)?.walk) setPose(restPose())   // 拖之前在演的临时动作、走路（收尾）不接着演
+    else { pose = null; setPose(p, true) }    // 常态（待机、思考……）按原样重新播
+    if (sheet?.key === 'drag') stopSheet()    // 换过去的是静态姿态（或者没换成）：这时才收起
+  }
+}
+// 时令：animations[].when 限定闲置动作什么时候能出现。months 月份；hours [[起, 止)] 几点到几点；
+// dates ["MM-DD", "MM-DD"] 公历日期范围；lunar ["MM-DD", "MM-DD"] 农历日期范围（用浏览器自带的农历，闰月不算）
+const LUNAR_FORMAT = (() => { try { return new Intl.DateTimeFormat('zh-CN-u-ca-chinese', { month: 'numeric', day: 'numeric' }) } catch { return null } })()
+function lunarMD(d) {
+  if (!LUNAR_FORMAT) return null
+  const parts = LUNAR_FORMAT.formatToParts(d), m = parts.find(x => x.type === 'month')?.value, day = parts.find(x => x.type === 'day')?.value
+  if (!/^\d+$/.test(m || '') || !/^\d+$/.test(day || '')) return null   // 闰月写成「闰6」
+  return String(m).padStart(2, '0') + '-' + String(day).padStart(2, '0')
+}
+const inRange = (md, r) => r[0] <= r[1] ? md >= r[0] && md <= r[1] : md >= r[0] || md <= r[1]
+function whenOk(w, d = new Date()) {
+  if (!w) return true
+  if (w.months && !w.months.includes(d.getMonth() + 1)) return false
+  if (w.hours && !w.hours.some(([a, b]) => d.getHours() >= a && d.getHours() < b)) return false
+  if (w.dates && !inRange(ymd(d).slice(5), w.dates)) return false
+  if (w.lunar) { const md = lunarMD(d); if (!md || !inRange(md, w.lunar)) return false }
+  return true
+}
+
+// ---- 自己走路：网页定方向、速度、走多久，外壳逐帧平移窗口（不出 Claude 窗口），走完记下新位置 ----
+// 走路动画都是「原地」画的：起步动作演完（进入步伐循环 cycle）才开始挪窗口；奔跑只朝左，不做镜像（不改原画面）
+let walking = null, walkTimer = null   // walking：{ pose, dir, retried }
+// dir：指定方向（不指定就在这个动作能走的方向里随机）；retried：已经换过一次方向，再没地方走就不再换
+function startWalk(p, dir = 0, retried = false) {
+  const a = anim(p)
+  if (!a?.walk || !window.chrome?.webview) return false
+  dir = dir || pick(a.walk.dirs || [-1, 1])
+  if (pose !== p) show(p, true)
+  if (pose !== p) return false   // 正在道别之类，没换过去
+  walking = { pose: p, dir, retried }
+  const w = walking, [lo, hi] = a.walk.ms || [3000, 6000], ms = Math.round(lo + Math.random() * (hi - lo))
+  const go = () => {
+    if (walking !== w || pose !== p) return
+    const speed = $('body').offsetHeight * a.walk.speed * (window.devicePixelRatio || 1)   // 每秒走人物身高的几成（物理像素）
+    window.chrome.webview.postMessage({ walk: { dir, speed: Math.round(speed), ms } })
+    clearTimeout(walkTimer)
+    walkTimer = setTimeout(() => { if (walking === w) walkEnded('done') }, ms + 3000)   // 外壳没回话也别一直原地踏步
+  }
+  if (!sheet || sheet.cycled) go(); else sheet.onCycle = go
+  return true
+}
+// 外壳报告走完：done 走够了 / edge 走到边了 / blocked 这边没地方走（换个方向，或者换一种能往那边走的）
+function walkEnded(reason) {
+  const w = walking
+  if (!w) return
+  walking = null; clearTimeout(walkTimer)
+  if (reason === 'blocked' && !w.retried && pose === w.pose) {
+    const back = -w.dir
+    if ((anim(w.pose)?.walk?.dirs || []).includes(back) && startWalk(w.pose, back, true)) return
+    const alt = Object.keys(char()?.animations || {}).find(k => anim(k)?.walk?.dirs?.includes(back))
+    if (alt && startWalk(alt, back, true)) return
+  }
+  if (pose !== w.pose) return
+  // 走完：先演动画自己的收尾（停步、书飞回怀里、转回正面，跳过去用两块画布交叉淡入），播到最后一帧标准站姿再接待机
+  const a = anim(w.pose)
+  if (a?.outro != null && reason !== 'blocked') {
+    const end = a.to ?? SHEET.frames - 1
+    playSheet({ ...a, from: a.outro, to: end, cycle: null, loop: false }, framesFor(w.pose)[0])
+    clearTimeout(revertTimer)
+    revertTimer = characterTimeout(() => { if (pose === w.pose) { show(restPose(), true); say('') } }, Math.round((end - a.outro + 1) / SHEET.fps * 1000) + 150)
+    return
+  }
+  show(restPose(), true); say('')
+}
+function stopWalk() { if (!walking) return; walking = null; clearTimeout(walkTimer); window.chrome?.webview?.postMessage({ walk: null }) }
+
+// 余额分五档（按剩得最少的那个窗口）：换了一档就演一下对应的钱袋；刚启动第一次拿到额度时不演
+let quotaTierSeen = null
+function quotaTier(q) {
+  const left = Math.min(...(q?.bars || []).map(b => b.left))
+  if (!isFinite(left)) return null
+  return left >= .8 ? 'quota_full' : left >= .5 ? 'quota_jingle' : left >= .25 ? 'quota_count' : left >= .1 ? 'quota_empty' : 'quota_broke'
+}
+
 // 名牌上的名字：设置里可以关掉（额度照常显示）
 function setShowName(on) { document.documentElement.classList.toggle('no-name', !on) }
 // 文字大小（设置里和人物大小分开调）：外壳交来人物大小、文字大小、锁没锁；这里定好文字区域放大多少（--k），
@@ -427,6 +631,8 @@ function restPose() {
 }
 // 这个角色有没有某个姿态的专属立绘
 const hasPose = p => !!char()?.poses?.[p]
+// 能演：有静态立绘或者有动画（被动画替换的姿态已经没有静态图了）
+const canShow = p => hasPose(p) || !!anim(p)
 // 角色外观相关的 CSS 变量：气泡边框、读书时飘的字符颜色
 function applyLook(c) {
   const root = document.documentElement.style
@@ -442,6 +648,9 @@ function show(p, urgent) {
   const wait = shownAt + DWELL - Date.now()
   clearTimeout(pending)
   if (!urgent && wait > 0) { pending = characterTimeout(() => show(p, true), wait); return }
+  // 正在演离场动作（醒过来、收起零食……）：演完再换；又来了新状态就改成换到新的那个
+  if (exiting) { exiting.next = () => show(p, true); return }
+  if (p !== pose && leaveVia(() => show(p, true), p)) return
   shownAt = Date.now()
   clearTimeout(revertTimer)
   if (p !== pose) {
@@ -449,8 +658,33 @@ function show(p, urgent) {
     const lines = linesOf(p)
     say(lines ? pick(lines) : '')
   }
-  if (TRANSIENT[p]) revertTimer = characterTimeout(() => { setPose(restPose()); say(''); motionMood.attempt() }, TRANSIENT[p])
+  const ms = transientMs(p)
+  if (ms) revertTimer = characterTimeout(() => {
+    const back = () => { setPose(restPose()); say(''); motionMood.attempt() }
+    if (!leaveVia(back)) back()
+  }, ms)
 }
+// ---- 离场动作：animations[].exit {from, to} ----
+// 离开这个姿态之前，先把动画里它自己的收尾演完（睡觉：醒过来、睁眼站好；偷吃没被抓：把书收回怀里），播到标准站姿再换。
+// 走路的收尾另见 walkEnded。拖动、碰边、多会话、道别时不等，直接换
+// exit.except：换到这些姿态时不演收尾（偷吃时被点到，直接接被抓包）。target 是要换到的姿态
+let exiting = null, exitTimer = null, exitedFrom = null   // exiting：{ pose, next }；exitedFrom：已经演过收尾的那个姿态
+function leaveVia(next, target = null) {
+  const a = anim(pose)
+  if (!a?.exit || exiting || exitedFrom === pose || (target && a.exit.except?.includes(target))) return false
+  if (document.documentElement.classList.contains('moving') || tumble || multi || farewellLine !== null) return false
+  const from = a.exit.from, to = a.exit.to ?? SHEET.frames - 1, p = pose
+  exiting = { pose: p, next }
+  clearTimeout(revertTimer)
+  playSheet({ ...a, from, to, hold: null, cycle: null, loop: false }, framesFor(p)[0])
+  clearTimeout(exitTimer)
+  exitTimer = characterTimeout(() => {
+    const e = exiting; exiting = null
+    if (e && pose === e.pose) { exitedFrom = e.pose; e.next() }   // 收尾演完了：接下来换姿态时不再演一遍
+  }, Math.round((to - from + 1) / SHEET.fps * 1000) + 150)
+  return true
+}
+function cancelExit() { if (!exiting) return; exiting = null; clearTimeout(exitTimer) }
 
 // ---- Windows 外壳接口 ----
 function init(m) {
@@ -541,7 +775,7 @@ function timeSlot(d) {
 }
 function festivalOf(d) {
   const y = d.getFullYear(), md = ymd(d).slice(5), [spring, lantern, dragonboat, midautumn] = LUNAR[y] || []
-  // 单日的节日优先（中秋偶尔落在国庆假期里）
+  // 单日的节日优先（春节连着七天，元宵偶尔不在里面也照样单独算）
   if (md === lantern) return 'lantern'
   if (md === dragonboat) return 'dragonboat'
   if (md === midautumn) return 'midautumn'
@@ -552,8 +786,7 @@ function festivalOf(d) {
     const days = (d - new Date(`${y}-${spring}T00:00:00`)) / 86400000
     if (days >= 0 && days < 7) return 'spring'   // 初一到初七
   }
-  if (md >= '10-01' && md <= '10-07') return 'national'
-  return null
+  return null   // 国庆（2026-11-05 用户定）不再单独打招呼
 }
 function greetMemory(update) {
   let m = {}
@@ -569,7 +802,9 @@ function timeGreet(id, busy) {
   const day = ymd(new Date(now - 5 * 3600000))   // 凌晨 5 点前还算前一天：深夜 23–2 点是同一个时段
   const slotKey = `slot:${day}:${slot}`, festKey = `fest:${ymd(now)}:${fest}`
   const done = greetMemory()[id] || []
-  const has = p => !!(c.poses?.[p] || c.lines?.[p])
+  // 能演：有静态立绘或者有动画（节日大多已经换成动画、没有静态图了）
+  const playable = p => !!(c.poses?.[p] || (id === charId && anim(p)))
+  const has = p => playable(p) || !!c.lines?.[p]
   let p = null
   if (fest && !done.includes(festKey) && has('fest_' + fest)) p = 'fest_' + fest
   else if (!done.includes(slotKey) && has('greet_' + slot)) p = 'greet_' + slot
@@ -577,7 +812,7 @@ function timeGreet(id, busy) {
   greetMemory(m => { m[id] = [...(m[id] || []).filter(k => k.includes(day) || k.includes(ymd(now))), slotKey, ...(fest ? [festKey] : [])] })
   greetedAt[id] = Date.now()
   const line = pick(c.lines?.[p] || [c.greeting || ''])
-  if (!busy && c.poses?.[p]) { show(p, true); say(line) }   // 正在干活时不打断，只说一句
+  if (!busy && playable(p)) { show(p, true); say(line) }   // 正在干活时不打断，只说一句
   else say(line)
   return true
 }
@@ -674,8 +909,8 @@ function noteRest(p) {
   if (fxResting) { fxResting = false; applyFxRate() }
   if (RESTING.has(p)) restTimer = setTimeout(() => { if (RESTING.has(pose)) { fxResting = true; applyFxRate() } }, powerSave ? 10000 : 30000)
 }
-function setPowerSave(on) { powerSave = !!on; fxFps = -1; noteRest(pose); applyFxRate() }
-function setPageHidden(h) { pageHidden = !!h; motionMood.setHidden(pageHidden); if (pageHidden) clickSequence.cancel(); applyFxRate() }
+function setPowerSave(on) { const was = powerSave; powerSave = !!on; fxFps = -1; noteRest(pose); applyFxRate(); if (was !== powerSave && RESTING.has(pose)) refreshAnim() }
+function setPageHidden(h) { pageHidden = !!h; if (pageHidden) stopWalk(); motionMood.setHidden(pageHidden); if (pageHidden) clickSequence.cancel(); applyFxRate() }
 applyFxRate()
 
 // ---- 多会话：同一个 AI 好几个对话同时在干活 ----
@@ -879,6 +1114,9 @@ function setQuota(id, q) {
   renderQuota()
   if (q?.low && pose === 'idle') { setPose('tired'); if (!wasLow) say(pick(linesOf('tired') || [''])) }
   if (!q?.low && pose === 'tired') setPose('idle')
+  const tier = quotaTier(q)
+  if (tier && quotaTierSeen && tier !== quotaTierSeen && anim(tier) && !aiActivity() && !multi && !tumble && farewellLine === null && RESTING.has(pose)) show(tier, true)
+  if (tier) quotaTierSeen = tier
 }
 
 // x、y：外壳交来的点击位置（网页坐标）；Claudia 用不到，保留参数是为了和外壳的调用方式一致
@@ -889,15 +1127,23 @@ function handleClick(kind, x, y) {
 function performClick(kind, x, y) {
   lastActive = Date.now()
   if (tumble) { tumbleHelpUp(); return }
-  if (pose === 'sleeping') { show('yawn', true); say('唔…你回来啦'); return }
+  if (pose === 'snack' && anim('snack_caught')) { if (!exiting) show('snack_caught', true); return }   // 偷吃时被你点到 = 被抓包（已经在收起零食就算了）
+  if (pose === 'sleeping') {   // 点醒：先演醒过来（有离场动作时），再站回待机
+    if (exiting) return
+    say('唔…你回来啦')
+    const wake = () => { show('idle', true); say('唔…你回来啦') }
+    if (!leaveVia(wake)) { show('yawn', true); say('唔…你回来啦') }
+    return
+  }
   if (kind === 'pat' && (sulking || angerNow() >= 20)) { coaxHer(); return }   // 生着气的时候摸她 = 哄她
-  const pokePose = char()?.pokePose && hasPose(char().pokePose) ? char().pokePose : 'surprised'
+  const pokePose = char()?.pokePose && canShow(char().pokePose) ? char().pokePose : 'surprised'
   show(kind === 'poke' ? pokePose : 'pat', true)
 }
 
 // Only the character deforms; name and quota keep their normal shape.
 let impactAnimation = null
 function setMotionActive(on) {
+  if (on) stopWalk()
   if (on) {
     tumbleCancel(); tumbled = false; tumblePolicy.throwStarted()
     motionMood.begin()
@@ -913,6 +1159,7 @@ function setMotionActive(on) {
     impactAnimation?.cancel()
     // Finish an in-progress crossfade so dragging never carries two overlapping silhouettes.
     active.classList.add('on'); spare.classList.remove('on')
+    for (const c of sheetCanvases) if (c !== sheetFront) c.classList.remove('on')
   }
 }
 function physicsImpact(vx, vy, amount) {
@@ -1149,6 +1396,9 @@ function setBehavior(settings) {
   if (!clickBounce) clickSequence.cancel()
   tumbleOn = settings?.tumbleActions !== false
   if (!tumbleOn) tumbleCancel()
+  const wasAnim = animOn
+  animOn = settings?.animatedSprites !== false
+  if (wasAnim !== animOn) refreshAnim()
   scheduleIdle()
 }
 function scheduleIdle() {
@@ -1157,27 +1407,41 @@ function scheduleIdle() {
 }
 function idleTick() {
   const quiet = Date.now() - lastActive
-  const available = IdlePolicy.candidates(idleSettings, { pose, quiet, available: ['hum','stretch','yawn','clawd'].filter(hasPose),
+  // 动画小动作按组跟着「允许的动作」走，when 限定时段 / 季节 / 节气；余额钱袋算 Claude 梗，只演当前这一档
+  const extra = idleAnimations(), groupOf = {}, weightOf = {}
+  for (const p of extra) { const a = char().animations[p]; groupOf[p] = a?.idle || 'claude'; weightOf[p] = a?.weight || 1 }
+  const available = IdlePolicy.candidates(idleSettings, { pose, quiet, extra, available: ['hum','stretch','yawn','clawd'].filter(canShow),
     hidden: pageHidden, moving: document.documentElement.classList.contains('moving'), working: !!aiActivity(), multi: !!multi,
     farewell: farewellLine !== null, clicking: clickSequence.busy || motionMood.pending || !!tumble })
   if (!available.length) return
   if (quiet > SLEEP_AFTER) { setPose('sleeping'); say(pick(linesOf('sleeping') || [''])); return }
-  const action = pick(available)
+  // 先在组里平均抽一组，再在组里按 weight 抽一个：动画小动作很多，不能把哼歌、伸懒腰这些挤掉；当天的节气动作权重高
+  const groups = [...new Set(available.map(p => groupOf[p] || p))], g = pick(groups)
+  const inGroup = available.filter(p => (groupOf[p] || p) === g)
+  let roll = Math.random() * inGroup.reduce((n, p) => n + (weightOf[p] || 1), 0), action = inGroup[inGroup.length - 1]
+  for (const p of inGroup) { roll -= weightOf[p] || 1; if (roll < 0) { action = p; break } }
+  if (anim(action)?.walk) { if (startWalk(action)) return; }
   if (!TRANSIENT[action]) TRANSIENT[action] = 4000
   show(action, true)
+}
+function idleAnimations(d = new Date()) {
+  const out = Object.entries(char()?.animations || {}).filter(([p, a]) => a.idle && idleSettings.actions.includes(a.idle) && whenOk(a.when, d) && anim(p)).map(([p]) => p)
+  const tier = quotaTier(quota[charId]); if (tier && idleSettings.actions.includes('claude') && anim(tier)) out.push(tier)
+  return out
 }
 scheduleIdle()
 
 // 想得久了换成专属的「深度思考」：character.json 里 longThink: { after: 秒, pose: 姿态 }
 setInterval(() => {
   const lt = char()?.longThink
-  if (!lt || pose !== 'thinking' || !hasPose(lt.pose)) return
+  if (!lt || pose !== 'thinking' || !canShow(lt.pose)) return
   if (Date.now() - poseSince > (lt.after || 20) * 1000) show(lt.pose, true)
 }, 1000)
 
 
 // ---- 生动一点：同一状态有多张图时停留久了换一张；有眨眼帧就偶尔眨眼 ----
 setInterval(() => {
+  if (sheet) return   // 正在播动画
   const frames = framesFor(pose)
   if (frames.length > 1 && Date.now() - poseSince > 8000) {
     poseSince = Date.now()
@@ -1210,6 +1474,7 @@ const clickSequence = new ClickSequence(done => {
 }, active => { document.documentElement.classList.toggle('clicking', active); if (!active) queueMicrotask(() => motionMood.attempt()) })
 // Browser frame loop mirrors dsh-pet's desktop renderer; the host is only a bounds broker.
 const petMotion = new PetMotion(DshPhysics, message => {
+  dragSheet(message)
   tumbleHit(message)
   window.chrome?.webview?.postMessage({ motion: message })
 }, callback => requestAnimationFrame(callback), id => cancelAnimationFrame(id), () => performance.now())

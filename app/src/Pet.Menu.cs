@@ -58,7 +58,14 @@ namespace Claudia
             ("心情", new[] { "happy", "proud", "surprised", "oops", "sorry", "asking", "annoyed", "puffed", "redhot", "sulk", "coaxed", "forgiven", "dizzy" }),
             ("互动", new[] { "pat", "bye", "bonk", "stagger", "fallen", "faceplant", "getup" }),
             ("问候", new[] { "greet_dawn", "greet_morning", "greet_noon", "greet_afternoon", "greet_evening", "greet_night" }),
-            ("节日", new[] { "fest_newyear", "fest_spring", "fest_lantern", "fest_dragonboat", "fest_midautumn", "fest_national", "fest_halloween", "fest_christmas" }),
+            ("小动作", new[] { "look", "tap", "cube", "bubbles", "bookspirit", "flower", "dove", "animals", "butterflies", "snack", "token", "mutter", "gamer" }),
+            ("才艺", new[] { "juggle", "cards", "flute", "violin", "dance_skirt", "dance_otaku", "dance_swing", "dressup" }),
+            ("玩耍", new[] { "toycar", "watergun", "gomoku", "top", "cat", "shuttlecock", "rockinghorse", "pagebeat" }),
+            ("吃喝", new[] { "lunch", "dinner", "rice", "hotpot", "crab", "watermelon", "tanghulu", "niangao", "qingtuan", "laba", "chongyanggao" }),
+            ("时令", new[] { "kite", "fan", "leaves", "snowman", "qixi", "zhongyuan", "chongyang" }),
+            ("走路", new[] { "walk_crab", "walk_float", "run_left" }),
+            ("余额", new[] { "quota_full", "quota_jingle", "quota_count", "quota_empty", "quota_broke" }),
+            ("节日", new[] { "fest_newyear", "fest_spring", "fest_lantern", "fest_dragonboat", "fest_midautumn", "fest_halloween", "fest_christmas" }),
         };
         static readonly Dictionary<string, string> ActionNames = new Dictionary<string, string>
         {
@@ -72,7 +79,17 @@ namespace Claudia
             ["bonk"] = "撞头", ["stagger"] = "站不稳", ["fallen"] = "摔倒", ["faceplant"] = "趴地", ["getup"] = "爬起",
             ["greet_dawn"] = "凌晨", ["greet_morning"] = "早上好", ["greet_noon"] = "中午好", ["greet_afternoon"] = "下午好", ["greet_evening"] = "晚上好", ["greet_night"] = "晚安",
             ["fest_newyear"] = "元旦", ["fest_spring"] = "春节", ["fest_lantern"] = "元宵", ["fest_dragonboat"] = "端午",
-            ["fest_midautumn"] = "中秋", ["fest_national"] = "国庆", ["fest_halloween"] = "万圣节", ["fest_christmas"] = "圣诞",
+            ["look"] = "东张西望", ["tap"] = "敲桌面", ["cube"] = "玩魔方", ["bubbles"] = "吹泡泡",
+            ["bookspirit"] = "书灵现世", ["flower"] = "凭空生花", ["dove"] = "变鸽子",
+            ["snack"] = "偷吃零食（点她会被抓包）", ["token"] = "吃 Token", ["mutter"] = "对屏碎碎念", ["gamer"] = "玩游戏气急败坏",
+            ["animals"] = "动物环绕", ["butterflies"] = "蝴蝶蜜蜂",
+            ["juggle"] = "三球抛接", ["cards"] = "扑克魔术", ["flute"] = "吹笛子", ["violin"] = "小提琴", ["dance_skirt"] = "裙摆舞", ["dance_otaku"] = "宅舞", ["dance_swing"] = "摇摆舞", ["dressup"] = "换装试色",
+            ["toycar"] = "玩具汽车", ["watergun"] = "玩水枪", ["gomoku"] = "下五子棋", ["top"] = "抽陀螺", ["cat"] = "撸猫", ["shuttlecock"] = "踢毽子", ["rockinghorse"] = "骑木马", ["pagebeat"] = "拍书打节奏",
+            ["lunch"] = "吃午餐", ["dinner"] = "吃晚餐", ["rice"] = "吃白饭", ["hotpot"] = "涮火锅", ["crab"] = "吃大闸蟹", ["watermelon"] = "吃西瓜", ["tanghulu"] = "吃糖葫芦", ["niangao"] = "吃年糕", ["qingtuan"] = "吃青团", ["laba"] = "腊八粥", ["chongyanggao"] = "重阳糕",
+            ["kite"] = "放风筝", ["fan"] = "摇扇纳凉", ["leaves"] = "被落叶淹没", ["snowman"] = "堆雪人", ["qixi"] = "七夕穿针", ["zhongyuan"] = "中元放河灯", ["chongyang"] = "重阳赏菊",
+            ["walk_crab"] = "螃蟹步", ["walk_float"] = "飘着走", ["run_left"] = "往左跑",
+            ["quota_full"] = "钱袋满溢", ["quota_jingle"] = "金袋叮当", ["quota_count"] = "数金皱眉", ["quota_empty"] = "袋空如洗", ["quota_broke"] = "分文不剩",
+            ["fest_midautumn"] = "中秋",["fest_halloween"] = "万圣节", ["fest_christmas"] = "圣诞",
         };
 
         Forms.ToolStripMenuItem BuildActionMenu(Func<string, Action, bool?, Forms.ToolStripMenuItem> item)
@@ -90,6 +107,14 @@ namespace Claudia
                 var p = stem.Split('-')[0];
                 have.Add(p);
             }
+            // 只有动画、没有静态立绘的姿态（被动画替换的那些、东张西望、余额钱袋……）：精灵图在 anim\ 里才列出来；hidden 的不进菜单
+            if (Store.ReadJson(Path.Combine(dir, "character.json"))?.TryGetValue("animations", out var a) == true && a is Dictionary<string, object> anims)
+                foreach (var kv in anims)
+                {
+                    if (!(kv.Value is Dictionary<string, object> cfg) || (cfg.TryGetValue("hidden", out var h) && h is bool hb && hb)) continue;
+                    if (cfg.TryGetValue("sheets", out var s) && s is object[] names &&
+                        names.OfType<string>().Any(n => File.Exists(Path.Combine(dir, SpritePath.AnimDir, n + ".webp")))) have.Add(kv.Key);
+                }
             if (have.Count == 0) return null;
 
             var root = new Forms.ToolStripMenuItem("动作");
@@ -120,8 +145,11 @@ namespace Claudia
         {
             // 姿态名只来自文件名，这里再挡一次引号/反斜杠，免得拼进脚本出问题
             if (pose.IndexOfAny(new[] { '\'', '"', '\\', '\n', '\r' }) >= 0) return;
+            // 动画动作按片长自己回到待机，不再 6 秒后被切掉
             Js("(function(p){ if (typeof show !== 'function') return; show(p, true);" +
                " clearTimeout(window.__claudiaMenuTimer);" +
+               " if (typeof anim === 'function' && anim(p) && anim(p).walk && typeof startWalk === 'function' && startWalk(p)) return;" +
+               " if (typeof anim === 'function' && anim(p) && transientMs(p)) return;" +
                " window.__claudiaMenuTimer = setTimeout(function(){ if (pose === p) show('idle', true); }, 6000); })('" + pose + "')");
         }
     }

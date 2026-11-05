@@ -59,6 +59,10 @@ const root = path.resolve(__dirname, '..');
       const key = file.replace('.webp', '').split('-')[0];
       (info.poses[key] ||= []).push(pathToFileURL(path.join(root, 'characters/claude', file)).href);
     }
+    // 和外壳的清单一样带上动画（被动画替换的姿态已经没有静态立绘）
+    info.sheets = {};
+    for (const file of fs.readdirSync(path.join(root, 'characters/claude/anim')).filter(f => f.endsWith('.webp')))
+      info.sheets[file.replace('.webp', '')] = pathToFileURL(path.join(root, 'characters/claude/anim', file)).href;
     await page.setViewportSize({ width: 260, height: 362 });
     await page.evaluate(info => {
       init({ characters: { claude: info } }); setCharacter('claude', true);

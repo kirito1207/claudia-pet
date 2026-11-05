@@ -3,25 +3,28 @@ using System.IO;
 
 namespace Claudia
 {
-    /// <summary>立绘请求 https://claudia.data/characters/&lt;角色&gt;/&lt;图&gt; → 角色目录里的文件。
-    /// 只认这一种形状、只给 .webp / .png，别的（设置、character.json、目录跳转）一律不给。
+    /// <summary>立绘请求 https://claudia.data/characters/&lt;角色&gt;/&lt;图&gt; → 角色目录里的文件；
+    /// 动画精灵图 https://claudia.data/characters/&lt;角色&gt;/anim/&lt;图&gt; → 角色目录\anim 里的文件。
+    /// 只认这两种形状、只给 .webp / .png，别的（设置、character.json、目录跳转）一律不给。
     /// 不依赖 WebView2</summary>
     static class SpritePath
     {
+        public const string AnimDir = "anim";
         public static bool IsSprite(string stem) => stem != "portrait" && stem != "portrait-card" && stem != "avatar";
 
         public static bool TryResolve(string charactersRoot, string absolutePath, out string file, out string mime)
         {
             file = mime = null;
             var parts = (absolutePath ?? "").Split('/');
-            if (parts.Length != 4 || parts[0] != "" || parts[1] != "characters") return false;
+            var anim = parts.Length == 5 && parts[3] == AnimDir;
+            if ((parts.Length != 4 && !anim) || parts[0] != "" || parts[1] != "characters") return false;
             var character = Uri.UnescapeDataString(parts[2]);
-            var name = Uri.UnescapeDataString(parts[3]);
+            var name = Uri.UnescapeDataString(parts[parts.Length - 1]);
             if (!SafeSegment(character) || !SafeSegment(name)) return false;
             var ext = Path.GetExtension(name).ToLowerInvariant();
             if (ext != ".webp" && ext != ".png") return false;
             var root = Path.GetFullPath(charactersRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            var full = Path.GetFullPath(Path.Combine(root, character, name));
+            var full = anim ? Path.GetFullPath(Path.Combine(root, character, AnimDir, name)) : Path.GetFullPath(Path.Combine(root, character, name));
             if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase)) return false;
             file = full;
             mime = ext == ".webp" ? "image/webp" : "image/png";

@@ -1,7 +1,7 @@
-"""Turn the generated fall/bump sprites into game-ready WebP files.
+"""Turn the generated sprites (fall/bump poses, and the standing poses redrawn in the animation proportions) into game-ready WebP files.
 
 Usage (Python 3 with Pillow, numpy and scipy):
-    py -I scripts/prepare-sprites.py <folder with the original PNGs> [--out characters/claude] [--sheet compare.png]
+    py -I scripts/prepare-sprites.py <folder with the original PNGs> [--out characters/claude] [--sheet compare.png] [--only name,name]
 
 What it does for each sprite:
   1. Reads the transparent PNG and snaps nearly opaque pixels (alpha >= 250) to fully opaque.
@@ -38,6 +38,36 @@ SPRITES = {
     "01e1ee1d1b70a6f685f511968c8e17fe_720.png": ("getup", 0.88, True),
 }
 
+# 2026-11-05 按动画比例重画的 20 张站立立绘（提示词见 docs/prompts/立绘重画-统一比例/）。
+# 生图时人物大小不固定（同一套提示词，人物高 1114–1242 px 不等），所以不用固定系数，而是每张单独缩放：
+# 人物从脚底到头顶缩到 PERSON 高（和待机图 idle.webp 一样）。帽子不算人物：第三个数是帽子高出头顶多少像素（原图里量的），
+# 帽子也要装进 640 高的画布，装不下时整张缩小（戴派对帽的元旦会比别的小一点）。
+# original file name -> (output name, hat px above the head, remove detached pieces)
+PERSON = 638
+STANDING = {
+    # 第二轮（21:25 放进来的这一批）。第一轮（20:25）按旧提示词画，腿露太多、人偏瘦高，没用
+    "f290517545a8fbc18e5cae6f4b36edae_720.png": ("listening", 0, False),
+    "fdca2cd3f5645517d1356d76f333faaa_720.png": ("reading", 0, False),
+    "502c419be016cf212c25f9673c50521b_720.png": ("busy_left", 0, False),
+    "be3f062a7950f18cf7eff77d83672445_720.png": ("busy_right", 0, False),
+    "28ef8401960f0826115cd4d6a494bbfd_720.png": ("searching", 0, False),
+    "923f6301baf6769ecfee7c471fdfba0e_720.png": ("oops", 0, False),
+    "c38cbab2c033c78b9e2362b99132a80b_720.png": ("tired", 0, False),
+    "652d9dbc99c5b4fd4e57c104fe83c0f1_720.png": ("puffed", 0, False),
+    "6a54bf089f8413ef42b9af0933ffdaeb_720.png": ("sulk", 0, False),
+    "4f15013daf5fd80e0d08c7e7fd6c69ad_720.png": ("dizzy", 0, False),
+    "4f44f9804ae59e69d9ea8a77a9629187_720.png": ("coaxed", 0, False),
+    "aefe895d0a39b69bcbdbdc75261e04d9_720.png": ("forgiven", 0, False),
+    "96a5a8f850cae2a6b6c056ef63b9af51_720.png": ("greet_dawn", 75, False),
+    "cf7a0e5de88ff904afbbcb144d32332f_720.png": ("greet_morning", 0, False),
+    "b84ffd377046421c9908894ef4cf05ac_720.png": ("greet_noon", 0, False),
+    "761b2dca91f1a8f1ab55b3555160b3d1_720.png": ("greet_afternoon", 0, False),
+    "a55e95904b1b2265dca781e5c81e4f81_720.png": ("greet_evening", 0, False),
+    "48596cda49720f7cf208f4e49d1ccf39_720.png": ("greet_night", 0, False),
+    "66ecac6aa29a22e4a97e887e41137342_720.png": ("fest_newyear", 140, False),
+    # fest_national（国庆）2026-11-05 用户决定不要了，原图 f7ce2230…_720.png 没用
+}
+
 
 def clean(a, specks, keep_ratio=0.01, solid=64, edge=3):
     """Keep only the clearly visible pieces plus a few pixels of their soft edge.
@@ -63,7 +93,8 @@ def clean(a, specks, keep_ratio=0.01, solid=64, edge=3):
     return a, removed
 
 
-def prepare(path, factor, specks):
+def prepare(path, factor, specks, hat=None):
+    """factor：按原图像素乘 BASE * factor；hat 不为 None 时改成按人物身高缩放（扣掉 hat 像素的帽子），见 STANDING"""
     im = Image.open(path).convert("RGBA")
     a = np.array(im)
     alpha = a[:, :, 3]
@@ -71,7 +102,7 @@ def prepare(path, factor, specks):
     a, removed = clean(a, specks)
     im = Image.fromarray(a)
     im = im.crop(im.getchannel("A").getbbox())
-    scale = BASE * factor
+    scale = BASE * factor if hat is None else PERSON / (im.height - hat)
     w, h = round(im.width * scale), round(im.height * scale)
     if h > HEIGHT:  # never taller than the canvas
         w, h = round(w * HEIGHT / h), HEIGHT
@@ -105,19 +136,28 @@ def main():
     chars = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "characters", "claude")
     ap.add_argument("--out", default=chars)
     ap.add_argument("--sheet")
+    ap.add_argument("--only", help="只处理这几张（输出名，逗号分隔），例如 --only listening,reading")
     args = ap.parse_args()
+    only = set(args.only.split(",")) if args.only else None
+    jobs = [(src, name, factor, specks, None) for src, (name, factor, specks) in SPRITES.items()]
+    jobs += [(src, name, None, specks, hat) for src, (name, hat, specks) in STANDING.items()]
+    if only:
+        unknown = only - {j[1] for j in jobs}
+        if unknown:
+            sys.exit(f"unknown: {', '.join(sorted(unknown))}")
+        jobs = [j for j in jobs if j[1] in only]
     outputs = []
-    for src, (name, factor, specks) in SPRITES.items():
+    for src, name, factor, specks, hat in jobs:
         path = os.path.join(args.source, src)
         if not os.path.exists(path):
             sys.exit(f"missing: {path}")
-        im, removed = prepare(path, factor, specks)
+        im, removed = prepare(path, factor, specks, hat)
         dest = os.path.join(args.out, name + ".webp")
         im.save(dest, "WEBP", quality=92, method=6)
         outputs.append(dest)
         print(f"{name}: {im.width}x{im.height}, removed {len(removed)} piece(s) {removed}")
     if args.sheet:
-        refs = [os.path.join(chars, n + ".webp") for n in ("idle", "dizzy", "compact")]
+        refs = [os.path.join(chars, n + ".webp") for n in ("idle", "bonk")]
         sheet(refs + outputs, args.sheet)
 
 

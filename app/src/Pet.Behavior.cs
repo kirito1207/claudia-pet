@@ -6,7 +6,8 @@ namespace Claudia
 {
     sealed partial class Pet
     {
-        static readonly string[] IdleChoices = { "hum", "stretch", "yawn", "clawd" };
+        // clawd 之后是动画小动作的分组：发呆 / 魔法 / 偷吃零食 / Claude 梗 / 才艺 / 玩耍 / 吃喝 / 时令 / 走路（见 character.json 的 animations[].idle）
+        static readonly string[] IdleChoices = { "hum", "stretch", "yawn", "clawd", "fidget", "magic", "snack", "claude", "talent", "play", "food", "season", "walk" };
         static bool SettingOn(string key) => !Store.Settings.TryGetValue(key, out var v) || !(v is bool b) || b;
         static string IdleFrequency => Store.Settings.TryGetValue("idleFrequency", out var v) && v is string s &&
             new[] { "quiet", "normal", "lively" }.Contains(s) ? s : "normal";

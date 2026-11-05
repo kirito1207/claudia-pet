@@ -85,6 +85,7 @@ namespace Claudia
         };
         void BeginDrag(double downX, double downY)
         {
+            StopWalk(null);   // 走着的时候被你拎起来
             StopMotion(false);
             if (!ready || hwnd == IntPtr.Zero) return;
             var packet = MotionPacket();

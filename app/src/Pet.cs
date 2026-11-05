@@ -162,6 +162,7 @@ namespace Claudia
                     {
                         if (!(Store.Json.DeserializeObject(a.WebMessageAsJson) is Dictionary<string, object> m)) return;
                         if (m.TryGetValue("motion", out var mm) && mm is Dictionary<string, object> movement) { AcceptMotion(movement); return; }
+                        if (m.ContainsKey("walk")) { HandleWalk(m["walk"] as Dictionary<string, object>); return; }
                         // 网页脚本出错：记进日志（每次启动最多 20 条）
                         if (m.TryGetValue("jsError", out var je)) { if (jsErrors++ < 20) Store.Log("网页脚本出错: " + je); return; }
                         if (imageErrors >= 5 || !m.TryGetValue("imageError", out var src)) return;

@@ -132,8 +132,10 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
 <div class="card" data-tab="daily">
   <div class="item"><div class="label">随机小动作<small>只在闲着时触发；不会打断工作、拖动或手动点播。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="idleEnabled" aria-label="随机小动作"><span></span></label></div></div>
   <div class="item"><div class="label">活跃程度<small>闲着时约每 90 / 45 / 20 秒做一次小动作，时间会略有变化。</small></div><div class="ctl"><div class="seg" id="idleFrequency"><button data-v="quiet">安静</button><button data-v="normal">标准</button><button data-v="lively">活泼</button></div></div></div>
-  <div class="item"><div class="label">允许的动作<small>打哈欠在闲置三分钟后参与随机选择；全部取消则不做随机动作。</small></div><div class="ctl idle-choices">
+  <div class="item"><div class="label">允许的动作<small>打哈欠在闲置三分钟后参与随机选择；抱 Clawd 之后的几组是动画小动作，鼠标停在名字上能看到包括哪些；全部取消则不做随机动作。</small></div><div class="ctl idle-choices">
     <label><input type="checkbox" data-idle-action="hum">哼歌</label><label><input type="checkbox" data-idle-action="stretch">伸懒腰</label><label><input type="checkbox" data-idle-action="yawn">打哈欠</label><label><input type="checkbox" data-idle-action="clawd">抱 Clawd</label>
+    <label title="东张西望、敲桌面、玩魔方、吹泡泡"><input type="checkbox" data-idle-action="fidget">发呆小动作</label><label title="书灵现世、凭空生花、变鸽子"><input type="checkbox" data-idle-action="magic">魔法</label><label title="偷吃时点她会被抓包"><input type="checkbox" data-idle-action="snack">偷吃零食</label><label title="吃 Token、对屏碎碎念、玩游戏气急败坏、当前余额的钱袋"><input type="checkbox" data-idle-action="claude">Claude 梗</label>
+    <label title="抛球、扑克、吹笛子、小提琴、三支舞、换装"><input type="checkbox" data-idle-action="talent">才艺</label><label title="玩具汽车、水枪（夏天）、五子棋、陀螺、撸猫、毽子、木马、拍书打节奏"><input type="checkbox" data-idle-action="play">玩耍</label><label title="午饭、晚饭按时间；火锅、大闸蟹、西瓜、糖葫芦、年糕按季节；青团、腊八粥、重阳糕按节气"><input type="checkbox" data-idle-action="food">吃喝</label><label title="放风筝、摇扇、落叶、堆雪人按季节；七夕、中元、重阳前后各有专属动作"><input type="checkbox" data-idle-action="season">时令</label><label title="在 Claude 窗口里左右走一走，碰到窗口边就停"><input type="checkbox" data-idle-action="walk">自己走动</label>
   </div></div>
 </div>
 
@@ -159,6 +161,8 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
   <p>参考 dsh-pet<small>拖拽、抛掷的物理公式摘录自 PC2005-cloud 的 dsh-pet，右键动作菜单和菜单样式参照了 dsh-pet（MIT 协议）。</small>
     <small><button class="srclink" data-action="openDshPet">github.com/PC2005-cloud/dsh-pet</button></small></p>
   <p>角色立绘<small>Claude 娘的立绘、设定和台词来自 CrossPet（由 CrossPet 用 AI 生图工具绘制，形象参考社区流行的 Claude 娘设定），采用 CC BY-NC-SA 4.0：可以转载和二次创作，但要署名、不能商用，衍生作品也要用同样的协议。</small></p>
+  <p>动画动作<small>待机、思考、摸头、节日等动画来自 hunmer 的 claude-pet 动作包（以 CrossPet 的 Claude 娘为基准 AI 生成），经作者授权使用，采用 CC BY-NC-SA 4.0。</small>
+    <small><button class="srclink" data-action="openAboutmePets">github.com/hunmer/aboutme-pets</button></small></p>
   <p>软件图标<small>以 CrossPet 的 Claude 娘头像和抱 Clawd 立绘为参考，用 OpenAI Codex 内置的图像工具生成，同样采用 CC BY-NC-SA 4.0。</small></p>
   <p>商标<small>「Claude」是 Anthropic 的商标，Clawd 形象的权利也归 Anthropic。claudia-pet 是非官方同人项目，和 Anthropic 无关。</small></p>
 </div>
@@ -219,7 +223,7 @@ function setState(s) {
   document.querySelector('[data-key="ceilingBounce"]').disabled = !s.physicsEnabled
   const idleOn = s.idleEnabled !== false
   for (const b of $('idleFrequency').children) { b.classList.toggle('on', b.dataset.v === (s.idleFrequency || 'normal')); b.disabled = !idleOn }
-  for (const el of document.querySelectorAll('[data-idle-action]')) { el.checked = (s.idleActions || ['hum','stretch','yawn','clawd']).includes(el.dataset.idleAction); el.disabled = !idleOn }
+  for (const el of document.querySelectorAll('[data-idle-action]')) { el.checked = (s.idleActions || ['hum','stretch','yawn','clawd','fidget','magic','snack','claude','talent','play','food','season','walk']).includes(el.dataset.idleAction); el.disabled = !idleOn }
   renderIntegrations(s.integrations)
 }
 

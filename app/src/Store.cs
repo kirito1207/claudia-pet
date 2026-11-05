@@ -136,6 +136,19 @@ namespace Claudia
             return (poses, blink, blinkBase);
         }
 
+        /// <summary>characters/&lt;id&gt;/anim/：动画精灵图（文件名 → 地址），character.json 的 animations 按文件名引用</summary>
+        static Dictionary<string, object> Sheets(string dir)
+        {
+            var sheets = new Dictionary<string, object>();
+            var anim = Path.Combine(dir, SpritePath.AnimDir);
+            if (!Directory.Exists(anim)) return sheets;
+            var id = Path.GetFileName(dir);
+            foreach (var f in Directory.GetFiles(anim, "*.webp").OrderBy(f => Path.GetFileName(f), StringComparer.Ordinal))
+                sheets[Path.GetFileNameWithoutExtension(f)] =
+                    $"https://{DataHost}/characters/{Uri.EscapeDataString(id)}/{SpritePath.AnimDir}/{Uri.EscapeDataString(Path.GetFileName(f))}";
+            return sheets;
+        }
+
         public static Dictionary<string, object> Manifest()
         {
             var chars = new Dictionary<string, object>();
@@ -149,6 +162,7 @@ namespace Claudia
                 if (!(poses.ContainsKey("idle") || poses.ContainsKey("default"))) continue;
                 if (Names.TryGetValue(id, out var custom) && custom is string s && s.Trim() != "") info["name"] = s.Trim();
                 info["poses"] = poses; info["blink"] = blink; info["blinkBase"] = blinkBase;
+                info["sheets"] = Sheets(dir);
                 chars[id] = info;
             }
             return new Dictionary<string, object> { ["characters"] = chars };

@@ -79,7 +79,7 @@ claudia-pet 是一个 Windows 上的 Claude 桌宠。桌宠的名字叫 claudia�
 | 动作 | 什么时候出现 |
 |---|---|
 | 时段问候 | 每个时段第一次见到你时演一次：深夜 23–2 点、凌晨 2–5 点、早上 5–11 点、中午 11–14 点、下午 14–18 点、晚上 18–23 点。一直开着时进入新时段，只要她闲着、没睡着，也会打招呼 |
-| 节日装扮 | 节日当天第一次见面时演，优先于时段问候：元旦（1 月 1 日）、春节（正月初一到初七）、元宵、端午、中秋、国庆（10 月 1–7 日）、万圣节（10 月 31 日）、圣诞（12 月 24–25 日） |
+| 节日装扮 | 节日当天第一次见面时演，优先于时段问候：元旦（1 月 1 日）、春节（正月初一到初七）、元宵、端午、中秋、万圣节（10 月 31 日）、圣诞（12 月 24–25 日） |
 
 农历节日的日期内置到 2036 年。正在干活时不打断，只说一句问候。打过的招呼记在本机，重启不会重复。
 
@@ -116,7 +116,7 @@ claudia-pet 是一个 Windows 上的 Claude 桌宠。桌宠的名字叫 claudia�
 | 额度 | 显示样式：文字，或每个额度一条的额度条（剩得越少颜色越暖） |
 | 接入 Claude | Claude Code 插件、Claude 桌面端（MCP）两项的接入和撤销，并显示插件上次发来消息的时间 |
 | 互动 | **点击 Q 弹**开关；**碰边动作**开关（撞头、摔倒、趴地）；**拖拽与抛掷**开关（关闭后直接跟手、不会被扔出去）；**力度**（越大跟得越紧、扔得越快）；**重力**（0 为无重力）；**反弹系数**；**地面摩擦**；**弹性幅度**（人物的挤压变形，0 为关闭）；**顶部反弹**开关；一键恢复默认手感 |
-| 日常 | **随机小动作**开关；**活跃程度**（安静 / 标准 / 活泼）；**允许的动作**（哼歌、伸懒腰、打哈欠、抱 Clawd，可多选） |
+| 日常 | **随机小动作**开关；**活跃程度**（安静 / 标准 / 活泼）；**允许的动作**（哼歌、伸懒腰、打哈欠、抱 Clawd，以及发呆小动作、魔法、偷吃零食、Claude 梗、才艺、玩耍、吃喝（按饭点、季节、节气）、时令（按季节，七夕 / 中元 / 重阳前后）、自己走动九组动画小动作，可多选） |
 | 通用 | **任务通知**：完成或出错、等待授权或回答、仅在 Claude 不在前台时通知，三项默认都打开；**隐藏快捷键**；**省电模式**（身边特效刷新慢一点、闲着时更快停下，人物动作照旧）；打开**角色**文件夹和**数据和日志**文件夹 |
 | 关于 | 版本、项目来源、素材授权和商标说明 |
 
@@ -176,6 +176,8 @@ claudia-pet 不是从零写的，下面这些部分来自别人的作品，请�
 | 贴在 Claude 窗口里跟随、拖拽适配层、点击 Q 弹、碰边动作、晃动后停稳再反应及其优先级、日常动作的频率和开关、Windows 任务通知策略、桌面端 MCP 启动 | claudia-pet 在 CrossPet 基础上新增或改写 | 本项目代码，MIT |
 | 碰边动作立绘（撞头、摇晃、摔倒、趴地、爬起） | 以 CrossPet 的设计参考图和现有立绘为参考，在 OpenAI Codex 中用其内置 image_gen 工具生成，再由 `scripts/prepare-sprites.py` 统一大小和底边对齐 | 作为 CrossPet 素材的衍生作品，沿用 CC BY-NC-SA 4.0；提示词和附图见 [docs/prompts/](docs/prompts/) |
 | Claude 娘立绘、角色设定、台词（碰边动作的立绘和台词除外，台词为本项目新写） | 来自 CrossPet，立绘和台词与 CrossPet v1.3.8 原文件一致，只把默认名字从「Claude」改成了「claudia」。按 CrossPet 的说明，立绘由 CrossPet 用 AI 生图工具绘制，形象参考社区流行的 Claude 娘设定（CrossPet 列出的参考有 [ai-school-op](https://github.com/lshhhhhhh/ai-school-op)、[openpet-ai-girls](https://github.com/AwesomeHou/openpet-ai-girls)）；社区设定最初的作者未确认 | CC BY-NC-SA 4.0，见 [characters/LICENSE.md](characters/LICENSE.md)（CrossPet 原文，未改动） |
+| 按动画比例重画的立绘（听你说、看书、忙碌、查资料、哎呀、累了、鼓脸、赌气、晕乎乎、被哄、原谅你、六个时段问候、元旦） | 以 CrossPet 的设计参考图、动作包待机帧（比例）和原有同名立绘（姿势）为参考，在 OpenAI Codex 中生成，再由 `scripts/prepare-sprites.py` 统一大小和底边对齐 | 作为上述素材的衍生作品，沿用 CC BY-NC-SA 4.0；提示词和附图见 [docs/prompts/立绘重画-统一比例/](docs/prompts/立绘重画-统一比例/) |
+| 动画动作（待机、思考、写东西、敲命令、整理记忆、睡觉、开心、吃惊、被摸头、不耐烦、再见、哼歌、伸懒腰、打哈欠、六个节日，以及被拎起来、闲置小动作、才艺、玩耍、吃喝、时令、偷吃零食、余额钱袋和走路，`characters/claude/anim/`） | 作者 hunmer，来源 [hunmer/aboutme-pets](https://github.com/hunmer/aboutme-pets)（`pets/claude` 动作包）；以 CrossPet 的 Claude 娘为基准 AI 生成并抠像转换，原样使用 | CC BY-NC-SA 4.0，作者在 [hunmer/aboutme-pets#1](https://github.com/hunmer/aboutme-pets/issues/1) 书面授权；见 [NOTICE.md](NOTICE.md) |
 | 软件图标（claudia 抱 Clawd） | 以 CrossPet 原图标中的 Claude 娘头像、CrossPet 立绘 `characters/claude/clawd.webp` 为参考，在 OpenAI Codex 中用其内置 image_gen 工具编辑生成，之后只做了格式和尺寸转换 | 作为上述素材的衍生作品，沿用 CC BY-NC-SA 4.0；完整提示词见 [icon/README.md](icon/README.md) |
 | Clawd（立绘和图标里的橙色像素螃蟹玩偶） | Anthropic 为 Claude Code 使用的形象 | 相关权利归 Anthropic 所有，本项目只作同人致敬，不对其主张任何权利 |
 | WebView2 SDK | 构建时从 nuget.org 下载的 `Microsoft.Web.WebView2` 1.0.3537.50，不放在仓库里 | 按微软该包的许可 |

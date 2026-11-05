@@ -105,6 +105,7 @@ namespace Claudia
                         case "openData": Open(Store.Data); break;
                         case "openUpstream": Open("https://github.com/lokicorvus/crosspet"); break;
                         case "openDshPet": Open("https://github.com/PC2005-cloud/dsh-pet"); break;
+                        case "openAboutmePets": Open("https://github.com/hunmer/aboutme-pets"); break;
                     }
                     break;
             }

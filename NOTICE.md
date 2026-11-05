@@ -10,7 +10,7 @@ claudia-pet 作为独立项目维护，基于 [CrossPet](https://github.com/loki
 
 ## 角色素材与图标
 
-本项目随附的 Claude 娘立绘、角色设定、台词和展示图（`characters/claude/`）除下文的碰边动作立绘和台词外都来自 CrossPet v1.3.8：原有立绘和台词与原版一致，只把默认显示名从「Claude」改为「claudia」，删去了不再使用的贴边立绘，并在 `character.json` 里新增了碰边动作的台词（`bonk`、`stagger`、`fallen`、`faceplant`、`getup`、带 `Angry` 后缀的生气版和 `tumbleAsk`，由本项目新写）。按 CrossPet README「致谢与授权」一节的说明：
+本项目随附的 Claude 娘立绘、角色设定、台词和展示图（`characters/claude/`）除下文的碰边动作立绘和台词外都来自 CrossPet v1.3.8：原有立绘和台词与原版一致，只把默认显示名从「Claude」改为「claudia」，删去了不再使用的贴边立绘和已被下文动画动作替换的 22 张立绘（待机图保留），另有 20 张换成了下文按动画比例重画的版本，并在 `character.json` 里新增了碰边动作的台词（`bonk`、`stagger`、`fallen`、`faceplant`、`getup`、带 `Angry` 后缀的生气版和 `tumbleAsk`，由本项目新写）。按 CrossPet README「致谢与授权」一节的说明：
 
 - 这些立绘由 CrossPet 用 AI 生图工具绘制；
 - Claude 娘形象参考社区流行的 AI 娘设定，CrossPet 列出的参考为 [ai-school-op](https://github.com/lshhhhhhh/ai-school-op) 和 [openpet-ai-girls](https://github.com/AwesomeHou/openpet-ai-girls)；
@@ -22,6 +22,17 @@ claudia-pet 作为独立项目维护，基于 [CrossPet](https://github.com/loki
 
 碰边动作立绘（`bonk.webp`、`stagger.webp`、`stagger-2.webp`、`fallen.webp`、`faceplant.webp`、`getup.webp`：撞头、摇晃、摔倒、趴地、爬起）也是本项目制作的衍生图：以 CrossPet 的 Claude 娘设计参考图 `ref-claude.webp` 和 CrossPet 现有立绘为参考，在 OpenAI Codex 中用其内置的 image_gen 工具生成，之后由 `scripts/prepare-sprites.py` 去掉画面里的晃动线、统一缩放和底边对齐并转成 WebP。提示词的写法沿用 CrossPet 的角色生图提示词，「通用格式规则」和「角色锁定」两段大部分取自 CrossPet 原文。这些立绘沿用 CC BY-NC-SA 4.0，提示词和附图保存在 [docs/prompts/](docs/prompts/)。
 
+按动画比例重画的 19 张立绘（`listening`、`reading`、`busy_left`、`busy_right`、`searching`、`oops`、`tired`、`puffed`、`sulk`、`dizzy`、`coaxed`、`forgiven`、六个 `greet_*`、`fest_newyear`；另画了一张国庆，后来不再使用）也是本项目制作的衍生图：以 CrossPet 的设计参考图 `ref-claude.webp`、claude-pet 动作包的待机帧（比例参考）和 CrossPet 原有的同名立绘（姿势参考）为附图，在 OpenAI Codex 中生成，再由 `scripts/prepare-sprites.py` 统一大小、底边对齐并转成 WebP。沿用 CC BY-NC-SA 4.0，提示词和附图见 [docs/prompts/立绘重画-统一比例/](docs/prompts/立绘重画-统一比例/)。
+
+动画动作（`characters/claude/anim/` 里的 80 张精灵图：替换原有姿态的待机、思考、写东西、敲命令、整理记忆、睡觉、开心、吃惊、被摸头、不耐烦、再见、哼歌、伸懒腰、打哈欠和六个节日；新加的被拎起来、闲置小动作、才艺、玩耍、吃喝、时令、偷吃零食、Claude 梗、五档余额钱袋和走路）来自 claude-pet 动作包：
+
+- 作者：hunmer
+- 来源：[hunmer/aboutme-pets](https://github.com/hunmer/aboutme-pets)（`pets/claude` 动作包），取自固定提交 `3ba083bee0ef88d9300eaa941fe2da89d0d99c7b`
+- 制作方式（作者说明）：AI（Claude）生成 + 人工抠像转换，以 CrossPet 的 Claude 娘立绘 `idle.webp` 为基准
+- 授权：作者 2026-11-05 在 [hunmer/aboutme-pets#1](https://github.com/hunmer/aboutme-pets/issues/1) 书面同意在 claudia-pet 中使用和再分发（放进公开仓库、打包进 Release；可裁剪、缩放、重新压缩或改格式，不改画面内容），按 CC BY-NC-SA 4.0 发布；以后新增的 Claude 动作同样适用。同一仓库的 `pets/dsh`、`pets/dsh1` 素材来自其他上游，不在这份授权里，本项目没有使用。
+
+本项目原样使用这些精灵图文件（没有重新编码），只在播放时缩放、对齐，按每个姿态选取播放的帧段。文件清单和用途见 [characters/claude/anim/SOURCE.md](characters/claude/anim/SOURCE.md)。
+
 | 内容 | 来源 | 授权 |
 |---|---|---|
 | 源代码 | claudia-pet，基于 CrossPet；`web/dsh-physics.js` 摘录自 dsh-pet | MIT；保留 claudia-pet、CrossPet 及 dsh-pet 的版权与许可声明 |
@@ -29,6 +40,8 @@ claudia-pet 作为独立项目维护，基于 [CrossPet](https://github.com/loki
 | 抱 Clawd 图标 | 本项目以 CrossPet 素材为参考生成 | CC BY-NC-SA 4.0 |
 | 碰边动作立绘（撞头、摇晃、摔倒、趴地、爬起） | 本项目以 CrossPet 素材为参考生成 | CC BY-NC-SA 4.0 |
 | 碰边动作台词 | 本项目新写，加在 CrossPet 的 `character.json` 里 | CC BY-NC-SA 4.0（随所在文件） |
+| 按动画比例重画的 20 张立绘 | 本项目以 CrossPet 素材和动作包待机帧为参考生成 | CC BY-NC-SA 4.0 |
+| 动画动作（`characters/claude/anim/`） | hunmer，[hunmer/aboutme-pets](https://github.com/hunmer/aboutme-pets)（`pets/claude` 动作包），以 CrossPet 的 Claude 娘为基准 AI 生成 | CC BY-NC-SA 4.0（作者书面授权） |
 | Clawd 形象 | Anthropic（Claude Code 使用的橙色像素螃蟹） | 权利归 Anthropic；本项目不主张任何权利 |
 
 原始 [角色授权说明](characters/LICENSE.md) 保持不变，其中还列有原项目其他角色；这些条目是来源记录，不表示 claudia-pet 包含那些角色。当前素材范围另见 [characters/README.md](characters/README.md)。

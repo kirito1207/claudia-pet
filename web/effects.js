@@ -470,22 +470,17 @@ const fullMoon = `<defs><radialGradient id="fxFull" cx="42%" cy="40%" r="62%"><s
   `<animate attributeName="opacity" values="0;1" ${fxOnce('1.4s')}/></g>`
 const osmanthus = i => `<g fill="#ffb627" stroke="${INK}" stroke-width="1">${[0, 90, 180, 270].map(a => `<ellipse cx="0" cy="-3.6" rx="2.4" ry="3.4" transform="rotate(${a})"/>`).join('')}<circle r="1.6" fill="#fff1b0" stroke="none"/></g>`
 const fxMidAutumn = fullMoon + fall([22, 52, 82, 470, 540, 560], osmanthus, { dur: 4.8, dy: 320, sway: 14, spin: 180, y0: 140 })
-// 国庆（出游主题）：白云飘过 + 一架纸飞机
-const plane = `<g opacity="0"><path d="M0 0 L36 -12 L14 6Z" fill="#fff" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/><path d="M14 6 L36 -12 L18 14Z" fill="#dfe8f5" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/>` +
-  `<animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="5s" ${loop}/>` +
-  `<animateMotion path="M10 140 C60 60 140 40 200 60 S330 30 380 50 S500 90 560 40" dur="5s" ${loop}/></g>`
-const fxNational = `<g>${fxCloud(70, 70, 0.8, '7s', 12)}${fxEnter(0, '1s')}</g><g>${fxCloud(520, 120, 0.7, '6s', -12)}${fxEnter(0, '1.3s')}</g>` + plane
 
 const GREET_FX = {
   greet_morning: fxMorning, greet_noon: fxNoon, greet_afternoon: fxAfternoon, greet_evening: fxEvening, greet_night: fxNight, greet_dawn: fxDawn,
   fest_halloween: fxHalloween, fest_christmas: fxChristmas, fest_newyear: fxNewYear, fest_spring: fxSpring, fest_lantern: fxLantern,
-  fest_dragonboat: fxDragonBoat, fest_midautumn: fxMidAutumn, fest_national: fxNational,
+  fest_dragonboat: fxDragonBoat, fest_midautumn: fxMidAutumn,
 }
 Object.assign(AURA, {
   greet_morning: ['#ffe2a8', 0.5], greet_noon: ['#fff0a8', 0.5], greet_afternoon: ['#ffd2b8', 0.45], greet_evening: ['#ffc98a', 0.5],
   greet_night: ['#9fb0e8', 0.45], greet_dawn: ['#c9bff0', 0.45],
   fest_halloween: ['#ffb36b', 0.5], fest_christmas: ['#cfe6ff', 0.5], fest_newyear: ['#ffe08a', 0.6], fest_spring: ['#ff9b8a', 0.55],
-  fest_lantern: ['#ffcf8a', 0.55], fest_dragonboat: ['#a8e0b8', 0.5], fest_midautumn: ['#ffe7a3', 0.55], fest_national: ['#bfe0ff', 0.5],
+  fest_lantern: ['#ffcf8a', 0.55], fest_dragonboat: ['#a8e0b8', 0.5], fest_midautumn: ['#ffe7a3', 0.55],
 })
 
 // 每个姿态周围的细节
