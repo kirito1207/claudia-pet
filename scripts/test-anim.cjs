@@ -32,7 +32,7 @@ function manifest() {
   for (const [p, a] of Object.entries(m.characters.claude.animations))
     for (const n of a.sheets) assert.ok(m.characters.claude.sheets[n], `${p} 用的 ${n}.webp 不在 anim 里`)
   // 替换掉的姿态都还留着静态立绘（关掉动画、读不到时用）；只有动画的是新加的小动作、余额钱袋和拖拽
-  const replaced = ['idle', 'thinking', 'writing', 'running', 'compact', 'sleeping', 'happy', 'surprised', 'pat', 'annoyed', 'bye', 'hum', 'stretch', 'yawn',
+  const replaced = ['idle', 'thinking', 'writing', 'running', 'compact', 'sleeping', 'happy', 'surprised', 'pat', 'bye', 'hum', 'stretch', 'yawn',
     'fest_spring', 'fest_lantern', 'fest_dragonboat', 'fest_midautumn', 'fest_halloween', 'fest_christmas']
   for (const p of replaced) assert.ok(m.characters.claude.animations[p], `${p} 要有动画`)
   // 被替换的静态立绘已移出项目，只留待机图兜底（程序靠它识别角色）
@@ -71,11 +71,26 @@ function manifest() {
     await page.evaluate(() => show('hum', true)); await waitSheet()
     s = await state(); assert.equal(s.url, '悠闲哼歌.webp'); assert.equal(s.fx, 0)
     assert.ok(await page.evaluate(() => transientMs('hum') >= 10000 && transientMs('pat') >= 10000))
-    assert.ok(await page.evaluate(() => transientMs('annoyed') >= 10000))   // 不耐烦也演满整段，回到站姿再换（不在最生气时切走）
+    // 不耐烦 2026-11-06 换回 CrossPet 的静态图（和鼓脸、红温、赌气一串）；傲娇生气的动画改成点击反应 pout
+    assert.ok(await page.evaluate(() => !anim('annoyed') && framesFor('annoyed')[0]?.includes('annoyed') && transientMs('annoyed') === 4500))
+    assert.ok(await page.evaluate(() => transientMs('pout') >= 10000))
     await page.evaluate(() => clearTimeout(revertTimer))   // 下面逐个切姿态，别让哼歌的计时中途把她切回待机
     const pats = new Set()
     for (let i = 0; i < 12; i++) { await page.evaluate(() => { pose = null; setPose('pat', true) }); await waitSheet(); pats.add((await state()).url) }
     assert.ok(pats.size >= 2 && [...pats].every(u => u.startsWith('点击回应-')), 'pat should pick among click reactions')
+    // 点击池：摸头 4 段 + 傲娇生气 1 段，每段机会一样
+    const clickPicks = await page.evaluate(() => { const n = { pat: 0, pout: 0 }; for (let i = 0; i < 2000; i++) n[pickClickPose()]++; return n })
+    assert.ok(clickPicks.pout > 300 && clickPicks.pout < 520 && clickPicks.pat > 1480, `click pool ${JSON.stringify(clickPicks)}`)
+    // 每点一下都从头重播（照 dsh-pet）：演到一半再点，换一段（或同一段）从第一帧开始，台词也重来
+    await page.evaluate(() => { clickBounce = false; pose = null; setPose('idle', true); performClick('pat') }); await waitSheet()
+    await page.waitForTimeout(1500)
+    const before = await page.evaluate(() => ({ frame: sheet.frame, pose }))
+    assert.ok(['pat', 'pout'].includes(before.pose) && before.frame > 10, `click reaction playing ${JSON.stringify(before)}`)
+    await page.evaluate(() => performClick('pat')); await waitSheet()
+    const after = await page.evaluate(() => ({ frame: sheet.frame, pose, said: (linesOf(pose) || []).includes($('bubble').textContent) }))
+    assert.ok(after.frame < 6, `click restarted from frame ${after.frame}`)
+    assert.ok(after.said, 'restart said a line of the new reaction')
+    await page.evaluate(() => { clearTimeout(revertTimer); setPose('idle', true) })
 
     // 再见从挥手那段开始
     await page.evaluate(() => { pose = null; setPose('bye', true) }); await waitSheet()

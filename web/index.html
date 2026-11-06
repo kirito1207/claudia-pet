@@ -238,7 +238,7 @@ addEventListener('unhandledrejection', e => window.chrome?.webview?.postMessage(
 const MOTION = {
   idle: 'm-bob', listening: 'm-hop', thinking: 'm-rock', reading: 'm-rock', writing: 'm-bob', running: 'm-quick',
   searching: 'm-sway', delegating: 'm-sway', happy: 'm-jump', proud: 'm-hop', oops: 'm-shake', surprised: 'm-jolt',
-  pat: 'm-sway', sleeping: 'm-slow', tired: 'm-slow', hum: 'm-sway', stretch: 'm-squish', yawn: 'm-squish', drawing: 'm-rock',
+  pat: 'm-sway', pout: 'm-sway', sleeping: 'm-slow', tired: 'm-slow', hum: 'm-sway', stretch: 'm-squish', yawn: 'm-squish', drawing: 'm-rock',
   bye: 'm-dash',
   // 角色专属姿态（没列出的默认轻轻浮动）
   compact: 'm-squish', sorry: 'm-slow', clawd: 'm-sway',
@@ -257,7 +257,7 @@ const LOCAL_LINES = {
   yawn: ['哈啊……'], sleeping: ['zZz'], tired: ['有点累了…'],
 }
 // 新加的姿态还没画立绘时，先用哪张顶上
-const POSE_FALLBACK = { compact: 'writing', sorry: 'listening', asking: 'listening', update: 'happy', bye: 'happy',
+const POSE_FALLBACK = { pout: 'pat', compact: 'writing', sorry: 'listening', asking: 'listening', update: 'happy', bye: 'happy',
   busy_left: 'thinking', busy_right: 'thinking', swamped_left: 'busy_left', swamped_right: 'busy_right',
   annoyed: 'surprised', puffed: 'surprised', redhot: 'surprised', sulk: 'surprised', dizzy: 'oops', coaxed: 'pat', forgiven: 'happy',
   bonk: 'surprised', stagger: 'dizzy', fallen: 'dizzy', faceplant: 'dizzy' }
@@ -1189,7 +1189,18 @@ function performClick(kind, x, y) {
   }
   if (kind === 'pat' && (sulking || angerNow() >= 20)) { coaxHer(); return }   // 生着气的时候摸她 = 哄她
   const pokePose = char()?.pokePose && canShow(char().pokePose) ? char().pokePose : 'surprised'
-  show(kind === 'poke' ? pokePose : 'pat', true)
+  replay(kind === 'poke' ? pokePose : pickClickPose())
+}
+// 点击反应（照 dsh-pet）：每点一下都从点击动画池里随机抽一段，从第一帧重新演，台词和停留时间也重来；
+// 抽到正在演的那段也从头再演。摸头有 4 段，傲娇生气（pout）1 段，每段抽中的机会一样
+const CLICK_POSES = ['pat', 'pout']
+function pickClickPose() {
+  const pool = CLICK_POSES.flatMap(p => (anim(p)?.urls || []).map(() => p))
+  return pool.length ? pick(pool) : 'pat'
+}
+function replay(p) {
+  if (pose === p) pose = null   // 姿态没变时 setPose 什么都不做：先清掉，让它重新挑一段、从头播
+  show(p, true)
 }
 
 // Only the character deforms; name and quota keep their normal shape.

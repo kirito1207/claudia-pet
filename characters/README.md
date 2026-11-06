@@ -6,7 +6,7 @@
 
 `LICENSE.md` 是原始授权文档，保留了原项目全部角色的来源表；当前 claudia-pet 包含的角色以本目录实际文件为准。不要把原作者和授权记录当作无用品牌信息删除。
 
-碰边动作立绘（`bonk`、`bonk-2`、`bonk-3`、`stagger`、`stagger-2`、`stagger-3`、`faceplant`、`faceplant-2`、`fallen-1`、`fallen`、`fallen-2`，按 `character.json` 的 `frames` 顺序翻页播放）不是 CrossPet 原有的：它们以 CrossPet 的设计参考图、claude-pet 动作包的待机帧（比例）和旧碰边立绘或本套上一帧（姿势）为参考，在 OpenAI Codex 中生成，再用 `scripts/prepare-sprites.py` 统一大小、对齐。同样沿用 CC BY-NC-SA 4.0，提示词见 [docs/prompts/碰边补帧/](../docs/prompts/碰边补帧/)。`character.json` 里这几个动作的台词（`bonk`、`stagger`、`fallen`、`faceplant`、倒地后站回去时说的 `getup`、带 `Angry` 后缀的生气版和 `tumbleAsk`）也是本项目新写的，其余台词与 CrossPet 原版一致。
+碰边动作立绘（`bonk`、`bonk-2`、`bonk-3`、`stagger`、`stagger-2`、`stagger-3`、`faceplant`、`faceplant-2`、`fallen-1`、`fallen`、`fallen-2`，按 `character.json` 的 `frames` 顺序翻页播放）不是 CrossPet 原有的：它们以 CrossPet 的设计参考图、claude-pet 动作包的待机帧（比例）和旧碰边立绘或本套上一帧（姿势）为参考，在 OpenAI Codex 中生成，再用 `scripts/prepare-sprites.py` 统一大小、对齐。同样沿用 CC BY-NC-SA 4.0，提示词见 [docs/prompts/碰边补帧/](../docs/prompts/碰边补帧/)。`character.json` 里这几个动作的台词（`bonk`、`stagger`、`fallen`、`faceplant`、倒地后站回去时说的 `getup`、带 `Angry` 后缀的生气版和 `tumbleAsk`），以及点击反应「傲娇」的 `pout`（2026-11-06 Claude 起草，用户未审），也是本项目新写的，其余台词与 CrossPet 原版一致。
 
 听你说、看书、忙碌左右、查资料、哎呀、累了、鼓脸、赌气、晕乎乎、被哄、原谅你、六个时段问候、元旦这 19 张也不是 CrossPet 原图：2026-11-05 按动画的身体比例重画（裙摆下露一小截白袜和小皮鞋），姿势和道具照原图，提示词见 [docs/prompts/立绘重画-统一比例/](../docs/prompts/立绘重画-统一比例/)，同样沿用 CC BY-NC-SA 4.0。
 

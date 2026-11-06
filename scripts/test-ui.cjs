@@ -117,7 +117,7 @@ const root = path.resolve(__dirname, '..');
     assert.equal(await page.locator('#body').evaluate(el=>getComputedStyle(el).animationPlayState),'paused');
     assert.deepEqual(await page.locator('#quota').boundingBox(),clickStart);
     await page.waitForFunction(()=>!clickSequence.busy);
-    assert.equal(await page.evaluate(()=>pose),'pat','normal reaction did not follow bounce');
+    assert.ok(['pat','pout'].includes(await page.evaluate(()=>pose)),'normal reaction did not follow bounce');
     await page.evaluate(()=>{sulking=true;coax=0;setPose('sulk',true);handleClick('pat');handleClick('pat');handleClick('pat');});
     await page.waitForFunction(()=>!clickSequence.busy);
     assert.equal(await page.evaluate(()=>pose),'forgiven','rapid pats no longer coax her');

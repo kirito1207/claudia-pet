@@ -65,6 +65,11 @@
       "吓我一跳",
       "怎么了怎么了"
     ],
+    "pout": [
+      "哼，又、又摸我……",
+      "才没有很开心呢！",
+      "……就让你摸一下哦"
+    ],
     "pat": [
       "嘿嘿…",
       "再摸一下也行",
@@ -329,7 +334,7 @@
     "happy": { "sheets": ["工作状态-雀跃庆祝"], "full": true },
     "surprised": { "sheets": ["被吓一跳"], "full": true },
     "pat": { "sheets": ["点击回应-元气挥手", "点击回应-害羞惊讶", "点击回应-开心跃动", "点击回应-挠痒咯咯笑"], "full": true },
-    "annoyed": { "sheets": ["点击回应-傲娇生气"], "full": true },
+    "pout": { "sheets": ["点击回应-傲娇生气"], "full": true },
     "bye": { "sheets": ["点击回应-元气挥手"], "from": 40, "to": 95 },
     "hum": { "sheets": ["悠闲哼歌"], "full": true },
     "stretch": { "sheets": ["超大伸懒腰"], "full": true },

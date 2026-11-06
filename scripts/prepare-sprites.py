@@ -67,6 +67,8 @@ STANDING = {
     # fest_national（国庆）2026-11-05 用户决定不要了，原图 f7ce2230…_720.png 没用
     # 2026-11-06 得意按新比例重画（Codex 命令行，提示词 docs/prompts/立绘重画-统一比例/得意-2026-11-06-提示词.md）；花冠高出头顶约 125 px
     "proud_codex_8c33ee85.png": ("proud", 125, False),
+    # 2026-11-06 不耐烦换回静态图（傲娇生气动画改成点击反应），按新比例重画：第一版腿太长，第二版照鼓脸的身材画
+    "annoyed_codex_efd020f2.png": ("annoyed", 0, False),
 }
 
 
