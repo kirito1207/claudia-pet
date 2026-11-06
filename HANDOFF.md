@@ -35,6 +35,7 @@ Windows 上独立维护的 Claude 桌宠。基于 CrossPet，参考 dsh-pet；�
 - `click-sequence.js`：220ms Q 弹后才执行原有点击互动；连点保留摸头次数，新工作或拖动优先。
 - `motion-mood.js`：移动期间保存怒气，停稳 800–1200ms 后处理。工作、等待回答及多会话优先；最小化或手动隐藏时延后结算。普通飞行和碰壁不额外加怒气。
 - `tumble.js`：被扔出去碰边时演不演、演哪套（概率 n×50%÷7 封顶 50%，一次扔出最多一次）。碰顶边撞头，碰左右边撞头 / 摔倒 / 摇晃各 1/3，碰底边 6 成摔倒 4 成摇晃；撞头在撞上时换图，其余停稳后才演；每个动作先演开场再接循环动作（同 CrossPet 的 m-jolt 写法）；演完才结算情绪，演过就不再晕乎乎；干活时只闪 0.8 秒，等回答时只说一句，多会话不触发。
+- 额度（2026-11-06 修）：插件只在 Code 会话收到回复时写 `claude-quota.json`，数字来自那次回复；Chat 标签里的对话插件收不到，桌宠就一直停在上次的数（插件这边补不了，`$.session.usage()` 也只给上一次回复的数）。所以外壳把文件修改时间一起交给 `setQuota`，网页用 `QuotaBars.fresh` 每分钟按当前时间重算：过了重置时间的窗口算满、标「已重置」，紧张与否和钱袋档位跟着重算；超过 20 分钟没更新加一行「N 分钟/小时前的数据」。测试：`scripts/test-quota.cjs`。
 - `Pet.Notices.cs` / `TaskNoticePolicy.cs`：通知分类、前台过滤和去重。新版插件按会话保存短事件队列；旧会话兼容状态文件提醒。
 
 ## 动画动作（claude-pet 动作包）
@@ -112,6 +113,7 @@ $env:NODE_PATH = "$nodeDir\node_modules"
 & $node scripts/test-behavior.cjs
 & $node scripts/test-ui.cjs
 & $node scripts/test-mood.cjs
+& $node scripts/test-quota.cjs
 & $node scripts/test-anim.cjs
 pwsh -NoProfile -File scripts/build.ps1 -Out build/native-tests -MotionTests
 ```

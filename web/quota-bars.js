@@ -14,7 +14,7 @@
 
   const pctOf = left => Math.max(0, Math.min(100, Math.round((+left || 0) * 100)))
   function barRow(b, label, nowSec) {
-    if (b.reset && b.reset <= nowSec) return { kind: 'bar', label, pct: 100, level: 'ok', when: null }   // 过了重置时间、还没新数据：算满
+    if (b.resetDone || (b.reset && b.reset <= nowSec)) return { kind: 'bar', label, pct: 100, level: 'ok', when: '已重置' }   // 过了重置时间、还没新数据：算满
     const pct = pctOf(b.left)
     return { kind: 'bar', label, pct, level: level(pct), when: b.reset ? shortWhen(b.reset, nowSec) : null }
   }
@@ -60,7 +60,42 @@
     if (result.note) el.append(div('qnote', result.note))
   }
 
-  const api = { level, shortWhen, of, render }
+  // 额度只在 Code 会话收到回复时更新（Chat 里的对话插件收不到），所以网页按当前时间再算一遍：
+  // 过了重置时间的窗口算满、标「已重置」；剩得最少的那个才带重置时间（同插件 quotaOf）；
+  // 数据超过 STALE_MIN 分钟没更新，加一行「多久前的数据」。at 是 claude-quota.json 的修改时间（秒）。
+  const STALE_MIN = 20
+  const pad = n => String(n).padStart(2, '0')
+  function resetText(sec, nowSec) {
+    const d = new Date(sec * 1000)
+    return sec - nowSec < 86400 ? `${pad(d.getHours())}:${pad(d.getMinutes())}` : `${d.getMonth() + 1}/${d.getDate()}`
+  }
+  function ageText(at, nowSec) {
+    const min = Math.floor((nowSec - at) / 60)
+    if (!(at > 0) || min < STALE_MIN) return null
+    if (min < 60) return `${min} 分钟前的数据`
+    if (min < 24 * 60) return `${Math.floor(min / 60)} 小时前的数据`
+    const d = new Date(at * 1000)
+    return `${d.getMonth() + 1}/${d.getDate()} 的数据`
+  }
+  function fresh(q, nowSec, at) {
+    if (!q) return q
+    const note = ageText(at, nowSec)
+    if (!Array.isArray(q.bars) || !q.bars.length) return note ? { ...q, note } : q
+    const bars = q.bars.map(b => (b.reset && b.reset <= nowSec ? { label: b.label, left: 1, resetDone: true } : b))
+    const live = bars.filter(b => !b.resetDone)
+    const top = live.length ? live.reduce((a, b) => (b.left < a.left ? b : a)) : null
+    const text = bars.map(b => {
+      if (b.resetDone) return `${b.label} 已重置`
+      let piece = `${b.label} 剩余 ${pctOf(b.left)}%`
+      if (b === top && b.reset) piece += ` · ${resetText(b.reset, nowSec)} 重置`
+      return piece
+    }).join(' ｜ ')
+    const out = { ...q, text, bars, low: !!top && pctOf(top.left) <= LOW_LEFT }
+    if (note) out.note = note
+    return out
+  }
+
+  const api = { level, shortWhen, of, render, fresh, ageText, STALE_MIN }
   root.QuotaBars = api
   if (typeof module !== 'undefined') module.exports = api
 })(typeof window !== 'undefined' ? window : globalThis)

@@ -61,7 +61,7 @@ namespace Claudia
                     NoticeFromState(value);
                     Js($"applyCharState({Q(id)}, {json})");
                 }
-                else Js($"setQuota({Q(id)}, {json})");
+                else Js($"setQuota({Q(id)}, {json}, {new DateTimeOffset(fi.LastWriteTimeUtc).ToUnixTimeSeconds()})");   // 带上修改时间：网页据此标「多久前的数据」
             }
             PollTaskNotices();
             ApplyLayer();

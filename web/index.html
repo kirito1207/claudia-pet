@@ -231,7 +231,7 @@ addEventListener('unhandledrejection', e => window.chrome?.webview?.postMessage(
 //   init(manifest)          角色清单（characters/*/character.json + 立绘）
 //   setCharacter(id)        设定角色（Claudia 只有 Claude 娘）
 //   applyCharState(id, s)   Claude 的工作状态（插件写的 claude-state.json）
-//   setQuota(id, q)         Claude 的额度（插件写的 claude-quota.json）
+//   setQuota(id, q, at)     Claude 的额度（插件写的 claude-quota.json；at 是它的修改时间，秒）
 //   setQuotaStyle(s)        额度怎么显示：'text' 文字（默认）/ 'bars' 额度条（quota-bars.js）
 //   handleClick(kind)       单击 = pat（摸摸头），右键菜单「戳一下」= poke
 
@@ -664,6 +664,7 @@ function show(p, urgent) {
     if (!leaveVia(back)) back()
   }, ms)
 }
+  if (q?.text && q.note) { const n = document.createElement('div'); n.className = 'qnote'; n.textContent = q.note; el.append(n) }   // 多久前的数据
 // ---- 离场动作：animations[].exit {from, to} ----
 // 离开这个姿态之前，先把动画里它自己的收尾演完（睡觉：醒过来、睁眼站好；偷吃没被抓：把书收回怀里），播到标准站姿再换。
 // 走路的收尾另见 walkEnded。拖动、碰边、多会话、道别时不等，直接换
@@ -1107,7 +1108,16 @@ function applyCharState(id, s) {
   }
 }
 
-function setQuota(id, q) {
+// q：插件写的原样；at：外壳交来的文件修改时间（秒）。显示和判断都用 QuotaBars.fresh 按当前时间算过的那份，
+// 每分钟再算一次：过了重置时间算满，太久没更新标出多久前（只在 Code 会话里有回复时才有新数据）
+const quotaRaw = {}, quotaAt = {}
+function setQuota(id, q, at) {
+  quotaRaw[id] = q; quotaAt[id] = at
+  applyQuota(id)
+}
+setInterval(() => { if (quotaRaw[charId]) applyQuota(charId) }, 60_000)
+function applyQuota(id) {
+  const q = QuotaBars.fresh(quotaRaw[id], Date.now() / 1000, quotaAt[id])
   const wasLow = quota[id]?.low
   quota[id] = q
   if (id !== charId) return
