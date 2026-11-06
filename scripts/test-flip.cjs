@@ -97,6 +97,12 @@ console.log('PASS: frames config (files, grouping, timings vs tumble steps)');
         await page.evaluate(() => setPose('idle'));
         assert.equal(await page.evaluate(() => document.documentElement.classList.contains('flipping')), false);
 
+        // 循环翻页（工作状态）：看书 读 2.4 秒 → 翻页 0.9 秒 → 读……一直转
+        await clear();
+        await page.evaluate(() => setPose('reading'));
+        await page.waitForTimeout(3700);
+        assert.deepEqual((await shown()).slice(0, 3), ['reading', 'reading-2', 'reading'], 'reading loops back');
+        await page.evaluate(() => setPose('idle')); await page.waitForTimeout(300);
         // 碰边整套：碰底边、抽中摇晃 → 站不稳三张 → 趴地两张 → 直接站回待机（不演爬起）
         await clear();
         await page.evaluate(() => { tumblePolicy.hits = 6; tumblePolicy.throwStarted(); tumblePolicy.random = (r => () => r.shift() ?? .5)([0, .9]) });

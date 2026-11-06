@@ -322,7 +322,11 @@
     "bonk": { "seq": ["bonk", "bonk-2", "bonk-3"], "ms": [550, 700] },
     "stagger": { "seq": ["stagger", "stagger-2", "stagger-3"], "ms": [450, 450] },
     "faceplant": { "seq": ["faceplant", "faceplant-2"], "ms": [800] },
-    "fallen": { "seq": ["fallen-1", "fallen", "fallen-2"], "ms": [300, 900] }
+    "fallen": { "seq": ["fallen-1", "fallen", "fallen-2"], "ms": [300, 900] },
+    "asking": { "seq": ["asking", "asking-2", "asking", "asking-3", "asking", "asking-4"], "ms": [1800, 1300, 900, 1300, 900, 1600], "loop": true },
+    "delegating": { "seq": ["delegating", "delegating-2", "delegating-3"], "ms": [1800, 1600, 1300], "loop": true },
+    "searching": { "seq": ["searching", "searching-2"], "ms": [1700, 1700], "loop": true },
+    "reading": { "seq": ["reading", "reading-2"], "ms": [2400, 900], "loop": true }
   },
   "animations": {
     "idle": { "sheets": ["待机呼吸休闲"], "loop": true },

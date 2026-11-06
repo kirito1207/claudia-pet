@@ -94,6 +94,21 @@ SEQUENCE = {
     # 爬起三张（getup_codex_e8aded8d / getup-2_codex_d327e671 / getup-3_codex_06631ed6，缩放 0.50 / 0.49 / 0.528）
     # 2026-11-06 用户决定不要爬起：坐着、趴着两种倒法接不上同一套爬起，倒地后直接站回去接情绪
 }
+# 2026-11-06 工作状态补帧（循环翻页）：有事问你、派活按新比例重画了底图；查资料、看书的底图沿用第二轮原图，
+# 改成和第二帧一样按头的中线对齐。同一套用同一个缩放（按头宽对齐；Codex 画的第二帧普遍大一成，只能缩到放得下）
+SEQUENCE.update({
+    "asking_codex_6230b903.png": ("asking", 0.514, "head"),
+    "asking-2_codex_ae81936a.png": ("asking-2", 0.514, "head"),
+    "asking-3_codex_6f209787.png": ("asking-3", 0.51, "head"),
+    "asking-4_codex_d1e3c4a3.png": ("asking-4", 0.514, "head"),
+    "delegating_codex_82a64aac.png": ("delegating", 0.512, "head"),
+    "delegating-2_codex_02ee3446.png": ("delegating-2", 0.512, "head"),
+    "delegating-3_codex_3ed994ae.png": ("delegating-3", 0.562, "head"),   # 这张人画小了一成
+    "28ef8401960f0826115cd4d6a494bbfd_720.png": ("searching", 0.56, "head"),
+    "searching-2_codex_c2d0ece3.png": ("searching-2", 0.512, "head"),
+    "fdca2cd3f5645517d1356d76f333faaa_720.png": ("reading", 0.53, "head"),
+    "reading-2_codex_2b7ebcd6.png": ("reading-2", 0.516, "head"),
+})
 MAX_WIDTH = 880  # 画布再宽，网页里 object-fit: contain 会把整张缩小，和别的帧不一样大
 
 
@@ -196,7 +211,7 @@ def main():
     # 碰边一套的旧原图（SPRITES）已被 SEQUENCE 取代：同名输出以 SEQUENCE 为准
     seq_names = {name for name, _, _ in SEQUENCE.values()}
     jobs = [(src, name, factor, specks, None) for src, (name, factor, specks) in SPRITES.items() if name not in seq_names]
-    jobs += [(src, name, None, specks, hat) for src, (name, hat, specks) in STANDING.items()]
+    jobs += [(src, name, None, specks, hat) for src, (name, hat, specks) in STANDING.items() if name not in seq_names]
     jobs += [(src, name, scale, anchor, "seq") for src, (name, scale, anchor) in SEQUENCE.items()]
     if only:
         unknown = only - {j[1] for j in jobs}
