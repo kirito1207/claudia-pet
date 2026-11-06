@@ -466,13 +466,11 @@ function playSheet(a, still, key = null) {
   const s = { key, url: pick(a.urls), from, to: a.to ?? SHEET.frames - 1, hold: a.hold, loop: !!a.loop, cycle: a.cycle, cycled: false, onCycle: null,
     frame: from, dir: 1, holding: false,
     canvas: sheetCanvases.find(c => c !== sheetFront), img: null, timer: null }
-  if (sheet) clearInterval(sheet.timer)
+  if (sheet) { clearInterval(sheet.timer); sheet.img?.close?.() }
   sheet = s
   clearTimeout(sheetReleaseTimer)
-  const img = new Image()
-  // 用 onload 不用 decode()：页面在后台时 decode() 可能一直不返回
-  img.onload = () => {
-    if (sheet !== s) return
+  loadSheet(s.url, img => {
+    if (sheet !== s) { img.close?.(); return }
     s.img = img
     sheetDraw()
     const old = sheetFront
@@ -482,17 +480,35 @@ function playSheet(a, still, key = null) {
     s.timer = setInterval(sheetTick, 1000 / SHEET.fps)
     if (still) setTimeout(() => { if (sheet === s) showImage(still, true) }, 450)
     if (old && old !== s.canvas) setTimeout(() => { if (sheetFront !== old) { old.width = 1; old.height = 1 } }, 450)   // 淡出后放掉旧画布
-  }
-  img.onerror = () => {
+  }, () => {
     window.chrome?.webview?.postMessage({ imageError: s.url })
     if (sheet !== s) return
     stopSheet()
     showImage(framesFor(pose)[0]); $('body').className = MOTION[pose] || 'm-bob'   // 读不到就用静态立绘
+  })
+}
+// 读一张精灵图交给 done（ImageBitmap 或 <img>，都能 drawImage）；读不到调 fail。
+// 每张 5120×5400，解码一张约 0.3 秒：用 <img> 时解码发生在第一次画上画布的时候，网页帧循环整个停住约 0.3 秒
+// （实测 290–345 ms，拖动起步换「被拎起来」时会顿一下）。先 fetch 成 Blob 再 createImageBitmap，解码在后台线程，
+// 主线程只剩第一次画时约 75 ms 的上传（2026-11-06）。画出来的像素一样。
+// 拿不到时退回 <img>：测试里的 file:// 地址、读失败、4 秒还没解完（页面在后台时解码可能一直不返回，所以 <img> 也只用 onload 不用 decode()）
+function loadSheet(url, done, fail) {
+  let settled = false
+  const viaImg = () => {
+    if (settled) return
+    settled = true
+    const img = new Image(); img.onload = () => done(img); img.onerror = fail; img.src = url
   }
-  img.src = s.url
+  if (!window.createImageBitmap || !/^https:/.test(url)) return viaImg()
+  const timer = setTimeout(viaImg, 4000)
+  fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.blob() }).then(b => createImageBitmap(b)).then(bm => {
+    clearTimeout(timer)
+    if (settled) { bm.close(); return }
+    settled = true; done(bm)
+  }, () => { clearTimeout(timer); viaImg() })
 }
 function stopSheet() {
-  if (sheet) { clearInterval(sheet.timer); sheet = null }
+  if (sheet) { clearInterval(sheet.timer); sheet.img?.close?.(); sheet = null }
   if (!sheetFront && !document.documentElement.classList.contains('sheet-on')) return
   for (const c of sheetCanvases) c.classList.remove('on')
   sheetFront = null
@@ -952,6 +968,20 @@ function noteRest(p) {
   if (fxResting) { fxResting = false; applyFxRate() }
   if (RESTING.has(p)) restTimer = setTimeout(() => { if (RESTING.has(pose)) { fxResting = true; applyFxRate() } }, powerSave ? 10000 : 30000)
 }
+// ---- 光晕呼吸：3 秒一次，放大到 1.04 再缩回（两段都是 ease-in-out，和原来的 CSS 动画一样）----
+// 原来用 CSS 动画一直在动，网页每秒出 60 帧，外壳要把每一帧拷进透明窗口（WebView2CompositionControl）：
+// 实测待机时外壳约 15%、显卡进程 13–24% 单核几乎全花在这（2026-11-06）。改成脚本每秒设 12 次：
+// 播精灵图时在 sheetTick 里跟那一帧一起设，不多出帧；没在播时由下面的定时器按 12 帧设。看不见、不显示光晕时不动
+const AURA_PERIOD = 3000, AURA_GROW = .04
+const auraEl = $('aura'), DARK = matchMedia('(prefers-color-scheme: dark)')
+const auraShown = () => { const c = document.documentElement.classList; return !c.contains('aura-off') && (c.contains('aura-on') || !DARK.matches) }
+function auraPulse(now = performance.now()) {
+  if (pageHidden || !auraShown()) return
+  const t = (now % AURA_PERIOD) / AURA_PERIOD, u = t < .5 ? t * 2 : 2 - t * 2
+  const e = u * u * (3 - 2 * u)   // 近似 ease-in-out
+  auraEl.style.transform = `scale(${(1 + AURA_GROW * e).toFixed(4)})`
+}
+setInterval(() => { if (!sheet?.timer) auraPulse() }, 1000 / SHEET.fps)
 function setPowerSave(on) { const was = powerSave; powerSave = !!on; fxFps = -1; noteRest(pose); applyFxRate(); if (was !== powerSave && RESTING.has(pose)) refreshAnim() }
 function setPageHidden(h) { pageHidden = !!h; if (pageHidden) stopWalk(); motionMood.setHidden(pageHidden); if (pageHidden) clickSequence.cancel(); applyFxRate() }
 applyFxRate()
@@ -968,20 +998,6 @@ let multi = null             // 正在演：{ side, flipTimer, cards: Map(会话
 function setSessions(id, map) {
   if (id === 'current') id = charId
   sessions[id] = map || {}
-// ---- 光晕呼吸：3 秒一次，放大到 1.04 再缩回（两段都是 ease-in-out，和原来的 CSS 动画一样）----
-// 原来用 CSS 动画一直在动，网页每秒出 60 帧，外壳要把每一帧拷进透明窗口（WebView2CompositionControl）：
-// 实测待机时外壳约 15%、显卡进程 13–24% 单核几乎全花在这（2026-11-06）。改成脚本每秒设 12 次：
-// 播精灵图时在 sheetTick 里跟那一帧一起设，不多出帧；没在播时由下面的定时器按 12 帧设。看不见、不显示光晕时不动
-const AURA_PERIOD = 3000, AURA_GROW = .04
-const auraEl = $('aura'), DARK = matchMedia('(prefers-color-scheme: dark)')
-const auraShown = () => { const c = document.documentElement.classList; return !c.contains('aura-off') && (c.contains('aura-on') || !DARK.matches) }
-function auraPulse(now = performance.now()) {
-  if (pageHidden || !auraShown()) return
-  const t = (now % AURA_PERIOD) / AURA_PERIOD, u = t < .5 ? t * 2 : 2 - t * 2
-  const e = u * u * (3 - 2 * u)   // 近似 ease-in-out
-  auraEl.style.transform = `scale(${(1 + AURA_GROW * e).toFixed(4)})`
-}
-setInterval(() => { if (!sheet?.timer) auraPulse() }, 1000 / SHEET.fps)
   refreshMulti()
 }
 function sessionKind(e, now) {
