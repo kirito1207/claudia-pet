@@ -65,6 +65,8 @@ STANDING = {
     "48596cda49720f7cf208f4e49d1ccf39_720.png": ("greet_night", 0, False),
     "66ecac6aa29a22e4a97e887e41137342_720.png": ("fest_newyear", 140, False),
     # fest_national（国庆）2026-11-05 用户决定不要了，原图 f7ce2230…_720.png 没用
+    # 2026-11-06 得意按新比例重画（Codex 命令行，提示词 docs/prompts/立绘重画-统一比例/得意-2026-11-06-提示词.md）；花冠高出头顶约 125 px
+    "proud_codex_8c33ee85.png": ("proud", 125, False),
 }
 
 
