@@ -57,6 +57,17 @@ const {pathToFileURL}=require('url');
         tumbleHit({phase:'flight',edge,impactX:edge==='left'||edge==='right'?900:0,impactY:edge==='top'||edge==='bottom'?900:0});},{edge,rolls});
     }
     const seen=()=>page.evaluate(()=>window.seen);
+    // 撞边加火气：用力撞一次 +5（慢慢碰不算）；抽中碰边动作只按动作算：撞头 +7、摔倒 +9、摇晃 → 趴地 +12
+    const ang=()=>page.evaluate(()=>Math.round(angerNow()));
+    await reset();await page.evaluate(()=>{setMotionActive(true);tumblePolicy.random=()=>.99;tumbleHit({phase:'flight',edge:'left',impactX:900,impactY:0})});
+    assert.equal(await ang(),5,'hard edge hit');
+    await page.evaluate(()=>tumbleHit({phase:'flight',edge:'left',impactX:150,impactY:0}));assert.equal(await ang(),5,'slow touch added anger');
+    await page.evaluate(()=>tumbleHit({phase:'drag',edge:'left',impactX:900,impactY:0}));assert.equal(await ang(),5,'dragging into the edge added anger');
+    for (const [edge,rolls,want] of [['top',[0],7],['bottom',[0,.1],9],['bottom',[0,.9],12]]) {
+      await reset();await page.evaluate(()=>setMotionActive(true));await hit(edge,rolls);
+      assert.equal(await ang(),want,`${edge} ${rolls} anger`);
+    }
+    await reset();
     await reset();await page.evaluate(()=>setMotionActive(true));await hit('top');
     assert.equal(await page.evaluate(()=>pose),'bonk','bump did not show at the hit');
     await hit('bottom');assert.equal(await page.evaluate(()=>tumble.kind),'bonk','second trigger in one throw');

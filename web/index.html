@@ -1367,10 +1367,21 @@ const tumblePolicy = new TumblePolicy()
 const TUMBLE_FLASH = 800
 let tumbleOn = true, tumble = null, tumbled = false
 const isMoving = () => document.documentElement.classList.contains('moving')
+// 撞边也加火气（2026-11-06 用户定）：用力撞一次边 +5；抽中碰边动作时只按动作算（不再加那 5）：撞头 +7、摔倒 +9、
+// 摇晃 → 趴地 +12。「用力」和碰边判断用同一个速度下限（TumblePolicy.MIN_SPEED）。和被甩一样停稳后才发作，干活、等回答时憋着
+const ANGER_HIT = 5, ANGER_TUMBLE = { bonk: 7, fallen: 9, stagger: 12 }
+function hitAnger(n) {
+  if (farewellLine !== null) return
+  addAnger(n)
+  motionMood.mark(moodContext() === 'work')
+}
 function tumbleHit(m) {
-  if (!tumbleOn || tumble || !m.edge || m.phase === 'drag' || farewellLine !== null || multi) return
+  if (!m.edge || m.phase === 'drag' || farewellLine !== null) return
   const speed = m.edge === 'left' || m.edge === 'right' ? m.impactX : m.impactY
-  const kind = tumblePolicy.hit(m.edge, speed)
+  if (!(speed >= TumblePolicy.MIN_SPEED)) return
+  const angryBefore = sulking || !!angerLevel(angerNow())   // 台词按撞之前的火气挑
+  const kind = !tumbleOn || tumble || multi ? null : tumblePolicy.hit(m.edge, speed)
+  hitAnger(kind ? ANGER_TUMBLE[kind] : ANGER_HIT)
   if (!kind) return
   tumbled = true
   const context = moodContext()
@@ -1378,7 +1389,7 @@ function tumbleHit(m) {
   clearTimeout(pending); clearTimeout(revertTimer)
   // 被晃出火气（或正在赌气）时说生气版台词（bonkAngry …），和爬起来之后的发火接得上
   tumble = { kind, steps: TumblePolicy.STEPS[kind], i: -1, flash: context === 'work', pose: null, timer: null,
-    angry: sulking || !!angerLevel(angerNow()) }
+    angry: angryBefore }
   if (kind === 'bonk') tumbleStep()
 }
 function tumbleStep() {
