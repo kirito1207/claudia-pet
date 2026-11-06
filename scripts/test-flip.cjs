@@ -112,6 +112,14 @@ console.log('PASS: frames config (files, grouping, timings vs tumble steps)');
         assert.deepEqual(seq.slice(0, 5), ['stagger', 'stagger-2', 'stagger-3', 'faceplant', 'faceplant-2'], `tumble frames ${seq}`);
         assert.ok(!seq.some(s => s.startsWith('getup')), 'no getup frames any more');
         assert.ok(await page.evaluate(() => $('impact').getAnimations().length > 0), 'stand-up stretch when she gets back up from the floor');
+        // 飞行中撞头：第一张停到飞行结束，停稳后才往后翻
+        await page.waitForTimeout(800); await clear();
+        await page.evaluate(() => { tumblePolicy.hits = 6; tumblePolicy.throwStarted(); tumblePolicy.random = () => 0; setMotionActive(true); tumbleHit({ edge: 'top', impactY: 900, phase: 'fly' }) });
+        await page.waitForTimeout(1500);
+        assert.deepEqual(await shown(), ['bonk'], 'bonk first frame held while still flying');
+        await page.evaluate(() => setMotionActive(false));
+        await page.waitForTimeout(1500);
+        assert.deepEqual((await shown()).filter((s, i, a) => s !== a[i - 1]).slice(0, 3), ['bonk', 'bonk-2', 'bonk-3'], 'bonk flips on after landing');
       }
       assert.deepEqual(errors, []);
       await page.close();

@@ -1441,6 +1441,8 @@ function tumbleStep() {
   if (!step || (t.flash && t.i > 0)) return tumbleFinish()
   const [p, ms] = step
   setPose(p); shownAt = Date.now(); t.pose = p
+  // 撞头在飞行中途换图：第一张停到飞行结束再往后翻（2026-11-06 用户定，不然还在飞就翻完了，看不清），见 tumbleLanded
+  if (isMoving() && !t.flash && flip?.pose === p) { clearTimeout(flip.timer); flip.timer = null; flip.held = true }
   const lines = (t.angry && linesOf(p + 'Angry')) || linesOf(p); say(lines ? pick(lines) : '')
   if (t.flash) t.timer = characterTimeout(tumbleFinish, TUMBLE_FLASH)
   else if (!isMoving()) t.timer = characterTimeout(tumbleNext, ms)
@@ -1451,7 +1453,10 @@ function tumbleLanded() {
   const t = tumble
   if (!t) return
   if (t.i < 0) tumbleStep()
-  else if (!t.flash) { clearTimeout(t.timer); t.timer = characterTimeout(tumbleNext, t.steps[t.i][1]) }
+  else if (!t.flash) {
+    if (flip?.held && flip.pose === pose) { flip.held = false; flipNext() }   // 停稳了：撞头从第一张接着翻
+    clearTimeout(t.timer); t.timer = characterTimeout(tumbleNext, t.steps[t.i][1])
+  }
 }
 // 坐着、趴着时单击 = 扶她起来（马上站回去）；其他时候点她不打断
 const ON_FLOOR = new Set(['fallen', 'faceplant'])
