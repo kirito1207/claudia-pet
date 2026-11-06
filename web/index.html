@@ -24,8 +24,7 @@ html, body { margin: 0; background: transparent; overflow: hidden; -webkit-user-
 #aura { position: absolute; left: 50%; top: 50%; width: 240px; height: 240px; margin: -120px 0 0 -120px;
   border-radius: 50%; opacity: var(--aura-o);
   background: radial-gradient(circle closest-side, var(--aura) 0%, color-mix(in srgb, var(--aura) 45%, transparent) 45%, transparent 100%);
-  transition: --aura 0.8s, opacity .8s; animation: pulse 3s ease-in-out infinite; }
-@keyframes pulse { 50% { transform: scale(1.04); } }
+  transition: --aura 0.8s, opacity .8s; }   /* 呼吸（放大 4%）由脚本按 12 帧设，见 auraPulse */
 /* 背景光晕：浅色背景上是柔和的氛围，深色背景上会变成一圈发亮的圆盘（像佛光）。
    html 上的 aura-on / aura-off 由宿主按右键菜单的选择设；都没有（自动）时跟着系统深浅色，深色模式下不显示 */
 html.aura-off #aura, html.aura-off .aura-rings { display: none; }
@@ -449,6 +448,7 @@ function sheetDraw() {
 function sheetTick() {
   const s = sheet
   if (!s?.img || pageHidden) return
+  auraPulse()   // 和这一帧一起出，不多出一帧
   if (s.holding) {   // 来回播，没有接缝
     if (s.frame >= s.hold[1]) s.dir = -1; else if (s.frame <= s.hold[0]) s.dir = 1
     s.frame += s.dir
@@ -968,6 +968,20 @@ let multi = null             // 正在演：{ side, flipTimer, cards: Map(会话
 function setSessions(id, map) {
   if (id === 'current') id = charId
   sessions[id] = map || {}
+// ---- 光晕呼吸：3 秒一次，放大到 1.04 再缩回（两段都是 ease-in-out，和原来的 CSS 动画一样）----
+// 原来用 CSS 动画一直在动，网页每秒出 60 帧，外壳要把每一帧拷进透明窗口（WebView2CompositionControl）：
+// 实测待机时外壳约 15%、显卡进程 13–24% 单核几乎全花在这（2026-11-06）。改成脚本每秒设 12 次：
+// 播精灵图时在 sheetTick 里跟那一帧一起设，不多出帧；没在播时由下面的定时器按 12 帧设。看不见、不显示光晕时不动
+const AURA_PERIOD = 3000, AURA_GROW = .04
+const auraEl = $('aura'), DARK = matchMedia('(prefers-color-scheme: dark)')
+const auraShown = () => { const c = document.documentElement.classList; return !c.contains('aura-off') && (c.contains('aura-on') || !DARK.matches) }
+function auraPulse(now = performance.now()) {
+  if (pageHidden || !auraShown()) return
+  const t = (now % AURA_PERIOD) / AURA_PERIOD, u = t < .5 ? t * 2 : 2 - t * 2
+  const e = u * u * (3 - 2 * u)   // 近似 ease-in-out
+  auraEl.style.transform = `scale(${(1 + AURA_GROW * e).toFixed(4)})`
+}
+setInterval(() => { if (!sheet?.timer) auraPulse() }, 1000 / SHEET.fps)
   refreshMulti()
 }
 function sessionKind(e, now) {
