@@ -90,21 +90,22 @@ console.log('PASS: frames config (files, grouping, timings vs tumble steps)');
         await clear();
         await page.evaluate(() => setPose('bonk'));
         await page.waitForTimeout(200);
-        await page.evaluate(() => setPose('getup'));
+        await page.evaluate(() => setPose('stagger'));
         await page.waitForTimeout(1300);
-        assert.deepEqual(await shown(), ['bonk', 'getup', 'getup-2', 'getup-3'], 'switching pose stopped the bonk flip');
+        assert.deepEqual(await shown(), ['bonk', 'stagger', 'stagger-2', 'stagger-3'], 'switching pose stopped the bonk flip');
         assert.equal(await page.evaluate(() => getComputedStyle(active).transitionDuration), '0s', 'flip frames cut without cross-fade');
         await page.evaluate(() => setPose('idle'));
         assert.equal(await page.evaluate(() => document.documentElement.classList.contains('flipping')), false);
 
-        // 碰边整套：碰底边、抽中摇晃 → 站不稳三张 → 趴地两张 → 爬起三张 → 待机
+        // 碰边整套：碰底边、抽中摇晃 → 站不稳三张 → 趴地两张 → 直接站回待机（不演爬起）
         await clear();
         await page.evaluate(() => { tumblePolicy.hits = 6; tumblePolicy.throwStarted(); tumblePolicy.random = (r => () => r.shift() ?? .5)([0, .9]) });
         await page.evaluate(() => { setMotionActive(true); tumbleHit({ edge: 'bottom', impactY: 900, phase: 'fly' }); setMotionActive(false) });
         await page.waitForFunction(() => pose === 'idle' && !tumble, null, { timeout: 8000 });
         const seq = (await shown()).filter((s, i, a) => s !== a[i - 1]);
-        assert.deepEqual(seq.slice(0, 8), ['stagger', 'stagger-2', 'stagger-3', 'faceplant', 'faceplant-2', 'getup', 'getup-2', 'getup-3'], `tumble frames ${seq}`);
-        assert.equal(await page.evaluate(() => $('impact').getAnimations().length), 0, 'no extra stand-up hop after getup-3');
+        assert.deepEqual(seq.slice(0, 5), ['stagger', 'stagger-2', 'stagger-3', 'faceplant', 'faceplant-2'], `tumble frames ${seq}`);
+        assert.ok(!seq.some(s => s.startsWith('getup')), 'no getup frames any more');
+        assert.ok(await page.evaluate(() => $('impact').getAnimations().length > 0), 'stand-up stretch when she gets back up from the floor');
       }
       assert.deepEqual(errors, []);
       await page.close();

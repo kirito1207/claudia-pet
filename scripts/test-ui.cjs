@@ -83,7 +83,7 @@ const root = path.resolve(__dirname, '..');
     await page.evaluate(() => setMotionActive(false));
     assert.equal(await page.locator('#body').evaluate(el => getComputedStyle(el).animationName), 'dizzy');
     // Edge-hit poses: an opening move, then a loop that keeps going (they must never freeze).
-    for (const [p, intro, loop] of [['bonk','bonk','wince'], ['stagger','stagger','wobble'], ['fallen','plop','breathe'], ['faceplant','flop','breathe'], ['getup','rise','bob-tiny']]) {
+    for (const [p, intro, loop] of [['bonk','bonk','wince'], ['stagger','stagger','wobble'], ['fallen','plop','breathe'], ['faceplant','flop','breathe']]) {
       await page.evaluate(p => setPose(p, true), p);
       const anim = await page.locator('#body').evaluate(el => ({ name: getComputedStyle(el).animationName, count: getComputedStyle(el).animationIterationCount }));
       assert.equal(anim.name, `${intro}, ${loop}`, p); assert.equal(anim.count, '1, infinite', p);

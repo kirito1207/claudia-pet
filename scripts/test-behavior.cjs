@@ -49,7 +49,7 @@ assert.ok(idle.delay(idle.normalize({idleFrequency:'lively'}), .5) < idle.delay(
     for (const side of ['left', 'right']) { tp.throwStarted(); rolls = [0, roll]; assert.equal(tp.hit(side, 500), kind, `${side} ${roll}`); }
   tp.throwStarted(); tp.hit('right', 500); tp.hit('right', 500); assert.equal(tp.hits, 2);
   t += Tumble.RESET_MS + 1; tp.hit('right', 500); assert.equal(tp.hits, 1, 'count survived a quiet minute');
-  assert.deepEqual(Tumble.STEPS.stagger.map(s => s[0]), ['stagger', 'faceplant', 'getup']);
+  assert.deepEqual(Tumble.STEPS.stagger.map(s => s[0]), ['stagger', 'faceplant']);
 }
 (async () => {
   const source = stripTypeScriptTypes(fs.readFileSync(require('path').join(__dirname,'../plugin/hooks/register.ts'),'utf8'));

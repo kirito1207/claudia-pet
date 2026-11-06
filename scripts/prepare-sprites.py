@@ -34,8 +34,7 @@ SPRITES = {
     "晕乎乎的橙发花饰少女.png": ("stagger-2", F_STAND, True),
     "橙发少女跌倒抱书萌态插画.png": ("fallen", 0.92, False),
     "克劳德趴地脸朝下的可爱场景.png": ("faceplant", 0.95, False),
-    # Third-edition getup (half-risen, flustered, patting her skirt); the first getup was 橙发少女努力起身.png
-    "01e1ee1d1b70a6f685f511968c8e17fe_720.png": ("getup", 0.88, True),
+    # getup（爬起）2026-11-06 起不用了：原图 01e1ee1d…_720.png（第三版）、橙发少女努力起身.png（第一版）
 }
 
 # 2026-11-05 按动画比例重画的 20 张站立立绘（提示词见 docs/prompts/立绘重画-统一比例/）。
@@ -88,9 +87,8 @@ SEQUENCE = {
     "fallen_codex_c400066f.png": ("fallen", 0.49, "head"),
     # fallen-2 第二版 864e3e50 头顶头发堆太高、像在生气（用户 2026-11-06 说头奇怪、糊），换第三版
     "fallen-2_codex_105ef5c9.png": ("fallen-2", 0.48, "head"),
-    "getup_codex_e8aded8d.png": ("getup", 0.50, "head"),
-    "getup-2_codex_d327e671.png": ("getup-2", 0.49, "head"),
-    "getup-3_codex_06631ed6.png": ("getup-3", 0.528, "head"),
+    # 爬起三张（getup_codex_e8aded8d / getup-2_codex_d327e671 / getup-3_codex_06631ed6，缩放 0.50 / 0.49 / 0.528）
+    # 2026-11-06 用户决定不要爬起：坐着、趴着两种倒法接不上同一套爬起，倒地后直接站回去接情绪
 }
 MAX_WIDTH = 880  # 画布再宽，网页里 object-fit: contain 会把整张缩小，和别的帧不一样大
 

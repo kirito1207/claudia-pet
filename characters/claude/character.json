@@ -249,11 +249,6 @@
       "……哼",
       "唔……都怪你"
     ],
-    "getupAngry": [
-      "哼，我自己起来",
-      "别、别扶我",
-      "……还没完呢"
-    ],
     "tumbleAsk": [
       "好痛…",
       "好痛…快回答我呀"
@@ -322,8 +317,7 @@
     "bonk": { "seq": ["bonk", "bonk-2", "bonk-3"], "ms": [550, 700] },
     "stagger": { "seq": ["stagger", "stagger-2", "stagger-3"], "ms": [450, 450] },
     "faceplant": { "seq": ["faceplant", "faceplant-2"], "ms": [800] },
-    "fallen": { "seq": ["fallen-1", "fallen", "fallen-2"], "ms": [300, 900] },
-    "getup": { "seq": ["getup", "getup-2", "getup-3"], "ms": [400, 400] }
+    "fallen": { "seq": ["fallen-1", "fallen", "fallen-2"], "ms": [300, 900] }
   },
   "animations": {
     "idle": { "sheets": ["待机呼吸休闲"], "loop": true },

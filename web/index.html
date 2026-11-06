@@ -164,7 +164,6 @@ html.no-name #caption { display: none; }
 .m-stagger { animation: stagger 1.2s ease-in-out 1, wobble 1.5s ease-in-out 1.2s infinite; }
 .m-fallen  { animation: plop .45s ease-out 1, breathe 3.4s ease-in-out .45s infinite; }
 .m-faceplant { animation: flop .5s ease-out 1, breathe 4s ease-in-out .5s infinite; }
-.m-getup   { animation: rise .55s cubic-bezier(.3,1.4,.5,1) 1, bob-tiny 4.5s ease-in-out .55s infinite; }
 @keyframes bonk { 0% { transform: translateY(2%) scale(1.05,.92); } 45% { transform: translateY(-1%) scale(.97,1.04); } 100% { transform: none; } }
 @keyframes wince { 0%, 100% { transform: none; } 50% { transform: translateY(.6%) scale(1.01,.985); } }
 @keyframes stagger { 0%, 100% { transform: rotate(0); } 18% { transform: rotate(-7deg); } 42% { transform: rotate(6deg); } 66% { transform: rotate(-4deg); } 86% { transform: rotate(2deg); } }
@@ -247,7 +246,7 @@ const MOTION = {
   // 甩她 / 红温
   annoyed: 'm-rock', puffed: 'm-jolt', redhot: 'm-angry', sulk: 'm-slow', dizzy: 'm-dizzy', coaxed: 'm-sway', forgiven: 'm-hop',
   // 被扔出去碰边（tumble.js）
-  bonk: 'm-bonk', stagger: 'm-stagger', fallen: 'm-fallen', faceplant: 'm-faceplant', getup: 'm-getup',
+  bonk: 'm-bonk', stagger: 'm-stagger', fallen: 'm-fallen', faceplant: 'm-faceplant',
   // 按时段 / 节日打招呼
   greet_morning: 'm-hop', greet_noon: 'm-bob', greet_afternoon: 'm-sway', greet_evening: 'm-sway', greet_night: 'm-slow', greet_dawn: 'm-slow',
   fest_halloween: 'm-gift', fest_christmas: 'm-gift', fest_newyear: 'm-jump', fest_spring: 'm-gift', fest_lantern: 'm-gift',
@@ -261,7 +260,7 @@ const LOCAL_LINES = {
 const POSE_FALLBACK = { compact: 'writing', sorry: 'listening', asking: 'listening', update: 'happy', bye: 'happy',
   busy_left: 'thinking', busy_right: 'thinking', swamped_left: 'busy_left', swamped_right: 'busy_right',
   annoyed: 'surprised', puffed: 'surprised', redhot: 'surprised', sulk: 'surprised', dizzy: 'oops', coaxed: 'pat', forgiven: 'happy',
-  bonk: 'surprised', stagger: 'dizzy', fallen: 'dizzy', faceplant: 'dizzy', getup: 'pat' }
+  bonk: 'surprised', stagger: 'dizzy', fallen: 'dizzy', faceplant: 'dizzy' }
 const TRANSIENT = { happy: 5000, proud: 6000, oops: 4000, surprised: 3000, pat: 4000, hum: 4000, stretch: 3200, yawn: 3000,
   annoyed: 4500, puffed: 5000, dizzy: 3000, coaxed: 3500, forgiven: 5000 }
 for (const p of Object.keys(MOTION)) if (p.startsWith('greet_')) TRANSIENT[p] = 5500; else if (p.startsWith('fest_')) TRANSIENT[p] = 6500
@@ -1359,7 +1358,7 @@ function forgive() {
 }
 
 
-// ---- 被扔出去碰边：撞头 / 摇晃 → 趴地 / 摔倒 → 爬起（判断在 tumble.js） ----
+// ---- 被扔出去碰边：撞头 / 摇晃 → 趴地 / 摔倒（判断在 tumble.js）；倒地演完直接站回去：没火气说一句 getup 台词，有火气直接接生气 ----
 // 撞头在撞上那一刻换图，停稳后再保持一会儿；碰底边先记下，停稳后才开始演（弹跳、滑行时保持原样）。
 // 身体动作演完再结算情绪（resolveMotionMood 会等）；演过就不再演「晕乎乎」。
 // Claude 在干活：只闪 0.8 秒就回去干活；在等回答：不换图，只说一句；多个会话在忙：不触发。
@@ -1402,21 +1401,24 @@ function tumbleLanded() {
   if (t.i < 0) tumbleStep()
   else if (!t.flash) { clearTimeout(t.timer); t.timer = characterTimeout(tumbleNext, t.steps[t.i][1]) }
 }
-// 坐着、趴着时单击 = 扶她起来；其他时候点她不打断
+// 坐着、趴着时单击 = 扶她起来（马上站回去）；其他时候点她不打断
+const ON_FLOOR = new Set(['fallen', 'faceplant'])
 function tumbleHelpUp() {
   const t = tumble
-  if (!t || t.flash || (pose !== 'fallen' && pose !== 'faceplant')) return
-  t.i = t.steps.findIndex(s => s[0] === 'getup') - 1
-  tumbleStep()
+  if (!t || t.flash || !ON_FLOOR.has(pose)) return
+  tumbleFinish()
 }
-function tumbleBack(standUp) {
+function tumbleBack(standUp, angry) {
   say('')
   const s = charState[charId]
   if (moodContext() === 'work') { setPose(s.pose === 'listening' ? 'thinking' : s.pose); shownAt = Date.now() }
   else setPose(restPose())
-  if (standUp) tumbleStandUp()
+  if (!standUp) return
+  tumbleStandUp()
+  if (angry) return   // 有火气：直接接生气动作，台词用它自己的
+  const lines = linesOf('getup'); if (lines) say(pick(lines))   // 「嘿咻…」「没事没事…」
 }
-// 爬起之后换回站着的图：和交叉淡入同时，从低处往上伸展一下再回原样，看起来是「站起来」而不是一下跳成站直。
+// 从地上换回站着的图：和交叉淡入同时，从低处往上伸展一下再回原样，看起来是「站起来」而不是一下跳成站直。
 // 动画加在外层 #impact 上（落地压扁也用它），所以不管换回待机还是干活的样子都一样
 function tumbleStandUp() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
@@ -1432,7 +1434,7 @@ function tumbleFinish(interrupted) {
   const t = tumble
   if (!t) return
   clearTimeout(t.timer); tumble = null
-  if (!interrupted && pose === t.pose) tumbleBack(t.pose === 'getup' && !flipSeq('getup'))   // 补帧最后一张已经站直了，不再做「从低处站起来」
+  if (!interrupted && pose === t.pose) tumbleBack(ON_FLOOR.has(t.pose), t.angry)
   motionMood.attempt()
 }
 function tumbleCancel() {
