@@ -67,7 +67,7 @@ const {pathToFileURL}=require('url');
     assert.equal(await page.evaluate(()=>pose),'idle','floor sequence started before settling');
     await page.evaluate(()=>setMotionActive(false));
     await page.waitForFunction(()=>pose==='idle'&&!tumble,null,{timeout:5000});
-    assert.ok(await page.evaluate(()=>$('impact').getAnimations().length>0),'no stand-up motion after getting up');
+    assert.equal(await page.evaluate(()=>$('impact').getAnimations().length),0,'getup frames already end standing: no extra stand-up motion');
     assert.deepEqual(await seen(),['fallen','getup','idle']);
     await reset();await page.evaluate(()=>setMotionActive(true));await hit('bottom',[0,.6]);await page.evaluate(()=>setMotionActive(false));
     await page.waitForFunction(()=>pose==='idle'&&!tumble,null,{timeout:6000});

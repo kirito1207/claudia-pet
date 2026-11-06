@@ -6,11 +6,12 @@
 //     （撞头在撞上那一刻换图，摔倒和摇晃都等停稳后才演）
 ;(function(root) {
   const MIN_SPEED = 200, RESET_MS = 60000, FULL_AT = 7, MAX_CHANCE = 0.5
-  // 每段停留的毫秒数；撞头那段从停稳时开始算
+  // 每段停留的毫秒数；撞头那段从停稳时开始算。每段里还按 character.json 的 frames 顺序翻页（2026-11-06 补帧），
+  // 时长要够翻完：撞头 550+700、站不稳 450+450、趴地 800、摔倒 300+900、爬起 400+400 毫秒后停在最后一张
   const STEPS = {
-    bonk: [['bonk', 1500]],
-    fallen: [['fallen', 1200], ['getup', 1200]],
-    stagger: [['stagger', 1200], ['faceplant', 1500], ['getup', 1200]],
+    bonk: [['bonk', 1900]],
+    fallen: [['fallen', 1900], ['getup', 1400]],
+    stagger: [['stagger', 1300], ['faceplant', 1700], ['getup', 1400]],
   }
   class TumblePolicy {
     constructor(random = Math.random, now = () => Date.now()) {

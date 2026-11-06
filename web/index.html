@@ -45,6 +45,7 @@ html.moving #cards .scard { animation: none !important; }
   opacity: 0; transition: opacity .35s ease; }
 #body img.on { opacity: 1; }
 #body img#blink { transition: none; }
+html.flipping #body img, html.flipping #body canvas.sheet { transition: none; }   /* 补帧翻页：硬切，不交叉淡入（淡入时前后两帧叠在一起像重影）；从动画换过来时动画画布也直接消失 */
 /* 动画动作（claude-pet 动作包的精灵图，逐帧画到 canvas 上）：两块画布轮流交叉淡入；播放时静态立绘淡出 */
 #body canvas.sheet { position: absolute; pointer-events: none; opacity: 0; transition: opacity .35s ease; }
 #body canvas.sheet.on { opacity: 1; }
@@ -345,6 +346,7 @@ function setPose(p, instant) {
   if (walking && p !== walking.pose) stopWalk()   // 走着走着换了别的状态：停下
   if (exiting && p !== exiting.pose) cancelExit()   // 离场动作演到一半被拖动、碰边等直接换走
   if (p !== pose) exitedFrom = null
+  stopFlip()
   pose = p; poseSince = Date.now()
   const a = anim(p)
   if (a) {   // 动画自己在动、画面里自带道具和特效：不叠 CSS 晃动和我们画的特效
@@ -352,9 +354,10 @@ function setPose(p, instant) {
     $('body').className = ''
   } else {
     stopSheet()
-    const frames = framesFor(p)
+    const frames = framesFor(p), seq = flipSeq(p)
     instant = instant || document.documentElement.classList.contains('moving')
-    showImage(instant ? frames[0] : pick(frames), instant)
+    if (seq) startFlip(p, seq, instant)
+    else showImage(instant ? frames[0] : pick(frames), instant)
     $('body').className = MOTION[p] || 'm-bob'
   }
   noteRest(p)
@@ -362,6 +365,46 @@ function setPose(p, instant) {
   document.documentElement.style.setProperty('--aura', aura[0])
   document.documentElement.style.setProperty('--aura-o', Math.min(.75, aura[1] * 1.4))
   setFx(p)
+}
+// ---- 补帧：静态姿态按顺序翻页（character.json 的 frames）----
+// frames.<姿态> = { seq: [图名…], ms: [每张停多久…], loop }：图名是 characters/<角色>/ 里的文件名（不带扩展名）；
+// ms 比 seq 少一个时最后一张一直停着（碰边一套都这样，等 tumble 计时换回去），loop 时从头再来。
+// 翻页期间换图不淡入（html.flipping），新帧载好后直接切；交叉淡入会让相邻两帧叠在一起，看着发糊。
+// 系统要求减少动画时只显示第一张。
+let flip = null
+function flipSeq(p) {
+  const f = char()?.frames?.[p]
+  if (!f?.seq?.length) return null
+  const urls = framesFor(p)
+  const urlOf = name => urls.find(u => decodeURIComponent(u.split('?')[0]).replace(/\.[^./]+$/, '').endsWith('/' + name))
+  const steps = f.seq.map((name, i) => [urlOf(name), f.ms?.[i]]).filter(s => s[0])
+  return steps.length ? { steps, loop: !!f.loop } : null
+}
+function stopFlip() {
+  if (!flip) return
+  clearTimeout(flip.timer); flip = null
+  document.documentElement.classList.remove('flipping')
+}
+function startFlip(p, seq, instant) {
+  if (REDUCED_MOTION.matches || seq.steps.length < 2) { showImage(seq.steps[0][0], instant); return }
+  for (const [url] of seq.steps.slice(1)) new Image().src = url   // 先把后面几帧载进缓存，到点就能切
+  document.documentElement.classList.add('flipping')   // 第一帧也硬切：从上一个姿态直接换过来（撞上 / 着地的那一下）
+  showImage(seq.steps[0][0], instant)
+  flip = { pose: p, seq, i: 0, timer: null }
+  flipNext()
+}
+function flipNext() {
+  const f = flip
+  if (!f) return
+  const ms = f.seq.steps[f.i][1]
+  const last = f.i + 1 >= f.seq.steps.length
+  if (!ms || (last && !f.seq.loop)) return   // 停在这张（flipping 留到换姿态时 stopFlip 再去掉，免得最后一张淡到一半变慢）
+  f.timer = characterTimeout(() => {
+    if (flip !== f || pose !== f.pose) return
+    f.i = last ? 0 : f.i + 1
+    showImage(f.seq.steps[f.i][0], document.documentElement.classList.contains('moving'))
+    flipNext()
+  }, ms)
 }
 // ---- 动画动作：claude-pet 动作包（作者 hunmer，hunmer/aboutme-pets 的 pets/claude，CC BY-NC-SA 4.0）----
 // 精灵图放在角色目录\anim，外壳把「文件名 → 地址」交在 char().sheets；character.json 的 animations 写每个姿态用哪几张、播哪几帧：
@@ -621,6 +664,7 @@ function renderQuota() {
   el.replaceChildren(...(q?.text || '').split(/\s*｜\s*/).filter(Boolean).map(t => {
     const line = document.createElement('div'); line.textContent = t; return line
   }))
+  if (q?.text && q.note) { const n = document.createElement('div'); n.className = 'qnote'; n.textContent = q.note; el.append(n) }   // 多久前的数据
   el.className = q?.low ? 'low' : ''
 }
 // 临时动作（打招呼、开心、被摸头……）演完回到哪：AI 还在干活 / 等你回答就回到那个样子，
@@ -664,7 +708,6 @@ function show(p, urgent) {
     if (!leaveVia(back)) back()
   }, ms)
 }
-  if (q?.text && q.note) { const n = document.createElement('div'); n.className = 'qnote'; n.textContent = q.note; el.append(n) }   // 多久前的数据
 // ---- 离场动作：animations[].exit {from, to} ----
 // 离开这个姿态之前，先把动画里它自己的收尾演完（睡觉：醒过来、睁眼站好；偷吃没被抓：把书收回怀里），播到标准站姿再换。
 // 走路的收尾另见 walkEnded。拖动、碰边、多会话、道别时不等，直接换
@@ -1389,7 +1432,7 @@ function tumbleFinish(interrupted) {
   const t = tumble
   if (!t) return
   clearTimeout(t.timer); tumble = null
-  if (!interrupted && pose === t.pose) tumbleBack(t.pose === 'getup')
+  if (!interrupted && pose === t.pose) tumbleBack(t.pose === 'getup' && !flipSeq('getup'))   // 补帧最后一张已经站直了，不再做「从低处站起来」
   motionMood.attempt()
 }
 function tumbleCancel() {
@@ -1451,7 +1494,7 @@ setInterval(() => {
 
 // ---- 生动一点：同一状态有多张图时停留久了换一张；有眨眼帧就偶尔眨眼 ----
 setInterval(() => {
-  if (sheet) return   // 正在播动画
+  if (sheet || char()?.frames?.[pose]) return   // 正在播动画 / 这个姿态按顺序翻页
   const frames = framesFor(pose)
   if (frames.length > 1 && Date.now() - poseSince > 8000) {
     poseSince = Date.now()

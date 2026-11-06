@@ -66,12 +66,14 @@ Windows 上独立维护的 Claude 桌宠。基于 CrossPet，参考 dsh-pet；�
 用户定的顺序：**先做衔接用的补帧图，做完再发 0.3.0**。
 
 1. **补帧（静态图按顺序翻页播放）**
-   - 现在同一姿态有多张图时，程序是每 ~8 秒随机换一张（`index.html` 里「生动一点」那段 `setInterval`），不连贯。要改成可配置的顺序快切（例如 `character.json` 里给静态姿态写帧顺序和每张停多久，0.3–0.6 秒），这部分还没写。
+   - **翻页程序已写（2026-11-06，已提交 main，未发版）**：`character.json` 的 `frames.<姿态> = { seq, ms, loop }`，`index.html` 的 `flipSeq` / `startFlip` / `flipNext` / `stopFlip`；翻页时硬切、不交叉淡入（`html.flipping`；淡入会让前后两帧叠成重影，用户实测说糊，2026-11-06 改），后面几帧预先载入，减少动画时只显示第一张，「生动一点」的 8 秒随机换图跳过这些姿态。测试 `scripts/test-flip.cjs`。
+   - **碰边一套已完成（已提交 main，未发版）**：14 张按新比例重画 + 补帧，Claude 直接调 Codex 生成、用户定稿，帧表和提示词见 `docs/prompts/碰边补帧/说明.md`。`tumble.js` 的 `STEPS` 时长加长到够翻完；爬起最后一张已站直，`tumbleBack` 不再做「从低处站起来」。旧图备份在 `build/旧立绘备份-碰边补帧前/`。已装到本机；用户实测后去掉了翻页重影，每帧时长是否合适还待用户再看。
    - 优先级（详见 `docs/立绘比例统一清单.md` 第五节、`docs/动作衔接审查.md`）：
-     - 高：碰边一套（撞头加「捂头揉头」、趴地 / 摔倒加「撑起上身」、爬起加「快站直、拍裙子」作为接回待机动画的过渡）；生气一套（红温加跺脚冒气 1–2 张、赌气加「偷偷回头瞄」、原谅你加「放下书露出笑脸」）。
+     - 高：~~碰边一套~~（已完成）；生气一套（红温加跺脚冒气 1–2 张、赌气加「偷偷回头瞄」、原谅你加「放下书露出笑脸」）。
      - 中：会停很久的听你说、看书、累了、有事问你、查资料各补 1–2 张小变化（点头、翻页、小哈欠、歪头）。
      - 不补：问候、节日、得意、道歉、哎呀、抱礼物；忙碌左右已有两张交替。
    - 碰边那几张和红温、有事问你、道歉、派活、得意、抱礼物、抱 Clawd 还是旧比例；补帧时按新比例画（提示词照 `docs/prompts/立绘重画-统一比例/提示词.md` 的「通用部分」，比例段以改正后的为准：裙摆下只露一小截白袜，约鞋高一半，不要瘦高）。补帧的提示词文档还没写。
+   - **2026-11-06 起改为 Claude 直接调用本机 Codex 生图**（`codex exec`，gpt-6.1-terra、medium、不加速、只读），用户只确认；做法、教训（每张新开会话，别一直 resume 同一个，用量会越滚越大；Codex 桌面版开着可能占住会话）见本机 `build/codex-imagegen/README.md`。以下是之前的做法：
    - 用户在 Codex 里生图，放到 `D:\claudia图codex生成`（`编号_720.png` 原图、`_0.png` 压缩图，名字是自动编号）。Claude 按修改时间认新一批、按画面认姿态，用 `scripts/prepare-sprites.py --only` 处理（站立的加进表 `STANDING`，坐 / 趴的用 `SPRITES` 的系数），旧图先备份到 `build/`。用户说过认图后直接处理，不用再确认对照表。
 2. **发 0.3.0**：补帧做完后。版本号改 `VERSION` 和 `plugin/.claude-plugin/plugin.json`，Release zip 照 0.2.0 的做法（带 WebView2 许可），发版记录写进本文和 `docs/PUBLISHING_AUDIT.md`。动画约 150 MB，zip 会比 0.2.0 大很多。
 3. **等作者更新**（hunmer/aboutme-pets，现在停在 `3ba083b`）：放烟花（元旦，替换静态图）、吃饺子 / 收红包 / 写福字（春节，和舞狮头随机轮换），见 `docs/立绘比例统一清单.md` 第六节。新动作同样适用书面授权。
@@ -113,8 +115,9 @@ $env:NODE_PATH = "$nodeDir\node_modules"
 & $node scripts/test-behavior.cjs
 & $node scripts/test-ui.cjs
 & $node scripts/test-mood.cjs
-& $node scripts/test-quota.cjs
 & $node scripts/test-anim.cjs
+& $node scripts/test-quota.cjs
+& $node scripts/test-flip.cjs
 pwsh -NoProfile -File scripts/build.ps1 -Out build/native-tests -MotionTests
 ```
 

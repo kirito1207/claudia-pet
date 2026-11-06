@@ -1,0 +1,40 @@
+这是这个会话里的又一次生图请求，规则和第一条消息一样：用图片生成功能出图，透明背景，正方形 1024x1024 或更大，只生成 1 张，不修改任何文件、不运行命令；最后一条回复只写生成图片的完整路径和一句话描述。
+只使用本条消息附带的 3 张图作参考（按顺序是 Image 1、Image 2、Image 3），不要参考这个会话里之前的图。
+本次画 stagger-3.png（站不稳·往前栽）。英文提示词如下：
+
+You are drawing one frame of a short desktop-pet sprite sequence of a chibi character; her body proportions must match her animations.
+
+ATTACHED IMAGES:
+- Image 1 is the DESIGN reference: copy her face, hair, hair flower, outfit, colors and clean art style from Image 1. Do NOT copy its body proportions.
+- Image 2 is the PROPORTION reference: copy her body proportions from Image 2 exactly. Image 2 is a slightly blurry animation frame; use it only for proportions, not for line quality or colors.
+- Image 3 is the PREVIOUS frame of this short sequence, already drawn with the correct proportions: keep her outfit, her size on the canvas, the viewing angle, the lighting and the position of anything on the floor consistent with Image 3, and change only what the POSE text below describes.
+- If face, hair or outfit details differ between the images, follow Image 1. If body proportions differ, follow Image 2.
+
+PROPORTION LOCK (follow Image 2):
+- About 2.5 heads tall, a chubby chibi: big head, short body. Her head is the same size as in Image 2.
+- The skirt is long: standing, its hem ends a little above her shoes and only a SHORT bit of her legs shows below it, in white socks (about half as tall as the shoes), then the small dark brown Mary-Jane shoes, exactly like in Image 2. Do NOT show long legs: no knees, no long white stockings, no long shins. When she sits, kneels or lies down, her legs stay just as short and chubby and the skirt still covers them.
+- The skirt and the long wavy hair are as wide as in Image 2; do NOT make her slim, thin or tall.
+- Draw her at the same size as in Image 2 (her head the same size). Do NOT enlarge her to fill the image.
+
+FORMAT RULES:
+- Transparent background: real transparency (alpha). No floor, no ground shadow, no glow, no vignette, no frame. Keep the complete edges of the character (every hair strand, ribbon and tassel), nothing cropped. If a reference image has a white background, do NOT copy it.
+- No text, no letters, no speech bubbles and no effects of any kind floating in the air: no stars, no motion lines, no emphasis lines, no dust clouds, no ?, !, hearts, music notes, Zzz, sparkles, sweat-drop icons, anger marks. The app draws all effects itself.
+- Exactly one character, full body, centered.
+- GROUND LINE: the bottom of the image is the floor; the lowest part of her (shoes, or her body when she sits or lies) touches the bottom edge, and the book lying on the floor also rests on the bottom edge.
+- HANDS: small, round, mitten-like hands with NO separate fingers and no finger or palm lines, the way hands are drawn in Image 1.
+- The book stays inside the canvas with a margin on the left and right.
+- A continuous, closed dark outline around the whole silhouette.
+- Same art style as Image 1: clean lineart, flat two-tone cel shading, soft palette, round soft shapes.
+- Square image, 1024x1024 or larger. Save as stagger-3.png.
+
+CHARACTER LOCK — Claude, the anime-girl personification of Claude (Anthropic).
+Personality: gentle, calm, bookish, a little shy, quietly cheerful; she thinks before she speaks.
+Keep exactly:
+- Long wavy copper-orange hair, loose side-swept bangs, warm amber eyes.
+- An orange daisy-like hair flower with a black striped ribbon bow and a white tassel on HER LEFT side (viewer's right); small drop earrings.
+- Cream-white dress with a short cape collar, orange flower embroidery, orange and black front panels, small black bows with gold tassels, a black waist sash, an orange flower brooch at the collar; short white frilled socks and dark brown Mary-Jane shoes.
+- Signature prop: a dark brown hardcover book with an orange flower emblem.
+
+STYLE NOTE: soft, modest and a little comical. The dress always covers her properly.
+
+POSE — stagger-3.png: she loses her balance completely and tips forward toward the VIEWER'S LEFT, about to fall on her face: her body leans far forward, both arms flung forward and down, one leg kicked up behind her and only one shoe still touching the floor, her hair swinging forward. Expression: eyes squeezed shut like ><, mouth open in a 'wah!'. The book still lies closed on the floor on the VIEWER'S LEFT, exactly where it is in Image 3.

@@ -69,6 +69,58 @@ STANDING = {
 }
 
 
+# 2026-11-06 碰边一套按新比例重画 + 补帧（Codex 命令行生成，原图在 D:\claudia图codex生成，提示词见
+# docs/prompts/碰边补帧/）。连着翻页播放，所以同一套里人物大小和位置要接得上：
+#   - 缩放是原图像素的固定倍数（凭眼按头的大小和待机图对齐；生图时坐着、跪着的头会画得偏大）
+#   - 水平按头的中线对齐（画面上 30% 里不透明像素的平均 x），书掉在哪边人都不跳；趴地两张身体横着，按整体中心
+#   - 画布左右对称地包住对齐线，网页按画布中心摆放，对齐线就落在中间
+# original file name -> (output name, scale, anchor: 'head' / 'box')
+SEQUENCE = {
+    "bonk_codex_b4a59525.png": ("bonk", 0.515, "head"),
+    "bonk-2_codex_edb0559f.png": ("bonk-2", 0.52, "head"),
+    "bonk-3_codex_4fb85672.png": ("bonk-3", 0.515, "head"),
+    "stagger_codex_5c0b840e.png": ("stagger", 0.51, "head"),
+    "stagger-2_codex_7bead917.png": ("stagger-2", 0.50, "head"),
+    "stagger-3_codex_e91054b2.png": ("stagger-3", 0.51, "head"),
+    "faceplant_codex_8505d95c.png": ("faceplant", 0.52, "box"),
+    "faceplant-2_codex_fe7688c3.png": ("faceplant-2", 0.60, "box"),
+    "fallen-1_codex_886961a1.png": ("fallen-1", 0.50, "head"),
+    "fallen_codex_c400066f.png": ("fallen", 0.49, "head"),
+    # fallen-2 第二版 864e3e50 头顶头发堆太高、像在生气（用户 2026-11-06 说头奇怪、糊），换第三版
+    "fallen-2_codex_105ef5c9.png": ("fallen-2", 0.48, "head"),
+    "getup_codex_e8aded8d.png": ("getup", 0.50, "head"),
+    "getup-2_codex_d327e671.png": ("getup-2", 0.49, "head"),
+    "getup-3_codex_06631ed6.png": ("getup-3", 0.528, "head"),
+}
+MAX_WIDTH = 880  # 画布再宽，网页里 object-fit: contain 会把整张缩小，和别的帧不一样大
+
+
+def prepare_anchored(path, scale, anchor):
+    im = Image.open(path).convert("RGBA")
+    a = np.array(im)
+    a[:, :, 3][a[:, :, 3] >= 250] = 255
+    a, removed = clean(a, False)
+    solid = a[:, :, 3] >= 64
+    ys, xs = np.nonzero(solid)
+    top, bottom, left, right = ys.min(), ys.max(), xs.min(), xs.max()
+    if anchor == "head":
+        band = solid[top:top + int((bottom - top) * 0.3)]
+        cx = np.nonzero(band)[1].mean()
+    else:
+        cx = (left + right) / 2
+    im = Image.fromarray(a).crop((0, top, a.shape[1], bottom + 1))
+    w, h = round(im.width * scale), round(im.height * scale)
+    im = im.resize((w, h), Image.LANCZOS)
+    cx *= scale
+    l, r = left * scale, (right + 1) * scale
+    half = int(np.ceil(max(cx - l, r - cx))) + 2
+    if h > HEIGHT or 2 * half > MAX_WIDTH:
+        sys.exit(f"{path}: too big after scaling ({2 * half}x{h})")
+    canvas = Image.new("RGBA", (2 * half, HEIGHT), (0, 0, 0, 0))
+    canvas.paste(im, (round(half - cx), HEIGHT - h - 1), im)
+    return canvas, removed
+
+
 def clean(a, specks, keep_ratio=0.01, solid=64, edge=3):
     """Keep only the clearly visible pieces plus a few pixels of their soft edge.
 
@@ -139,8 +191,11 @@ def main():
     ap.add_argument("--only", help="只处理这几张（输出名，逗号分隔），例如 --only listening,reading")
     args = ap.parse_args()
     only = set(args.only.split(",")) if args.only else None
-    jobs = [(src, name, factor, specks, None) for src, (name, factor, specks) in SPRITES.items()]
+    # 碰边一套的旧原图（SPRITES）已被 SEQUENCE 取代：同名输出以 SEQUENCE 为准
+    seq_names = {name for name, _, _ in SEQUENCE.values()}
+    jobs = [(src, name, factor, specks, None) for src, (name, factor, specks) in SPRITES.items() if name not in seq_names]
     jobs += [(src, name, None, specks, hat) for src, (name, hat, specks) in STANDING.items()]
+    jobs += [(src, name, scale, anchor, "seq") for src, (name, scale, anchor) in SEQUENCE.items()]
     if only:
         unknown = only - {j[1] for j in jobs}
         if unknown:
@@ -151,7 +206,7 @@ def main():
         path = os.path.join(args.source, src)
         if not os.path.exists(path):
             sys.exit(f"missing: {path}")
-        im, removed = prepare(path, factor, specks, hat)
+        im, removed = prepare_anchored(path, factor, specks) if hat == "seq" else prepare(path, factor, specks, hat)
         dest = os.path.join(args.out, name + ".webp")
         im.save(dest, "WEBP", quality=92, method=6)
         outputs.append(dest)
