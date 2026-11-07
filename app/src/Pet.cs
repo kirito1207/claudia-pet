@@ -82,7 +82,6 @@ namespace Claudia
             grid.Children.Add(hit);
             Window.Content = grid;
             WireMouse(hit);
-            Every(TimeSpan.FromMilliseconds(250), () => { _ = UpdateHitRects(); });
 
             // 换 DPI 时 WPF 先按新缩放排好窗口再发这个事件；等这一轮排版走完再让网页控件对齐（原因见 ResyncWebForDpi）
             Window.DpiChanged += (_, e) => Window.Dispatcher.BeginInvoke(DispatcherPriority.Loaded,
@@ -127,7 +126,7 @@ namespace Claudia
                 await web.EnsureCoreWebView2Async(env);
                 var core = web.CoreWebView2;
                 Map(core);
-                core.NavigationStarting += (_, a) => { if (!a.Cancel) { StopMotion(); ++followEventGeneration; ready = false; } };
+                core.NavigationStarting += (_, a) => { if (!a.Cancel) { StopMotion(); ++followEventGeneration; ready = false; hitRects = null; } };
                 core.Settings.AreDefaultContextMenusEnabled = false;
                 core.Settings.AreDevToolsEnabled = false;
                 core.Settings.IsZoomControlEnabled = false;
@@ -148,6 +147,7 @@ namespace Claudia
                     if (!(Store.Settings.TryGetValue("whatsNewSeen", out var wn) && wn is string)) { Store.Settings["whatsNewSeen"] = last ?? Store.Version; Store.SaveSettings(); }
                     if (last != Store.Version) { Store.Settings["lastVersion"] = Store.Version; Store.SaveSettings(); }
                     ready = true;
+                    UpdateHitRects();
                     UpdatePageHidden();
                     if (RenderRecovery.Ready()) tray?.ShowBalloonTip(6000, Store.AppName, "上次画面出了问题，现已重新打开。", Forms.ToolTipIcon.Info);
                     ApplySizes(anchor: Anchor.Corner);   // 解锁过文字大小的：按画布重设窗口，左上角不动（锁着的尺寸不变）
@@ -161,6 +161,11 @@ namespace Claudia
                     try
                     {
                         if (!(Store.Json.DeserializeObject(a.WebMessageAsJson) is Dictionary<string, object> m)) return;
+                        if (m.TryGetValue("hitRects", out var rects) && rects is object[] regions)
+                        {
+                            if (core == web?.CoreWebView2) { hitRects = regions; UpdateHitRects(); }
+                            return;
+                        }
                         if (m.TryGetValue("motion", out var mm) && mm is Dictionary<string, object> movement) { AcceptMotion(movement); return; }
                         if (m.ContainsKey("walk")) { HandleWalk(m["walk"] as Dictionary<string, object>); return; }
                         // 网页脚本出错：记进日志（每次启动最多 20 条）

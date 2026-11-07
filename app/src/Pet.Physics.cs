@@ -64,6 +64,7 @@ namespace Claudia
         bool flying;
         int motionId;
         string lastMotionBounds;
+        (int x, int y)? lastMotionPosition;
 
         Dictionary<string, object> PhysicsConfig() => new Dictionary<string, object>
         {
@@ -185,6 +186,7 @@ namespace Claudia
         {
             var moved = dragging || flying;
             ++motionId; dragging = flying = false;
+            lastMotionPosition = null;
             CompositionTarget.Rendering -= PumpOnFrame;
             if (moved) Js("petMotion.stop(); setMotionActive(false)");
             if (moved && save && hwnd != IntPtr.Zero) SavePosition();
@@ -206,7 +208,9 @@ namespace Claudia
             if (phase != "drag" && phase != "flight" && phase != "end") return;
             var x = Convert.ToDouble(m["x"]); var y = Convert.ToDouble(m["y"]);
             if (double.IsNaN(x) || double.IsInfinity(x) || double.IsNaN(y) || double.IsInfinity(y)) return;
-            Native.MoveTo(hwnd, (int)Math.Round(x), (int)Math.Round(y));
+            var position = (x: (int)Math.Round(x), y: (int)Math.Round(y));
+            if (lastMotionPosition != position && Native.MoveTo(hwnd, position.x, position.y))
+                lastMotionPosition = position;
             if (phase == "end") { StopMotion(); return; }
             if (m.TryGetValue("shake", out var shake) && shake is bool shaken && shaken) Js("shaken()");
             var ix = m.TryGetValue("impactX", out var ax) ? Convert.ToDouble(ax) : 0;

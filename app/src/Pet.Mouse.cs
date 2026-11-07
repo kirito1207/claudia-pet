@@ -24,17 +24,15 @@ namespace Claudia
         // ---------------- 能点到的区域 ----------------
         Canvas hit;
         static readonly Brush HitBrush = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
-        string lastHitRects;
-        async Task UpdateHitRects()
+        object[] hitRects, appliedHitRects;
+        double appliedHitZoom;
+        void UpdateHitRects()
         {
-            if (hit == null || !ready || Mouse.LeftButton == MouseButtonState.Pressed) return;
-            var json = await Eval("hitRects()");
-            if (json == lastHitRects || json == "null") return;
-            lastHitRects = json;
-            if (!(Store.Json.DeserializeObject(Store.Json.Deserialize<string>(json)) is object[] list)) return;
+            if (hit == null || !ready || hitRects == null || hit.IsMouseCaptured) return;
             var zoom = Window.Width / pageW;   // 网页像素 → 窗口坐标（画布可能因为文字大小比 260 宽）
+            if (hitRects == appliedHitRects && zoom == appliedHitZoom) return;
             hit.Children.Clear();
-            foreach (var item in list)
+            foreach (var item in hitRects)
             {
                 if (!(item is object[] r) || r.Length != 4) continue;
                 var box = new System.Windows.Shapes.Rectangle { Fill = HitBrush, Width = Convert.ToDouble(r[2]) * zoom, Height = Convert.ToDouble(r[3]) * zoom };
@@ -42,6 +40,7 @@ namespace Claudia
                 Canvas.SetTop(box, Convert.ToDouble(r[1]) * zoom);
                 hit.Children.Add(box);
             }
+            appliedHitRects = hitRects; appliedHitZoom = zoom;
         }
 
         // ---------------- 鼠标：单击摸头、拖动换位置、右键菜单 ----------------
@@ -75,7 +74,7 @@ namespace Claudia
                 var p = e.GetPosition(hit); var z = Math.Max(Window.Width / pageW, 0.01);
                 Js($"handleClick('pat', {Num(Math.Round(p.X / z, 1))}, {Num(Math.Round(p.Y / z, 1))})");
             };
-            hit.LostMouseCapture += (_, __) => { pressed = false; if (dragging) StopMotion(); };
+            hit.LostMouseCapture += (_, __) => { pressed = false; if (dragging) StopMotion(); UpdateHitRects(); };
             hit.MouseRightButtonUp += (_, __) =>
             {
                 openMenu?.Close();

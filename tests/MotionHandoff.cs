@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Interop;
 
 namespace Claudia
@@ -21,12 +22,31 @@ namespace Claudia
             Check(policy.Accept("anywhere", "waiting", 113, 113, true, true, false), "Always-notify option failed");
             Console.WriteLine("PASS: notification freshness, foreground gating, duplicate/burst suppression and category switches");
             Store.Settings = new Dictionary<string, object>(); // Test process only; no user files touched.
+            var input = new Pet(null) { Window = new Window { Width = 260 }, hit = new Canvas(), ready = true };
+            input.hitRects = new object[] { new object[] { 10, 15, 50, 30 } };
+            input.UpdateHitRects();
+            var box = (FrameworkElement)input.hit.Children[0];
+            Check(Canvas.GetLeft(box) == 10 && box.Width == 50, "Reported hit rectangle was not applied");
+            input.UpdateHitRects();
+            Check(input.hit.Children[0] == box, "Unchanged hit geometry was rebuilt");
+            input.Window.Width = 520;
+            input.UpdateHitRects();
+            box = (FrameworkElement)input.hit.Children[0];
+            Check(Canvas.GetLeft(box) == 20 && box.Width == 100, "Cached hit rectangle was not rescaled");
+            input.Window.Close();
+            Console.WriteLine("PASS: reported hit geometry is reused and rescaled on resize");
             foreach (var direction in new[] { -1, 1 })
             {
                 var pet = new Pet(null);
                 pet.Window = new Window { Width = 260, Height = 362, Left = 400, Top = 300,
                     WindowStyle = WindowStyle.None, AllowsTransparency = true };
                 pet.hwnd = new WindowInteropHelper(pet.Window).EnsureHandle();
+                var moves = 0;
+                HwndSource.FromHwnd(pet.hwnd).AddHook((IntPtr hwnd, int msg, IntPtr wp, IntPtr lp, ref bool handled) =>
+                {
+                    if (msg == 0x0046) moves++; // WM_WINDOWPOSCHANGING
+                    return IntPtr.Zero;
+                });
                 Native.GetWindowRect(pet.hwnd, out var before);
                 pet.motionId = 73;
                 pet.dragging = true;
@@ -42,13 +62,17 @@ namespace Claudia
                 pet.AcceptMotion(new Dictionary<string, object> { ["id"] = 73, ["phase"] = "flight", ["x"] = before.Left + direction * 10, ["y"] = before.Top });
                 Native.GetWindowRect(pet.hwnd, out after);
                 Check(after.Left == before.Left + direction * 10, "Flight frame was not applied");
+                Check(moves > 0, "The HWND did not report a position change");
+                var appliedMoves = moves;
+                pet.AcceptMotion(new Dictionary<string, object> { ["id"] = 73, ["phase"] = "flight", ["x"] = after.Left + 0.2, ["y"] = after.Top });
+                Check(moves == appliedMoves, "Duplicate rounded flight position moved the HWND again");
                 pet.AcceptMotion(new Dictionary<string, object> { ["id"] = 72, ["phase"] = "flight", ["x"] = before.Left - direction * 100, ["y"] = before.Top });
                 Native.GetWindowRect(pet.hwnd, out after);
                 Check(after.Left == before.Left + direction * 10, "Old gesture frame was accepted");
                 pet.StopMotion(false);
                 pet.Window.Close();
             }
-            Console.WriteLine("PASS: real WPF handoff preserves position and rejects stale drag/gesture frames");
+            Console.WriteLine("PASS: real WPF handoff preserves position and skips stale and duplicate window moves");
         }
         static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
     }

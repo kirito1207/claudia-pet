@@ -46,7 +46,7 @@ namespace Claudia
         [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
         public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
         [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc proc, IntPtr lParam);
-        public static void MoveTo(IntPtr hwnd, int x, int y) =>
+        public static bool MoveTo(IntPtr hwnd, int x, int y) =>
             SetWindowPos(hwnd, IntPtr.Zero, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 
         public static uint ForegroundPid()

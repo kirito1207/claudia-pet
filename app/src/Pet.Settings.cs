@@ -94,7 +94,6 @@ namespace Claudia
                 if (fix == null) return;
                 zoomFixes++; zoomFix = fix.Value;
                 web.ZoomFactor = shownZoom * zoomFix;
-                lastHitRects = null;
                 Store.Log($"系统缩放像是被算了两遍：网页缩放自动改成 {Num(Math.Round(web.ZoomFactor, 3))}（人物大小 {Num(shownZoom)} × {Num(Math.Round(zoomFix, 3))}），再量一次");
                 CheckZoomSoon();
             }
@@ -115,7 +114,7 @@ namespace Claudia
             Store.Log($"系统缩放变了：{Math.Round(oldDpi * 100)}% → {Math.Round(newDpi * 100)}%，网页区域重新对齐");
             web.Width = Math.Max(1, web.ActualWidth - 1); web.UpdateLayout();   // 缩小（放大会超出窗口，不一定真的变）
             web.Width = double.NaN; web.UpdateLayout();
-            lastHitRects = null;   // 可点区域按新像素重新量
+            lastMotionPosition = null;   // 换屏时系统可能已重新摆放窗口
             CheckZoomSoon();   // 再量一次网页大小：还停在旧缩放上就补对齐（StuckAtOldDpi），别的对不上记日志
         }
 
@@ -129,7 +128,6 @@ namespace Claudia
             await Task.Delay(100);
             if (web == null) return;
             web.Width = double.NaN; web.UpdateLayout();
-            lastHitRects = null;
         }
 
         /// <summary>改大小：窗口 = 画布 × 人物大小，网页按人物大小缩放；放在哪见 Anchor</summary>
@@ -137,6 +135,7 @@ namespace Claudia
         {
             Native.GetWindowRect(hwnd, out var old);
             Window.Width = pageW * scale; Window.Height = pageH * scale;
+            UpdateHitRects();
             Window.UpdateLayout();
             if (web != null) web.ZoomFactor = scale * zoomFix;
             shownZoom = scale;
