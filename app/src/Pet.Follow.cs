@@ -237,7 +237,12 @@ namespace Claudia
             {
                 if (claude == IntPtr.Zero) return;
                 var prev = GetWindow(claude, 3);   // GW_HWNDPREV：紧挨在 Claude 上面的那个窗口
-                if (prev == pet) return;
+                // 中间隔着的看不见的窗口不算：WPF 给她配的隐形属主窗口（Hidden Window）总夹在她和 Claude 之间
+                // （属主跟着被拥有的窗口一起挪），只比紧挨着的那个就永远不成立，平时每 0.1 秒、切窗口后每 1 毫秒重排一次，
+                // 右键菜单（同一个界面线程）的三级盖住一级时会一闪一闪露出一级
+                var h = prev;
+                while (h != IntPtr.Zero && h != pet && !Native.IsWindowVisible(h)) h = GetWindow(h, 3);
+                if (h == pet) return;
                 var after = IntPtr.Zero;           // HWND_TOP：普通窗口里的最上面
                 if (prev != IntPtr.Zero && (Native.GetWindowLong(prev, -20) & 0x8) == 0) after = prev;   // 0x8 = WS_EX_TOPMOST
                 Native.SetWindowPos(pet, after, 0, 0, 0, 0, 0x1 | 0x2 | 0x10 | (async ? 0x4000u : 0));   // NOSIZE | NOMOVE | NOACTIVATE (| ASYNCWINDOWPOS)
