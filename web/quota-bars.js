@@ -1,8 +1,9 @@
-// Claude 额度条：每个额度窗口一行，显示剩余比例及重置时间。
+// Claude 额度条：每个额度窗口一行，显示已用比例及重置时间。
+// 2026-11-07 用户定：照 Claude 自己的样子显示「用了多少」（原来显示剩余），条统一用 Claude 橙；数据里照旧存剩余比例 left（插件写的、钱袋档位都用它）
 ;(function (root) {
-  const LOW_LEFT = 10   // 剩余 ≤ 10% 算紧张
-  // 颜色三档：多于 30% 蓝（ok）、10%–30% 橙（mid）、10% 及以下红（low）
-  const level = pct => (pct > 30 ? 'ok' : pct > LOW_LEFT ? 'mid' : 'low')
+  const LOW_LEFT = 10   // 剩余 ≤ 10%（已用 ≥ 90%）算紧张
+  // 已用 ≥ 90% 算紧张（low，百分比标红），其余 ok；条都是橙色
+  const level = used => (used >= 100 - LOW_LEFT ? 'low' : 'ok')
   // 重置时间短写：24 小时内「3:40」（小时不补零），7 天内「周一」，再远「10/26」，按本机时区
   const WEEK = '日一二三四五六'
   function shortWhen(sec, nowSec) {
@@ -12,23 +13,24 @@
     return `${d.getMonth() + 1}/${d.getDate()}`
   }
 
-  const pctOf = left => Math.max(0, Math.min(100, Math.round((+left || 0) * 100)))
+  const pctOf = left => Math.max(0, Math.min(100, Math.round((+left || 0) * 100)))   // 剩余百分比
+  const usedOf = left => 100 - pctOf(left)
   function barRow(b, label, nowSec) {
-    if (b.resetDone || (b.reset && b.reset <= nowSec)) return { kind: 'bar', label, pct: 100, level: 'ok', when: '已重置' }   // 过了重置时间、还没新数据：算满
-    const pct = pctOf(b.left)
+    if (b.resetDone || (b.reset && b.reset <= nowSec)) return { kind: 'bar', label, pct: 0, level: 'ok', when: '已重置' }   // 过了重置时间、还没新数据：算没用
+    const pct = usedOf(b.left)
     return { kind: 'bar', label, pct, level: level(pct), when: b.reset ? shortWhen(b.reset, nowSec) : null }
   }
 
-  const SEG = /^(.+?) 剩余 (\d+)%(?: · (\S+) 重置)?(.*)$/
+  const SEG = /^(.+?) (剩余|已用) (\d+)%(?: · (\S+) 重置)?(.*)$/   // 旧插件写「剩余」，新的写「已用」
   function fromText(q) {
     let note = null
     const rows = String(q.text).split(/\s*｜\s*/).filter(Boolean).map(seg => {
       const m = SEG.exec(seg)
       if (!m) return { kind: 'text', text: seg, low: !!q.low }
-      const [, label, p, when, tail] = m
+      const [, label, kind, p, when, tail] = m
       const t = tail.trim().replace(/^·\s*/, '')
       if (t) note = t   // 保留文本数据附带的说明
-      const pct = Math.min(100, +p)
+      const pct = kind === '剩余' ? 100 - Math.min(100, +p) : Math.min(100, +p)
       return { kind: 'bar', label, pct, level: level(pct), when: when || null }
     })
     return { rows, note }
@@ -61,7 +63,7 @@
   }
 
   // 额度只在 Code 会话收到回复时更新（Chat 里的对话插件收不到），所以网页按当前时间再算一遍：
-  // 过了重置时间的窗口算满、标「已重置」；剩得最少的那个才带重置时间（同插件 quotaOf）；
+  // 过了重置时间的窗口算没用、标「已重置」；用得最多的那个才带重置时间（同插件 quotaOf）；
   // 数据超过 STALE_MIN 分钟没更新，加一行「多久前的数据」。at 是 claude-quota.json 的修改时间（秒）。
   const STALE_MIN = 20
   const pad = n => String(n).padStart(2, '0')
@@ -86,7 +88,7 @@
     const top = live.length ? live.reduce((a, b) => (b.left < a.left ? b : a)) : null
     const text = bars.map(b => {
       if (b.resetDone) return `${b.label} 已重置`
-      let piece = `${b.label} 剩余 ${pctOf(b.left)}%`
+      let piece = `${b.label} 已用 ${usedOf(b.left)}%`
       if (b === top && b.reset) piece += ` · ${resetText(b.reset, nowSec)} 重置`
       return piece
     }).join(' ｜ ')

@@ -15,17 +15,17 @@ const sample = {
 
 // 刚写的：数字照旧，不加备注
 let q = QuotaBars.fresh(sample, now, now - 60);
-assert.match(q.text, /^5小时 剩余 93% ｜ 本周 剩余 36% · \d\d:\d\d 重置$/);
+assert.match(q.text, /^5小时 已用 7% ｜ 本周 已用 64% · \d\d:\d\d 重置$/);   // 照 Claude 的样子显示用了多少
 assert.equal(q.note, undefined);
 assert.equal(q.low, false);
 
 // 本周过了重置时间：本周算满、标已重置；重置时间改标在剩下的 5 小时窗口上
 q = QuotaBars.fresh(sample, now + 7300, now - 60);
-assert.match(q.text, /^5小时 剩余 93% · \d\d:\d\d 重置 ｜ 本周 已重置$/);
+assert.match(q.text, /^5小时 已用 7% · \d\d:\d\d 重置 ｜ 本周 已重置$/);
 assert.equal(q.bars[1].left, 1);
 assert.equal(q.bars[1].resetDone, true);
 const rows = QuotaBars.of(q, now + 7300).rows;
-assert.deepEqual(rows.map(r => [r.pct, r.when]).at(-1), [100, '已重置']);
+assert.deepEqual(rows.map(r => [r.pct, r.when]).at(-1), [0, '已重置']);   // 过了重置时间：已用 0%
 
 // 全部过了重置时间
 q = QuotaBars.fresh(sample, now + 15000, now);
@@ -36,7 +36,7 @@ assert.equal(q.low, false);
 const tight = { text: 'x', low: true, bars: [{ label: '5小时', left: .08, reset: now + 600 }, { label: '本周', left: .5, reset: now + 86400 * 3 }] };
 assert.equal(QuotaBars.fresh(tight, now, now).low, true);
 assert.equal(QuotaBars.fresh(tight, now + 700, now).low, false);
-assert.match(QuotaBars.fresh(tight, now + 700, now).text, /本周 剩余 50% · \d+\/\d+ 重置$/);
+assert.match(QuotaBars.fresh(tight, now + 700, now).text, /本周 已用 50% · \d+\/\d+ 重置$/);
 
 // 多久前的数据
 assert.equal(QuotaBars.ageText(now - 19 * 60, now), null);
@@ -48,7 +48,13 @@ assert.equal(QuotaBars.fresh(sample, now, now - 3600).note, '1 小时前的数�
 // 没有 bars 的旧数据：文字原样，只加备注
 assert.deepEqual(QuotaBars.fresh({ text: 'a' }, now, now - 3600), { text: 'a', note: '1 小时前的数据' });
 assert.equal(QuotaBars.fresh(null, now, now), null);
-console.log('PASS: quota fresh (reset passed, low recompute, stale note)');
+// 额度条按已用填充：剩余 93% → 条 7%，紧张（已用 ≥ 90%）的那一行标 low；过了重置算 0%
+const usedRows = QuotaBars.of({ text: 'x', bars: [{ label: '5小时', left: .93, reset: now + 600 }, { label: '本周', left: .08 }] }, now).rows;
+assert.deepEqual(usedRows.map(r => [r.pct, r.level]), [[7, 'ok'], [92, 'low']]);
+assert.equal(QuotaBars.of({ text: 'x', bars: [{ label: '5小时', left: .2, reset: now - 1 }] }, now).rows[0].pct, 0);
+// 旧插件写的「剩余」文字也换算成已用，新的「已用」原样
+assert.deepEqual(QuotaBars.of({ text: '5小时 剩余 71% · 00:20 重置 ｜ 本周 已用 4%' }, now).rows.map(r => r.pct), [29, 4]);
+console.log('PASS: quota fresh (reset passed, low recompute, stale note, used-percent bars)');
 
 (async () => {
   let chromium;
@@ -100,7 +106,7 @@ console.log('PASS: quota fresh (reset passed, low recompute, stale note)');
       setQuotaStyle('text');
       setQuota('claude', { text: 'x', bars: [{ label: '本周', left: .36, reset: t + 1 }] }, t);
     });
-    assert.match(await page.locator('#quota').innerText(), /本周 剩余 36%/);
+    assert.match(await page.locator('#quota').innerText(), /本周 已用 64%/);
     await page.waitForTimeout(1500);
     await page.evaluate(() => applyQuota('claude'));   // 等同定时器那一下
     assert.match(await page.locator('#quota').innerText(), /本周 已重置/);

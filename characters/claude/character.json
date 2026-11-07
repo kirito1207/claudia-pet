@@ -318,14 +318,19 @@
   "fx": {
     "proud": "victory"
   },
+  "clipLines": {
+    "点击回应-元气挥手": ["嗨～在这儿呢！", "找我吗？", "嘿～"],
+    "点击回应-害羞惊讶": ["诶、诶？！", "突、突然戳我干嘛…", "吓我一跳…"],
+    "点击回应-开心跃动": ["耶～！", "今天心情超好！", "嘿嘿，开心！"],
+    "点击回应-挠痒咯咯笑": ["哈哈哈好痒！", "别、别挠啦～", "咯咯…停、停一下！"]
+  },
   "frames": {
-    "bonk": { "seq": ["bonk", "bonk-2", "bonk-3"], "ms": [550, 700] },
-    "stagger": { "seq": ["stagger", "stagger-2", "stagger-3"], "ms": [450, 450] },
-    "faceplant": { "seq": ["faceplant", "faceplant-2"], "ms": [800] },
-    "fallen": { "seq": ["fallen-1", "fallen", "fallen-2"], "ms": [300, 900] },
-    "asking": { "seq": ["asking", "asking-2", "asking", "asking-3", "asking", "asking-4"], "ms": [1800, 1300, 900, 1300, 900, 1600], "loop": true },
-    "delegating": { "seq": ["delegating", "delegating-2", "delegating-3"], "ms": [1800, 1600, 1300], "loop": true },
-    "searching": { "seq": ["searching", "searching-2"], "ms": [1700, 1700], "loop": true },
+    "bonk": { "seq": ["bonk", "bonk-m0", "bonk-m1", "bonk-2", "bonk-m2", "bonk-3"], "ms": [450, 100, 120, 480, 200] },
+    "stagger": { "seq": ["stagger", "stagger-m1", "stagger-2", "stagger-m2", "stagger-3"], "ms": [300, 150, 300, 150] },
+    "faceplant": { "seq": ["faceplant", "faceplant-m1", "faceplant-2"], "ms": [600, 200] },
+    "fallen": { "seq": ["fallen-1", "fallen", "fallen-m1", "fallen-2"], "ms": [300, 700, 200] },
+    "delegating": { "seq": ["delegating", "delegating-m1", "delegating-2", "delegating-m2", "delegating-m2b", "delegating-3", "delegating-m3", "delegating-m3b"], "ms": [1600, 150, 1400, 120, 120, 1100, 120, 120], "loop": true },
+    "searching": { "seq": ["searching", "searching-m1", "searching-2", "searching-m1"], "ms": [1550, 150, 1550, 150], "loop": true },
     "reading": { "seq": ["reading", "reading-2"], "ms": [2400, 900], "loop": true }
   },
   "animations": {
@@ -403,8 +408,8 @@
     "qixi": { "sheets": ["穿针乞巧"], "full": true, "idle": "season", "when": { "lunar": ["07-05", "07-07"] }, "weight": 4 },
     "zhongyuan": { "sheets": ["放河灯"], "full": true, "idle": "season", "when": { "lunar": ["07-13", "07-15"] }, "weight": 4 },
     "chongyang": { "sheets": ["插茱萸赏菊"], "full": true, "idle": "season", "when": { "lunar": ["09-07", "09-11"] }, "weight": 4 },
-    "walk_crab": { "sheets": ["螃蟹走路"], "from": 8, "cycle": [37, 58], "outro": 92, "idle": "walk", "walk": { "speed": 0.1, "dirs": [-1, 1], "ms": [3000, 7000] } },
+    "walk_crab": { "sheets": ["螃蟹走路"], "from": 8, "cycle": [37, 58], "outro": 92, "idle": "walk", "walk": { "speed": 0.1, "dirs": [-1], "ms": [3000, 7000] } },
     "walk_float": { "sheets": ["原地漂浮踏步"], "from": 30, "cycle": [51, 84], "outro": 92, "idle": "walk", "walk": { "speed": 0.07, "dirs": [-1, 1], "ms": [3000, 6000] } },
-    "run_left": { "sheets": ["原地左转奔跑"], "from": 4, "cycle": [38, 46], "outro": 70, "idle": "walk", "walk": { "speed": 0.35, "dirs": [-1], "ms": [1500, 3000] } }
+    "run_left": { "sheets": ["原地左转奔跑"], "from": 4, "cycle": [38, 46], "outro": 69, "idle": "walk", "walk": { "speed": 0.35, "dirs": [-1], "ms": [1500, 3000] } }
   }
 }

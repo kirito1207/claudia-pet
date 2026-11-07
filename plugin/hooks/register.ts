@@ -80,7 +80,8 @@ function poseForTool(tool: string): string {
   return 'running'
 }
 
-// 额度：各窗口显示「剩余」百分比，只给剩得最少的那个标重置时间；bars 给「额度条」样式用
+// 额度：各窗口显示「已用」百分比（照 Claude 自己的样子，2026-11-07 起；以前写剩余），只给用得最多的那个标重置时间；
+// bars 给「额度条」样式用，里面照旧存剩余比例 left（网页按它算已用、钱袋档位）
 type Limit = { kind: string; percentUsed: number; resetsAt?: string }
 const LABEL: Record<string, string> = { five_hour: '5小时', seven_day: '本周', spend_limit: '花费' }
 export function quotaOf(limits: Limit[]) {
@@ -89,7 +90,7 @@ export function quotaOf(limits: Limit[]) {
   const top = shown.reduce((a, b) => (b.percentUsed > a.percentUsed ? b : a))
   const pad = (n: number) => String(n).padStart(2, '0')
   const parts = shown.map(l => {
-    let piece = `${LABEL[l.kind]} 剩余 ${Math.max(0, 100 - Math.round(l.percentUsed))}%`
+    let piece = `${LABEL[l.kind]} 已用 ${Math.min(100, Math.max(0, Math.round(l.percentUsed)))}%`
     if (l === top && l.resetsAt) {
       const d = new Date(l.resetsAt)
       const soon = d.getTime() - Date.now() < 86_400_000
@@ -170,8 +171,10 @@ export const register: Register = on => {
   })
 
   on('session.measure', async ($, e, next) => {
-    const q = quotaOf(e.rateLimits.map(l => ({ kind: l.kind, percentUsed: l.percentUsed, resetsAt: l.resetsAt })))
-    if (q) await write($, 'claude-quota.json', q)
+    try {
+      const q = quotaOf(e.rateLimits.map(l => ({ kind: l.kind, percentUsed: l.percentUsed, resetsAt: l.resetsAt })))
+      if (q) await write($, 'claude-quota.json', q)
+    } catch {}
     return next(e)
   })
 }

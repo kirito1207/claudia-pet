@@ -67,6 +67,52 @@ function manifest() {
     assert.ok(Math.abs(place.center - place.bodyW / 2) < 1, 'not centred')
     assert.ok(Math.abs(place.charH - place.bodyH * 638 / 640) < 1, 'height differs from the still sprite')
 
+    const steadyLayoutReads = await page.evaluate(() => {
+      const place = sheetPlace
+      let calls = 0
+      sheetPlace = (...args) => { calls++; return place(...args) }
+      try {
+        for (let i = 0; i < 3; i++) sheetTick()
+        return calls
+      } finally { sheetPlace = place }
+    })
+    assert.equal(steadyLayoutReads, 0, 'steady sprite frames recomputed canvas geometry')
+    const normalWidth = await page.evaluate(() => {
+      $('body').style.height = '85%'
+      return sheetFront.width
+    })
+    await page.waitForFunction(width => sheetFront.width > width, normalWidth)
+    await page.evaluate(() => { $('body').style.height = '' })
+    await page.waitForFunction(width => sheetFront.width === width, normalWidth)
+
+    const pausedFrame = await page.evaluate(() => {
+      setAuraMode('on')
+      setPageHidden(true)
+      return sheet.frame
+    })
+    await page.waitForTimeout(250)
+    assert.ok(await page.evaluate(frame => sheet.frame === frame && sheet.timer === null && auraTimer === null, pausedFrame),
+      'hidden animation or aura kept running')
+    assert.equal(await page.evaluate(() => { setPageHidden(false); return sheet.frame }), pausedFrame, 'resume skipped the paused frame')
+    await page.waitForFunction(frame => sheet.frame !== frame, pausedFrame)
+
+    await page.evaluate(() => {
+      setPageHidden(true)
+      playSheet({ ...anim('idle'), to: 2, loop: false }, null)
+    })
+    await waitSheet()
+    assert.ok(await page.evaluate(() => sheet.frame === 0 && sheet.timer === null && auraTimer === null),
+      'a sheet loaded while hidden started a timer')
+    await page.evaluate(() => setPageHidden(false))
+    await page.waitForFunction(() => sheet.frame === 2)
+    const held = await page.evaluate(() => ({ spriteStopped: sheet.timer === null, auraRunning: auraTimer !== null, aura: $('aura').style.transform }))
+    assert.ok(held.spriteStopped && held.auraRunning, 'the final sprite frame did not hand over to the aura timer')
+    await page.waitForFunction(aura => $('aura').style.transform !== aura, held.aura)
+    assert.equal(await page.evaluate(() => sheet.frame), 2, 'a completed sheet advanced past the final frame')
+    await page.evaluate(() => setAuraMode('off'))
+    assert.ok(await page.evaluate(() => sheet.timer === null && auraTimer === null), 'hidden aura kept a timer')
+    await page.evaluate(() => setAuraMode('auto'))
+
     // 动画姿态不画我们的特效；临时状态停满整段
     await page.evaluate(() => show('hum', true)); await waitSheet()
     s = await state(); assert.equal(s.url, '悠闲哼歌.webp'); assert.equal(s.fx, 0)
@@ -87,9 +133,19 @@ function manifest() {
     const before = await page.evaluate(() => ({ frame: sheet.frame, pose }))
     assert.ok(['pat', 'pout'].includes(before.pose) && before.frame > 10, `click reaction playing ${JSON.stringify(before)}`)
     await page.evaluate(() => performClick('pat')); await waitSheet()
-    const after = await page.evaluate(() => ({ frame: sheet.frame, pose, said: (linesOf(pose) || []).includes($('bubble').textContent) }))
+    const after = await page.evaluate(() => ({ frame: sheet.frame, pose, said: (clipLines() || linesOf(pose) || []).includes($('bubble').textContent) }))
     assert.ok(after.frame < 6, `click restarted from frame ${after.frame}`)
     assert.ok(after.said, 'restart said a line of the new reaction')
+    // 每段点击动画说它自己的台词（clipLines），四段摸头动作不再共用一套摸头台词
+    const clipSaid = {}
+    for (let i = 0; i < 40 && Object.keys(clipSaid).length < 4; i++) {
+      const r = await page.evaluate(() => { pose = null; show('pat', true); const n = decodeURIComponent(sheet.url.split('/').pop()).replace('.webp', ''); return [n, $('bubble').textContent] })
+      clipSaid[r[0]] = r[1]
+    }
+    const clipInfo = JSON.parse(fs.readFileSync(path.join(root, 'characters/claude/character.json'), 'utf8')).clipLines
+    assert.equal(Object.keys(clipSaid).length, 4, `saw clips ${Object.keys(clipSaid)}`)
+    for (const [n, line] of Object.entries(clipSaid)) assert.ok(clipInfo[n]?.includes(line), `${n} said "${line}", not its own line`)
+    assert.ok(await page.evaluate(() => { pose = null; show('pout', true); return linesOf('pout').includes($('bubble').textContent) }), 'pout keeps its own lines')
     await page.evaluate(() => { clearTimeout(revertTimer); setPose('idle', true) })
 
     // 再见从挥手那段开始
@@ -241,15 +297,20 @@ function manifest() {
     await page.evaluate(() => { setBehavior({ idleEnabled: false }); setPose('idle', true) })
 
     // 走路：起步动作演完（进入步伐循环）才让外壳挪窗口；外壳回 done 就站回去；这边没地方走就换方向；奔跑只朝左
-    await page.evaluate(() => { messages.length = 0; startWalk('walk_crab', 1) })
+    // 螃蟹步身体朝左：只往左走，指定往右不走
+    assert.equal(await page.evaluate(() => startWalk('walk_crab', 1)), false)
+    await page.evaluate(() => { messages.length = 0; startWalk('walk_crab') })
     await page.waitForFunction(() => messages.some(m => m.walk), null, { timeout: 5000 })
     let walkMsg = await page.evaluate(() => ({ m: messages.find(m => m.walk).walk, frame: sheet.frame, cycled: sheet.cycled }))
-    assert.equal(walkMsg.m.dir, 1); assert.ok(walkMsg.m.speed > 0 && walkMsg.m.ms >= 3000); assert.ok(walkMsg.cycled && walkMsg.frame >= 37)
+    assert.equal(walkMsg.m.dir, -1); assert.ok(walkMsg.m.speed > 0 && walkMsg.m.ms >= 3000); assert.ok(walkMsg.cycled && walkMsg.frame >= 37)
     await page.waitForTimeout(2500)
     s = await state(); assert.ok(s.frame >= 37 && s.frame <= 58, `crab cycle frame ${s.frame}`)
     // 走完：先演收尾（螃蟹步从第 92 帧播到最后），播完才回待机，中间一直是动画、不露静态图
     const outro = await page.evaluate(async () => {
+      const keep = { img: sheet.img, canvas: sheet.canvas }
       walkEnded('done')
+      // 收尾接着用正在播的这张图、这块画布：不重新读图、不交叉淡入（原来会卡一下再淡入，向左跑收尾看着生硬）
+      if (sheet.img !== keep.img || sheet.canvas !== keep.canvas || sheet.frame !== 92) throw new Error('outro reloaded the sheet instead of continuing in place: frame ' + sheet.frame)
       const seen = { minFrame: 999, gaps: 0 }
       for (const t0 = performance.now(); pose !== 'idle' && performance.now() - t0 < 5000;) {
         await new Promise(r => requestAnimationFrame(r))
@@ -260,15 +321,26 @@ function manifest() {
     })
     assert.equal(outro.pose, 'idle'); assert.ok(outro.minFrame >= 92, `outro started at ${outro.minFrame}`); assert.equal(outro.gaps, 0)
     await waitSheet(); assert.equal((await state()).url, '待机呼吸休闲.webp')
+    // 换成另一张动画：新图读好、交叉淡入之前，旧动画接着往下播，不定格
+    const fadeAdvance = await page.evaluate(async () => {
+      show('hum', true)
+      const f = fading; if (!f) return 'no fading sheet'
+      const f0 = f.frame; await new Promise(r => setTimeout(r, 300))
+      return f.frame > f0 ? 'ok' : `stuck at ${f0}`
+    })
+    assert.equal(fadeAdvance, 'ok', 'outgoing animation froze during the switch')
+    await page.waitForFunction(() => !fading, null, { timeout: 3000 })
+    await page.evaluate(() => { clearTimeout(revertTimer); show('idle', true) }); await waitSheet()
     await page.evaluate(() => { messages.length = 0; startWalk('walk_crab', -1) }); await page.waitForFunction(() => messages.some(m => m.walk))
-    await page.evaluate(() => { messages.length = 0; walkEnded('blocked') })
+    await page.evaluate(() => { messages.length = 0; walkEnded('blocked') })   // 左边没地方：螃蟹步不往右，换成漂浮踏步往右
     await page.waitForFunction(() => messages.some(m => m.walk)); assert.equal(await page.evaluate(() => messages.find(m => m.walk).walk.dir), 1)
+    assert.equal((await state()).pose, 'walk_float')
     await page.evaluate(() => walkEnded('blocked')); assert.equal((await state()).pose, 'idle')   // 两边都没地方：站回去
     await page.evaluate(() => { messages.length = 0; startWalk('run_left') }); await page.waitForFunction(() => messages.some(m => m.walk), null, { timeout: 6000 })
     assert.equal(await page.evaluate(() => messages.find(m => m.walk).walk.dir), -1)
     await page.evaluate(() => { messages.length = 0; walkEnded('blocked') })   // 左边没地方：换成能往右走的
     await page.waitForFunction(() => messages.some(m => m.walk), null, { timeout: 6000 })
-    s = await state(); assert.ok(['walk_crab', 'walk_float'].includes(s.pose)); assert.equal(await page.evaluate(() => messages.find(m => m.walk).walk.dir), 1)
+    s = await state(); assert.equal(s.pose, 'walk_float'); assert.equal(await page.evaluate(() => messages.find(m => m.walk).walk.dir), 1)
     // 走着被点 / 被拖：告诉外壳停下
     await page.evaluate(() => { messages.length = 0; performClick('pat') })
     assert.ok(await page.evaluate(() => messages.some(m => 'walk' in m && m.walk === null)))

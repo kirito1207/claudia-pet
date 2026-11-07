@@ -22,7 +22,8 @@ const {pathToFileURL}=require('url');
         if(context)charState.claude={pose:context,event:'PreToolUse',ts:Date.now()/1000};
       },context);
     }
-    async function shake(count=12) { await page.evaluate(count=>{setMotionActive(true);for(let i=0;i<count;i++)shaken();},count); }
+    // 14 × 7 = 98，过红温门槛 90
+    async function shake(count=14) { await page.evaluate(count=>{setMotionActive(true);for(let i=0;i<count;i++)shaken();},count); }
     await reset();await shake();await page.waitForTimeout(1300);
     assert.equal(await page.evaluate(()=>pose),'idle','emotion played during movement');
     assert.ok(await page.evaluate(()=>angerNow()>=83),'stored anger decayed before it could be seen');
@@ -97,7 +98,31 @@ const {pathToFileURL}=require('url');
     assert.ok(info.lines.fallenAngry.includes(await bubble()),'angry fall used the sweet lines');
     await page.waitForFunction(()=>!tumble,null,{timeout:4000});assert.ok(!info.lines.getup.includes(await bubble()),'angry fall said the calm getting-up line');
     await page.waitForFunction(()=>pose==='redhot',null,{timeout:6000});
-    assert.deepEqual(await seen(),['fallen','idle','redhot'],'anger did not wait for the fall');
+    assert.deepEqual(await seen(),['fallen','redhot'],'angry fall should stand straight up into the anger pose, not via idle');
+    // 这一撞才把火气顶过门槛（甩三下 21 + 摔倒 9 = 30，门槛 25）：直接气呼呼站起来（硬切到不耐烦、在它身上做站起来），不说「嘿咻」
+    await reset();await shake(3);await hit('bottom');await page.evaluate(()=>setMotionActive(false));
+    const cut=await page.evaluate(async()=>{
+      for(const t0=performance.now();pose!=='annoyed'&&performance.now()-t0<6000;)await new Promise(r=>requestAnimationFrame(r));
+      return {pose,src:decodeURIComponent(active.getAttribute('src')||'').split('/').pop(),spareOn:spare.classList.contains('on'),
+        stretch:$('impact').getAnimations().length>0,line:$('bubble').textContent};
+    });
+    assert.equal(cut.pose,'annoyed');assert.equal(cut.src,'annoyed.webp','anger pose not hard-cut in');assert.equal(cut.spareOn,false);
+    assert.ok(cut.stretch,'no stand-up motion on the anger pose');assert.ok(!info.lines.getup.includes(cut.line),'said a calm getting-up line before getting angry');
+    const order=await seen();assert.deepEqual(order.slice(order.indexOf('fallen')),['fallen','annoyed'],'went through another pose between the fall and the anger');
+    // 有火气时撞头：停在揉头那张（bonk-2），不翻到揉着头笑的 bonk-3，再交叉淡入到生气，中间不回待机
+    await reset();await shake();await hit('top');await page.evaluate(()=>setMotionActive(false));
+    const bonked=await page.evaluate(async()=>{
+      const shown=new Set()
+      for(const t0=performance.now();performance.now()-t0<7000;){
+        await new Promise(r=>requestAnimationFrame(r))
+        shown.add(decodeURIComponent(currentUrl).split('/').pop().replace('.webp',''))
+        if(pose==='redhot')break
+      }
+      return {shown:[...shown],pose}
+    });
+    assert.equal(bonked.pose,'redhot','angry bonk did not end in anger');
+    assert.ok(bonked.shown.includes('bonk-2')&&!bonked.shown.includes('bonk-m2')&&!bonked.shown.includes('bonk-3'),`angry bonk frames ${bonked.shown}`);
+    const bonkOrder=await seen();assert.deepEqual(bonkOrder.slice(bonkOrder.indexOf('bonk')),['bonk','redhot'],'angry bonk went through idle');
     await reset('reading');await page.evaluate(()=>setMotionActive(true));await hit('top');
     assert.equal(await page.evaluate(()=>pose),'bonk');await page.waitForTimeout(1000);
     assert.equal(await page.evaluate(()=>pose),'reading','work not resumed after a flash');

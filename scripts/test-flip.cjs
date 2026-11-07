@@ -61,9 +61,9 @@ console.log('PASS: frames config (files, grouping, timings vs tumble steps)');
         assert.equal(await page.evaluate(() => document.documentElement.classList.contains('flipping')), true);
         await page.waitForTimeout(1500);
         const log = await page.evaluate(() => window.shown);
-        assert.deepEqual(log.map(s => s[0]), ['fallen-1', 'fallen', 'fallen-2'], 'fallen frames in order');
+        assert.deepEqual(log.map(s => s[0]), ['fallen-1', 'fallen', 'fallen-m1', 'fallen-2'], 'fallen frames in order');
         const gaps = log.slice(1).map((s, i) => s[1] - log[i][1]);
-        assert.ok(Math.abs(gaps[0] - 300) < 120 && Math.abs(gaps[1] - 900) < 150, `fallen frame timing ${gaps}`);
+        assert.ok(Math.abs(gaps[0] - 300) < 120 && Math.abs(gaps[1] - 700) < 150 && Math.abs(gaps[2] - 200) < 120, `fallen frame timing ${gaps}`);
         // 换帧不留重影：任何时刻最多一张图不透明度在 0 和 1 之间
         await page.evaluate(() => setPose('idle'));
         await page.waitForTimeout(500);
@@ -92,12 +92,12 @@ console.log('PASS: frames config (files, grouping, timings vs tumble steps)');
         await page.waitForTimeout(200);
         await page.evaluate(() => setPose('stagger'));
         await page.waitForTimeout(1300);
-        assert.deepEqual(await shown(), ['bonk', 'stagger', 'stagger-2', 'stagger-3'], 'switching pose stopped the bonk flip');
+        assert.deepEqual(await shown(), ['bonk', 'stagger', 'stagger-m1', 'stagger-2', 'stagger-m2', 'stagger-3'], 'switching pose stopped the bonk flip');
         assert.equal(await page.evaluate(() => getComputedStyle(active).transitionDuration), '0s', 'flip frames cut without cross-fade');
         await page.evaluate(() => setPose('idle'));
         assert.equal(await page.evaluate(() => document.documentElement.classList.contains('flipping')), false);
 
-        // 循环翻页（工作状态）：看书 读 2.4 秒 → 翻页 0.9 秒 → 读……一直转
+        // 循环翻页（工作状态）：看书 读 2.4 秒 → 翻页 0.9 秒 → 读……一直转（2026-11-07 起两张同一批画的，人不再一大一小）
         await clear();
         await page.evaluate(() => setPose('reading'));
         await page.waitForTimeout(3700);
@@ -109,7 +109,7 @@ console.log('PASS: frames config (files, grouping, timings vs tumble steps)');
         await page.evaluate(() => { setMotionActive(true); tumbleHit({ edge: 'bottom', impactY: 900, phase: 'fly' }); setMotionActive(false) });
         await page.waitForFunction(() => pose === 'idle' && !tumble, null, { timeout: 8000 });
         const seq = (await shown()).filter((s, i, a) => s !== a[i - 1]);
-        assert.deepEqual(seq.slice(0, 5), ['stagger', 'stagger-2', 'stagger-3', 'faceplant', 'faceplant-2'], `tumble frames ${seq}`);
+        assert.deepEqual(seq.slice(0, 8), ['stagger', 'stagger-m1', 'stagger-2', 'stagger-m2', 'stagger-3', 'faceplant', 'faceplant-m1', 'faceplant-2'], `tumble frames ${seq}`);
         assert.ok(!seq.some(s => s.startsWith('getup')), 'no getup frames any more');
         assert.ok(await page.evaluate(() => $('impact').getAnimations().length > 0), 'stand-up stretch when she gets back up from the floor');
         // 飞行中撞头：第一张停到飞行结束，停稳后才往后翻
@@ -119,7 +119,7 @@ console.log('PASS: frames config (files, grouping, timings vs tumble steps)');
         assert.deepEqual(await shown(), ['bonk'], 'bonk first frame held while still flying');
         await page.evaluate(() => setMotionActive(false));
         await page.waitForTimeout(1500);
-        assert.deepEqual((await shown()).filter((s, i, a) => s !== a[i - 1]).slice(0, 3), ['bonk', 'bonk-2', 'bonk-3'], 'bonk flips on after landing');
+        assert.deepEqual((await shown()).filter((s, i, a) => s !== a[i - 1]).slice(0, 6), ['bonk', 'bonk-m0', 'bonk-m1', 'bonk-2', 'bonk-m2', 'bonk-3'], 'bonk flips on after landing');
       }
       assert.deepEqual(errors, []);
       await page.close();
