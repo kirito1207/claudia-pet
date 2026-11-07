@@ -4,7 +4,7 @@
 
 - 作者：hunmer
 - 来源：[hunmer/aboutme-pets](https://github.com/hunmer/aboutme-pets)（`pets/claude` 动作包，`spritesheet/` 目录）
-- 固定提交：`3ba083bee0ef88d9300eaa941fe2da89d0d99c7b`
+- 固定提交：`3ba083bee0ef88d9300eaa941fe2da89d0d99c7b`；2026-11-07 加的 82 张取自 `da5a6fea396a7973af2fe2be72c804b341265988`（作者 11-06、11-07 新加的，含作者用 Gemini 生成的两批，同在 `pets/claude`、同一授权）
 - 授权：CC BY-NC-SA 4.0，作者 2026-11-05 在 [hunmer/aboutme-pets#1](https://github.com/hunmer/aboutme-pets/issues/1) 书面授权
 - 制作方式（作者说明）：AI（Claude）生成 + 人工抠像转换
 
@@ -21,7 +21,7 @@
 | 工作状态-雀跃庆祝.webp | happy 开心 | 整段 |
 | 被吓一跳.webp | surprised 吃惊 | 整段 |
 | 点击回应-元气挥手 / 害羞惊讶 / 开心跃动 / 挠痒咯咯笑.webp | pat 被摸头 | 随机一张，整段 |
-| 点击回应-傲娇生气.webp | annoyed 不耐烦 | 整段 |
+| 点击回应-傲娇生气.webp | pout 点击反应（傲娇） | 整段 |
 | 点击回应-元气挥手.webp | bye 再见 | 第 40–95 帧（挥手那段） |
 | 悠闲哼歌.webp | hum 哼歌 | 整段 |
 | 超大伸懒腰.webp | stretch 伸懒腰 | 整段 |
@@ -46,7 +46,25 @@
 | 放风筝、摇扇纳凉、被落叶淹没v2、堆雪人.webp | 时令 kite（3–4 月）、fan（6–8 月）、leaves（10–11 月；第一版结束时落叶还在，没用）、snowman（12–2 月） | 闲置随机，整段 |
 | 穿针乞巧、放河灯、插茱萸赏菊.webp | 时令 qixi（农历七月初五到初七）、zhongyuan（七月十三到十五）、chongyang（九月初七到十一） | 闲置随机，整段 |
 | 螃蟹走路.webp、原地漂浮踏步.webp | walk_crab / walk_float 走路 | 起步后在第 37–58 / 51–84 帧循环，同时平移窗口；螃蟹步身体朝左，只往左走（2026-11-07），漂浮踏步左右都走 |
-| 原地左转奔跑.webp | run_left 往左跑 | 起步（灵光一闪、转身）后在第 38–46 帧循环，只往左（不做镜像） |
+| 原地左转奔跑.webp | run_left 往左跑 | 起步（灵光一闪、转身）后在第 38–46 帧循环，只往左（不做镜像）；收尾从第 69 帧（2026-11-07） |
 | 余额-钱袋满溢 / 金袋叮当 / 数金皱眉 / 袋空如洗 / 分文不剩.webp | quota_full / jingle / count / empty / broke 余额五档（剩 ≥80% / ≥50% / ≥25% / ≥10% / 更少） | 余额换档时、闲置随机（当前这一档），整段 |
+
+**2026-11-07 加的（82 张）**：
+
+| 文件 | 用在哪个姿态 | 播放方式 |
+|---|---|---|
+| 工作状态-垂头叹气冒汗.webp | oops 哎呀（2026-11-07 起替换静态图 oops.webp） | 整段 |
+| 拆礼物.webp | update 拆礼物（2026-11-07 起替换静态图 update.webp「抱礼物」；没有专门的触发时机，放在玩耍组闲置随机） | 整段 |
+| 伸脚趾、咬指甲、抓痒、抖腿、抠鼻子、挠脚心、掰手指、揉眼睛、揪耳朵、摸肚子、甩手甩水、转手腕、憋气鼓腮、转笔、拍枕头、晨间刷牙.webp | 发呆小动作 toes、nails、scratch、leg_bounce、nose_pick、sole_tickle、finger_count、eye_rub、ear_pull、tummy、hand_flick、wrist_roll、cheek_puff、pen_spin、pillow、toothbrush（6–10 点） | 闲置随机，整段 |
+| 吹叶笛、弹玻璃杯沿、弹空气吉他、弹空气吉他v2、弹空气吉他v3、手摇八音盒、打拍子数拍、按音叉、摇沙锤、敲三角铁、敲木鱼、摇小风铃、淑女屈膝礼.webp | 才艺 leaf_flute、glass_harp、air_guitar、music_box、beat、tuning_fork、maracas、triangle、woodfish、wind_chime、curtsy | 闲置随机，整段 |
+| 叠叠乐、吹蒲公英、弹脑门、戳泡泡纸、打水漂、抖空竹、抛帽接帽、抛接小苹果、摇骰盅、翻花绳、踩影子、转伞、转盘子.webp | 玩耍 jenga、dandelion、forehead_flick、bubble_wrap、skip_stone、diabolo、hat_toss、apple_toss、dice、cats_cradle、shadow_step、umbrella_spin、plate_spin | 闲置随机，整段 |
+| 冲可可、分巧克力、刨冰屑、剥栗子、吸布丁、咬脆饼、啃玉米、喝汤吹凉、挑鱼刺、捏饭团、摇汽水瓶、烤红薯、舀蜂蜜v2、闻咖啡豆.webp | 吃喝 cocoa（10、11、12、1、2、3 月）、chocolate、shaved_ice（6、7、8 月）、chestnut（9、10、11 月）、pudding、cracker、corn（7、8、9、10 月）、soup、fishbone、onigiri、soda（5、6、7、8、9 月）、sweet_potato（11、12、1、2 月）、honey、coffee | 闲置随机，整段 |
+| 举手遮阳偷看、原地踏雪、听蝉、抱暖手炉、掌心接雪花、接雨滴、搓手哈气取暖、撑透明小伞、被风吹乱发型.webp | 时令 sunshade（5、6、7、8、9 月）、snow_step（12、1、2 月）、cicada（6、7、8 月）、hand_warmer（11、12、1、2 月）、snowflake（12、1、2 月）、raindrop（3、4、5、6、7 月）、warm_breath（11、12、1、2 月）、clear_umbrella（3、4、5、6、7 月）、windy（3、4、10、11 月） | 闲置随机，整段 |
+| 串珠链、削铅笔、扎束干花、打铁小铃、折小纸船、捏陶土、描瓷纹、磨墨、糊纸伞骨、绕线轴、编草蚱蜢、缝布偶.webp | 手工（新组） beads、pencil、dried_flowers、bell_forge、paper_boat、clay、porcelain、ink、paper_umbrella、spool、grasshopper、doll_sew | 闲置随机，整段 |
+| 拨算盘珠、深度思考碎碎念v4.webp | Claude 梗 abacus、mutter_lazy | 闲置随机，整段 |
+
+圣诞 fest_christmas 加入 装点圣诞树.webp，和装点圣诞树v3 随机轮换。
+
+作者库里这次也没用的：被落叶淹没（结束时落叶还堆在脚边（之前就弃用））；放孔明灯（后半段镜头拉近、人物出画（之前就弃用））；装点圣诞树v2（之前判断会超出窗口左边（之前就弃用））；打瞌睡被惊醒（睡着被点醒播打哈欠（用户之前定了不换））。
 
 播放配置在 `../character.json` 的 `animations`。

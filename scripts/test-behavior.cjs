@@ -28,8 +28,8 @@ assert.equal(idle.candidates(defaults, context).length, 4);
 for (const key of ['hidden','moving','working','multi','farewell','clicking'])
   assert.deepEqual(idle.candidates(defaults, { ...context, [key]: true }), [], `idle interrupted ${key}`);
 assert.deepEqual(idle.candidates(idle.normalize({ idleEnabled: false }), context), []);
-assert.deepEqual(idle.candidates(idle.normalize({ idleActions: [] }), context), []);
-assert.deepEqual(idle.candidates(idle.normalize({ idleActions: ['clawd'] }), context), ['clawd']);
+// 旧设置里存的 idleActions 不再生效：所有动作都参与
+assert.equal(idle.candidates(idle.normalize({ idleActions: [] }), context).length, 4);
 assert.ok(!idle.candidates(defaults, { ...context, quiet: 1000 }).includes('yawn'));
 assert.ok(idle.delay(idle.normalize({idleFrequency:'quiet'}), .5) > idle.delay(defaults, .5));
 assert.ok(idle.delay(idle.normalize({idleFrequency:'lively'}), .5) < idle.delay(defaults, .5));

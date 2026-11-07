@@ -18,7 +18,7 @@ namespace Claudia
                 ["version"] = Store.Version + " Windows", ["platform"] = "windows", ["appVersion"] = Store.Version,
                 ["size"] = Scale, ["textSize"] = TextScale, ["textLinked"] = TextLinked, ["showName"] = ShowName,
                 ["aura"] = AuraMode, ["powerSave"] = PowerSave, ["quotaStyle"] = QuotaStyle,
-                ["clickBounce"] = SettingOn("clickBounce"), ["tumbleActions"] = SettingOn("tumbleActions"), ["idleEnabled"] = SettingOn("idleEnabled"), ["idleFrequency"] = IdleFrequency, ["idleActions"] = IdleActions,
+                ["clickBounce"] = SettingOn("clickBounce"), ["tumbleActions"] = SettingOn("tumbleActions"), ["idleEnabled"] = SettingOn("idleEnabled"), ["idleFrequency"] = IdleFrequency,
                 ["notifyResults"] = SettingOn("notifyResults"), ["notifyWaiting"] = SettingOn("notifyWaiting"), ["notifyBackgroundOnly"] = SettingOn("notifyBackgroundOnly"),
                 ["physicsEnabled"] = PhysicsEnabled, ["ceilingBounce"] = CeilingBounce,
                 ["physics"] = PhysicsRanges.ToDictionary(k => k.Key, k => PhysicsValue(k.Key)),
@@ -53,7 +53,7 @@ namespace Claudia
                     var on = value is bool b && b;
                     switch (key)
                     {
-                        case "clickBounce": case "tumbleActions": case "idleEnabled": case "idleFrequency": case "idleActions": SetBehavior(key, value); break;
+                        case "clickBounce": case "tumbleActions": case "idleEnabled": case "idleFrequency": SetBehavior(key, value); break;
                         case "notifyResults": case "notifyWaiting": case "notifyBackgroundOnly":
                             if (value is bool) { Store.Settings[key] = value; Store.SaveSettings(); } break;
                         case "physicsEnabled": case "ceilingBounce":

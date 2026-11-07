@@ -94,7 +94,7 @@ namespace Claudia
             var trayMenu = new Forms.ContextMenuStrip();
             trayMenu.Opening += (_, e) => { FillMenu(trayMenu); e.Cancel = false; };
             tray.ContextMenuStrip = trayMenu;
-            tray.DoubleClick += (_, __) => Recenter();
+            tray.DoubleClick += (_, __) => ShowAgain();   // 只叫出来、不挪位置（2026-11-07 用户定）；要回默认位置用菜单
 
             Every(TimeSpan.FromMilliseconds(300), Poll);
             StartFollow();

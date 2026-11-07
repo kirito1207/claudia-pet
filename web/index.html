@@ -1700,7 +1700,7 @@ function scheduleIdle() {
 }
 function idleTick() {
   const quiet = Date.now() - lastActive
-  // 动画小动作按组跟着「允许的动作」走，when 限定时段 / 季节 / 节气；余额钱袋算 Claude 梗，只演当前这一档
+  // 动画小动作按组抽，when 限定时段 / 季节 / 节气；余额钱袋算 Claude 梗，只演当前这一档
   const extra = idleAnimations(), groupOf = {}, weightOf = {}
   for (const p of extra) { const a = char().animations[p]; groupOf[p] = a?.idle || 'claude'; weightOf[p] = a?.weight || 1 }
   const available = IdlePolicy.candidates(idleSettings, { pose, quiet, extra, available: ['hum','stretch','yawn','clawd'].filter(canShow),

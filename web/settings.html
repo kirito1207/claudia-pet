@@ -68,8 +68,6 @@ input[type=range] { width: 150px; accent-color: var(--accent); }
 .about small { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.5; margin-top: 2px; }
 .name-ctl { flex-wrap: wrap; }
 .name-ctl input { width: 140px; }
-.idle-choices { flex-wrap: wrap; max-width: 260px; }
-.idle-choices label { display: inline-flex; align-items: center; gap: 3px; }
 input[type=checkbox] { accent-color: var(--accent); }
 .physics-row .ctl { width: 238px; }
 .physics-row input[type=range] { flex: 1; min-width: 70px; width: auto; }
@@ -132,11 +130,6 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
 <div class="card" data-tab="daily">
   <div class="item"><div class="label">随机小动作<small>只在闲着时触发；不会打断工作、拖动或手动点播。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="idleEnabled" aria-label="随机小动作"><span></span></label></div></div>
   <div class="item"><div class="label">活跃程度<small>闲着时约每 90 / 45 / 20 秒做一次小动作，时间会略有变化。</small></div><div class="ctl"><div class="seg" id="idleFrequency"><button data-v="quiet">安静</button><button data-v="normal">标准</button><button data-v="lively">活泼</button></div></div></div>
-  <div class="item"><div class="label">允许的动作<small>打哈欠在闲置三分钟后参与随机选择；抱 Clawd 之后的几组是动画小动作，鼠标停在名字上能看到包括哪些；全部取消则不做随机动作。</small></div><div class="ctl idle-choices">
-    <label><input type="checkbox" data-idle-action="hum">哼歌</label><label><input type="checkbox" data-idle-action="stretch">伸懒腰</label><label><input type="checkbox" data-idle-action="yawn">打哈欠</label><label><input type="checkbox" data-idle-action="clawd">抱 Clawd</label>
-    <label title="东张西望、敲桌面、玩魔方、吹泡泡"><input type="checkbox" data-idle-action="fidget">发呆小动作</label><label title="书灵现世、凭空生花、变鸽子"><input type="checkbox" data-idle-action="magic">魔法</label><label title="偷吃时点她会被抓包"><input type="checkbox" data-idle-action="snack">偷吃零食</label><label title="吃 Token、对屏碎碎念、玩游戏气急败坏、当前余额的钱袋"><input type="checkbox" data-idle-action="claude">Claude 梗</label>
-    <label title="抛球、扑克、吹笛子、小提琴、三支舞、换装"><input type="checkbox" data-idle-action="talent">才艺</label><label title="玩具汽车、水枪（夏天）、五子棋、陀螺、撸猫、毽子、木马、拍书打节奏"><input type="checkbox" data-idle-action="play">玩耍</label><label title="午饭、晚饭按时间；火锅、大闸蟹、西瓜、糖葫芦、年糕按季节；青团、腊八粥、重阳糕按节气"><input type="checkbox" data-idle-action="food">吃喝</label><label title="放风筝、摇扇、落叶、堆雪人按季节；七夕、中元、重阳前后各有专属动作"><input type="checkbox" data-idle-action="season">时令</label><label title="在 Claude 窗口里左右走一走，碰到窗口边就停"><input type="checkbox" data-idle-action="walk">自己走动</label>
-  </div></div>
 </div>
 
 <div class="card" data-tab="general">
@@ -223,7 +216,6 @@ function setState(s) {
   document.querySelector('[data-key="ceilingBounce"]').disabled = !s.physicsEnabled
   const idleOn = s.idleEnabled !== false
   for (const b of $('idleFrequency').children) { b.classList.toggle('on', b.dataset.v === (s.idleFrequency || 'normal')); b.disabled = !idleOn }
-  for (const el of document.querySelectorAll('[data-idle-action]')) { el.checked = (s.idleActions || ['hum','stretch','yawn','clawd','fidget','magic','snack','claude','talent','play','food','season','walk']).includes(el.dataset.idleAction); el.disabled = !idleOn }
   renderIntegrations(s.integrations)
 }
 
@@ -284,7 +276,6 @@ $('textLink').onclick = () => state?.textLinked === false
 // 还原：人物、文字都回 100%，并锁上
 document.querySelector('[data-reset-size]').onclick = () => { post({ cmd: 'set', key: 'size', value: 1 }); post({ cmd: 'set', key: 'textLinked', value: true }) }
 for (const b of $('idleFrequency').children) b.onclick = () => post({ cmd: 'set', key: 'idleFrequency', value: b.dataset.v })
-for (const el of document.querySelectorAll('[data-idle-action]')) el.onchange = () => post({ cmd: 'set', key: 'idleActions', value: [...document.querySelectorAll('[data-idle-action]:checked')].map(x => x.dataset.idleAction) })
 function saveCustomName(reset = false) {
   if (!state?.character) return
   const name = reset ? '' : $('customName').value.trim()

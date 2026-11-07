@@ -265,13 +265,20 @@ function manifest() {
     await waitSheet(); s = await state(); assert.equal(s.pose, 'quota_count'); assert.equal(s.url, '余额-数金皱眉.webp')
     await page.evaluate(() => { clearTimeout(revertTimer); setPose('idle', true) })
 
-    // 闲置随机池：按分组开关；关掉动画就没有动画小动作
-    const pool = (groups, animatedSprites = true) => page.evaluate(([g, on]) => { setBehavior({ idleEnabled: true, idleFrequency: 'lively', idleActions: g, animatedSprites: on }); clearTimeout(idleTimer)
+    // 闲置随机池：按分组展开（测试里直接限定分组，设置页已不能挑）；关掉动画就没有动画小动作
+    const pool = (groups, animatedSprites = true) => page.evaluate(([g, on]) => { setBehavior({ idleEnabled: true, idleFrequency: 'lively', animatedSprites: on }); idleSettings.actions = g; clearTimeout(idleTimer)
       const extra = Object.entries(char().animations).filter(([p, a]) => a.idle && idleSettings.actions.includes(a.idle) && anim(p)).map(([p]) => p)
       return IdlePolicy.candidates(idleSettings, { pose: 'idle', quiet: 0, extra, available: ['hum'] }) }, [groups, animatedSprites])
     assert.deepEqual((await pool(['magic'])).sort(), ['animals', 'bookspirit', 'butterflies', 'dove', 'flower'])
-    assert.deepEqual((await pool(['hum', 'fidget'])).sort(), ['bubbles', 'cube', 'hum', 'look', 'tap'])
-    await page.evaluate(() => setBehavior({ idleEnabled: true, idleActions: ['hum'] }))
+    const groupOf = g => Object.entries(JSON.parse(fs.readFileSync(path.join(root, 'characters/claude/character.json'), 'utf8')).animations).filter(([, a]) => a.idle === g).map(([p]) => p)
+    assert.deepEqual((await pool(['hum', 'fidget'])).sort(), ['hum', ...groupOf('fidget')].sort())
+    for (const p of ['look', 'tap', 'cube', 'bubbles', 'nails', 'pen_spin', 'toothbrush']) assert.ok(groupOf('fidget').includes(p), `fidget group lacks ${p}`)
+    // 2026-11-07 新加的手工组：开了才有，关了没有
+    assert.deepEqual((await pool(['craft'])).sort(), groupOf('craft').sort()); assert.ok(groupOf('craft').length >= 12)
+    assert.ok(!(await pool(['play'])).some(p => groupOf('craft').includes(p)))
+    // 拆礼物没有专门的触发时机，放在玩耍组里随机
+    assert.ok((await pool(['play'])).includes('update'))
+    await page.evaluate(() => { setBehavior({ idleEnabled: true }); idleSettings.actions = ['hum'] })
     await page.evaluate(() => { setPose('idle', true); lastActive = Date.now(); idleTick() })
     assert.equal((await state()).pose, 'hum')
     await page.evaluate(() => clearTimeout(revertTimer))
@@ -279,7 +286,7 @@ function manifest() {
     await page.evaluate(() => setBehavior({ idleEnabled: false }))
 
     // 时令：按月份、时段、公历和农历日期筛选（农历用浏览器自带的日历）
-    const at = s => page.evaluate(s => { setBehavior({ idleEnabled: false, idleActions: ['food', 'season', 'play'] }); clearTimeout(idleTimer); return idleAnimations(new Date(s)) }, s)
+    const at = s => page.evaluate(s => { setBehavior({ idleEnabled: false }); idleSettings.actions = ['food', 'season', 'play']; clearTimeout(idleTimer); return idleAnimations(new Date(s)) }, s)
     let list = await at('2026-08-19T12:30:00')   // 农历七月初七、夏天、中午
     for (const p of ['qixi', 'lunch', 'rice', 'watermelon', 'fan', 'watergun']) assert.ok(list.includes(p), `${p} missing on 2026-08-19 noon`)
     for (const p of ['dinner', 'snowman', 'hotpot', 'zhongyuan', 'chongyang', 'laba']) assert.ok(!list.includes(p), `${p} should not be on 2026-08-19 noon`)
@@ -289,8 +296,18 @@ function manifest() {
     for (const p of ['laba', 'snowman', 'tanghulu', 'niangao']) assert.ok(list.includes(p), `${p} missing on 2027-01-15`)
     assert.ok(!list.includes('lunch') && !list.includes('hotpot'))
     list = await at('2026-04-05T15:00:00'); assert.ok(list.includes('qingtuan') && list.includes('kite'))
+    // 2026-11-07 新加的时令 / 吃喝：夏天有刨冰、听蝉、汽水，冬天有踏雪、烤红薯、暖手炉
+    list = await at('2026-08-19T12:30:00')
+    for (const p of ['shaved_ice', 'cicada', 'soda', 'corn', 'sunshade', 'pudding']) assert.ok(list.includes(p), `${p} missing in August`)
+    for (const p of ['snow_step', 'sweet_potato', 'cocoa', 'hand_warmer', 'snowflake']) assert.ok(!list.includes(p), `${p} should not be in August`)
+    list = await at('2027-01-15T09:00:00')
+    for (const p of ['snow_step', 'sweet_potato', 'cocoa', 'hand_warmer', 'warm_breath', 'snowflake']) assert.ok(list.includes(p), `${p} missing in January`)
+    for (const p of ['cicada', 'shaved_ice', 'soda']) assert.ok(!list.includes(p), `${p} should not be in January`)
+    // 刷牙只在早上 6–10 点
+    const brush = s => page.evaluate(s => { setBehavior({ idleEnabled: false }); idleSettings.actions = ['fidget']; clearTimeout(idleTimer); return idleAnimations(new Date(s)).includes('toothbrush') }, s)
+    assert.equal(await brush('2026-11-07T08:00:00'), true); assert.equal(await brush('2026-11-07T15:00:00'), false)
     // 抽签：先抽组再抽组里的，组多了也不会把哼歌挤掉
-    const picks = await page.evaluate(() => { setBehavior({ idleEnabled: true, idleFrequency: 'lively', idleActions: ['hum', 'talent', 'play'] }); clearTimeout(idleTimer)
+    const picks = await page.evaluate(() => { setBehavior({ idleEnabled: true, idleFrequency: 'lively' }); idleSettings.actions = ['hum', 'talent', 'play']; clearTimeout(idleTimer)
       const seen = {}; for (let i = 0; i < 300; i++) { setPose('idle', true); clearTimeout(revertTimer); lastActive = Date.now(); idleTick(); seen[pose] = (seen[pose] || 0) + 1 }
       clearTimeout(revertTimer); return seen })
     assert.ok(picks.hum > 60 && picks.hum < 140, `hum picked ${picks.hum}/300`)

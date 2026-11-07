@@ -58,11 +58,12 @@ namespace Claudia
             ("心情", new[] { "happy", "proud", "surprised", "oops", "sorry", "asking", "annoyed", "puffed", "redhot", "sulk", "coaxed", "forgiven", "dizzy" }),
             ("互动", new[] { "pat", "pout", "bye", "bonk", "stagger", "fallen", "faceplant" }),
             ("问候", new[] { "greet_dawn", "greet_morning", "greet_noon", "greet_afternoon", "greet_evening", "greet_night" }),
-            ("小动作", new[] { "look", "tap", "cube", "bubbles", "bookspirit", "flower", "dove", "animals", "butterflies", "snack", "token", "mutter", "gamer" }),
-            ("才艺", new[] { "juggle", "cards", "flute", "violin", "dance_skirt", "dance_otaku", "dance_swing", "dressup" }),
-            ("玩耍", new[] { "toycar", "watergun", "gomoku", "top", "cat", "shuttlecock", "rockinghorse", "pagebeat" }),
-            ("吃喝", new[] { "lunch", "dinner", "rice", "hotpot", "crab", "watermelon", "tanghulu", "niangao", "qingtuan", "laba", "chongyanggao" }),
-            ("时令", new[] { "kite", "fan", "leaves", "snowman", "qixi", "zhongyuan", "chongyang" }),
+            ("小动作", new[] { "look", "tap", "cube", "bubbles", "bookspirit", "flower", "dove", "animals", "butterflies", "snack", "token", "mutter", "gamer", "toes", "nails", "scratch", "leg_bounce", "nose_pick", "sole_tickle", "finger_count", "eye_rub", "ear_pull", "tummy", "hand_flick", "wrist_roll", "cheek_puff", "pen_spin", "pillow", "toothbrush", "abacus", "mutter_lazy" }),
+            ("才艺", new[] { "juggle", "cards", "flute", "violin", "dance_skirt", "dance_otaku", "dance_swing", "dressup", "leaf_flute", "glass_harp", "air_guitar", "music_box", "beat", "tuning_fork", "maracas", "triangle", "woodfish", "wind_chime", "curtsy" }),
+            ("玩耍", new[] { "toycar", "watergun", "gomoku", "top", "cat", "shuttlecock", "rockinghorse", "pagebeat", "jenga", "dandelion", "forehead_flick", "bubble_wrap", "skip_stone", "diabolo", "hat_toss", "apple_toss", "dice", "cats_cradle", "shadow_step", "umbrella_spin", "plate_spin" }),
+            ("吃喝", new[] { "lunch", "dinner", "rice", "hotpot", "crab", "watermelon", "tanghulu", "niangao", "qingtuan", "laba", "chongyanggao", "cocoa", "chocolate", "shaved_ice", "chestnut", "pudding", "cracker", "corn", "soup", "fishbone", "onigiri", "soda", "sweet_potato", "honey", "coffee" }),
+            ("时令", new[] { "kite", "fan", "leaves", "snowman", "qixi", "zhongyuan", "chongyang", "sunshade", "snow_step", "cicada", "hand_warmer", "snowflake", "raindrop", "warm_breath", "clear_umbrella", "windy" }),
+            ("手工", new[] { "beads", "pencil", "dried_flowers", "bell_forge", "paper_boat", "clay", "porcelain", "ink", "paper_umbrella", "spool", "grasshopper", "doll_sew" }),
             ("走路", new[] { "walk_crab", "walk_float", "run_left" }),
             ("余额", new[] { "quota_full", "quota_jingle", "quota_count", "quota_empty", "quota_broke" }),
             ("节日", new[] { "fest_newyear", "fest_spring", "fest_lantern", "fest_dragonboat", "fest_midautumn", "fest_halloween", "fest_christmas" }),
@@ -72,7 +73,7 @@ namespace Claudia
             ["idle"] = "待机", ["hum"] = "哼歌", ["stretch"] = "伸懒腰", ["yawn"] = "打哈欠", ["tired"] = "累了", ["sleeping"] = "睡觉", ["clawd"] = "抱 Clawd",
             ["listening"] = "听你说", ["thinking"] = "思考", ["reading"] = "看书", ["writing"] = "写东西", ["running"] = "敲命令", ["searching"] = "查资料",
             ["delegating"] = "派活", ["compact"] = "整理记忆", ["busy_left"] = "忙碌（左）", ["busy_right"] = "忙碌（右）",
-            ["swamped_left"] = "忙不过来（左）", ["swamped_right"] = "忙不过来（右）", ["update"] = "抱礼物",
+            ["swamped_left"] = "忙不过来（左）", ["swamped_right"] = "忙不过来（右）", ["update"] = "拆礼物",
             ["happy"] = "开心", ["proud"] = "得意", ["surprised"] = "吃惊", ["oops"] = "哎呀", ["sorry"] = "道歉", ["asking"] = "有事问你",
             ["annoyed"] = "不耐烦", ["puffed"] = "鼓脸", ["redhot"] = "红温", ["sulk"] = "赌气", ["coaxed"] = "被哄", ["forgiven"] = "原谅你了", ["dizzy"] = "晕乎乎",
             ["pat"] = "被摸头", ["pout"] = "傲娇", ["bye"] = "再见",
@@ -90,6 +91,8 @@ namespace Claudia
             ["walk_crab"] = "螃蟹步", ["walk_float"] = "飘着走", ["run_left"] = "往左跑",
             ["quota_full"] = "钱袋满溢", ["quota_jingle"] = "金袋叮当", ["quota_count"] = "数金皱眉", ["quota_empty"] = "袋空如洗", ["quota_broke"] = "分文不剩",
             ["fest_midautumn"] = "中秋",["fest_halloween"] = "万圣节", ["fest_christmas"] = "圣诞",
+            // 2026-11-07 接入的作者新动作
+            ["toes"] = "伸脚趾", ["nails"] = "咬指甲", ["scratch"] = "抓痒", ["leg_bounce"] = "抖腿", ["nose_pick"] = "抠鼻子", ["sole_tickle"] = "挠脚心", ["finger_count"] = "掰手指", ["eye_rub"] = "揉眼睛", ["ear_pull"] = "揪耳朵", ["tummy"] = "摸肚子", ["hand_flick"] = "甩手甩水", ["wrist_roll"] = "转手腕", ["cheek_puff"] = "憋气鼓腮", ["pen_spin"] = "转笔", ["pillow"] = "拍枕头", ["toothbrush"] = "晨间刷牙（早上）", ["leaf_flute"] = "吹叶笛", ["glass_harp"] = "弹玻璃杯沿", ["air_guitar"] = "空气吉他", ["music_box"] = "手摇八音盒", ["beat"] = "打拍子数拍", ["tuning_fork"] = "按音叉", ["maracas"] = "摇沙锤", ["triangle"] = "敲三角铁", ["woodfish"] = "敲木鱼", ["wind_chime"] = "摇小风铃", ["curtsy"] = "淑女屈膝礼", ["jenga"] = "叠叠乐", ["dandelion"] = "吹蒲公英", ["forehead_flick"] = "弹脑门", ["bubble_wrap"] = "戳泡泡纸", ["skip_stone"] = "打水漂", ["diabolo"] = "抖空竹", ["hat_toss"] = "抛帽接帽", ["apple_toss"] = "抛接小苹果", ["dice"] = "摇骰盅", ["cats_cradle"] = "翻花绳", ["shadow_step"] = "踩影子", ["umbrella_spin"] = "转伞", ["plate_spin"] = "转盘子", ["cocoa"] = "冲可可", ["chocolate"] = "分巧克力", ["shaved_ice"] = "刨冰屑", ["chestnut"] = "剥栗子", ["pudding"] = "吸布丁", ["cracker"] = "咬脆饼", ["corn"] = "啃玉米", ["soup"] = "喝汤吹凉", ["fishbone"] = "挑鱼刺", ["onigiri"] = "捏饭团", ["soda"] = "摇汽水瓶", ["sweet_potato"] = "烤红薯", ["honey"] = "舀蜂蜜", ["coffee"] = "闻咖啡豆", ["sunshade"] = "举手遮阳偷看", ["snow_step"] = "原地踏雪", ["cicada"] = "听蝉", ["hand_warmer"] = "抱暖手炉", ["snowflake"] = "掌心接雪花", ["raindrop"] = "接雨滴", ["warm_breath"] = "搓手哈气取暖", ["clear_umbrella"] = "撑透明小伞", ["windy"] = "被风吹乱发型", ["beads"] = "串珠链", ["pencil"] = "削铅笔", ["dried_flowers"] = "扎束干花", ["bell_forge"] = "打铁小铃", ["paper_boat"] = "折小纸船", ["clay"] = "捏陶土", ["porcelain"] = "描瓷纹", ["ink"] = "磨墨", ["paper_umbrella"] = "糊纸伞骨", ["spool"] = "绕线轴", ["grasshopper"] = "编草蚱蜢", ["doll_sew"] = "缝布偶", ["abacus"] = "拨算盘珠", ["mutter_lazy"] = "犯懒碎碎念",
         };
 
         Forms.ToolStripMenuItem BuildActionMenu(Func<string, Action, bool?, Forms.ToolStripMenuItem> item)

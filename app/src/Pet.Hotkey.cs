@@ -51,6 +51,13 @@ namespace Claudia
             SetConcealed(hidden);
         }
 
+        /// <summary>双击托盘：藏着就叫出来，位置不动</summary>
+        void ShowAgain()
+        {
+            if (userHidden) SetUserHidden(false);
+            SetConcealed(false);
+        }
+
         public void Recenter()
         {
             StopMotion(false);

@@ -17,7 +17,7 @@ const root = path.resolve(__dirname, '..');
     });
     await page.goto(pathToFileURL(path.join(root, 'web/settings.html')).href);
     const state = { version: 'test', size: 1, textSize: 1, textLinked: true, physicsEnabled: true,
-      idleEnabled: true, idleFrequency: 'normal', idleActions: ['hum','stretch','yawn','clawd'],
+      idleEnabled: true, idleFrequency: 'normal',
       clickBounce: true,
       notifyResults: true, notifyWaiting: true, notifyBackgroundOnly: true,
       ceilingBounce: true, physics: { gravity: 1400, throwPower: 1, restitution: .72, groundFriction: 3, elasticity: .12 } };
@@ -50,8 +50,7 @@ const root = path.resolve(__dirname, '..');
     await page.evaluate(() => showTab('daily'));
     await page.locator('#idleFrequency [data-v="lively"]').click();
     assert.ok(await page.evaluate(() => messages.some(m => m.key === 'idleFrequency' && m.value === 'lively')));
-    await page.locator('[data-idle-action="clawd"]').uncheck();
-    assert.ok(await page.evaluate(() => messages.some(m => m.key === 'idleActions' && !m.value.includes('clawd'))));
+    assert.equal(await page.locator('[data-idle-action]').count(), 0);
     await page.goto(pathToFileURL(path.join(root, 'web/index.html')).href);
     const info = JSON.parse(fs.readFileSync(path.join(root, 'characters/claude/character.json'), 'utf8'));
     info.poses = {};
@@ -115,7 +114,7 @@ const root = path.resolve(__dirname, '..');
     assert.ok(flight.y - release.y < flight.x - release.x, 'horizontal fling fell vertically');
     await page.evaluate(() => petMotion.stop());
     await page.evaluate(() => {
-      setBehavior({idleEnabled:true,idleFrequency:'lively',idleActions:['hum']});
+      setBehavior({idleEnabled:true,idleFrequency:'lively'}); idleSettings.actions=['hum'];
       setPose('idle',true); lastActive=Date.now()-200000; idleTick();
     });
     assert.equal(await page.evaluate(()=>pose),'hum');
