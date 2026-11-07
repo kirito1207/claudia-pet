@@ -89,9 +89,11 @@ Windows 上独立维护的 Claude 桌宠。基于 CrossPet，参考 dsh-pet；�
 - 火气：每秒降 4，门槛 25 / 55 / 90（原来每秒降 2、20 / 45 / 75）。
 - 额度：照 Claude 的样子显示已用多少，额度条统一 Claude 橙，已用 ≥ 90% 百分比标红；数据里照旧存剩余比例 `left`。
 
+0.3.0 已发布：Release `v0.3.0`，标签指向 `02132ad`，附件 `claudia-pet-0.3.0-win.zip`（约 155 MB），记录见 `docs/PUBLISHING_AUDIT.md`。
+
 ### 之后
 
-- 等作者更新（hunmer/aboutme-pets，停在 `3ba083b`）：放烟花（元旦）、吃饺子 / 收红包 / 写福字（春节），见 `docs/立绘比例统一清单.md` 第六节。
+- 作者更新了动作包（hunmer/aboutme-pets，我们用的是 `3ba083b`；2026-11-07 已到 `da5a6fe`）：`pets/claude` 从 90 个动作增加到 166 个（含 Gemini 生成的两批），格式相同（5120×5400、8×15、120 帧、12 fps），程序不用改。0.3.0 没收这批，接入要定分组、播放范围、台词和衔接，安装包会再大约 150 MB。我们在等的放烟花（元旦）、吃饺子 / 收红包 / 写福字（春节）还没有，见 `docs/立绘比例统一清单.md` 第六节。
 - 用户还没逐句审的：Claude 起草的新动作台词、点击四段台词。
 - 生图：本机 Codex 额度不多了（2026-11-07 用户说）；工作树里的 `build/codex-imagegen/`（`run_mid.py`、`frames_mid.py`、`crown.py`、`eyes.py`）是这轮中间帧用的工具，不进 git。
 

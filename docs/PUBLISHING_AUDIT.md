@@ -11,7 +11,7 @@
 | `icon/AppIcon.ico` | 新图标，包含 16–256 像素的九种尺寸 |
 | 本机安装的程序与托盘 ICO | 已替换；安装 ICO 与当前源码一致，已检查编译后 EXE 的图标 |
 | 当前生成程序的产品名／文件描述 | `claudia-pet`；文件名为 `claudia-pet.exe`（桌宠角色本身仍叫 `claudia`） |
-| 版本 | `0.2.0`（2026-11-04 用户定；和改名前叫 Claudia 的 0.1.0 区分，并加入碰边动作）。`VERSION` 和 `plugin/.claude-plugin/plugin.json` 同步 |
+| 版本 | `0.3.0`（2026-11-07 发布；0.2.0 为 2026-11-04 用户定，和改名前叫 Claudia 的 0.1.0 区分）。`VERSION` 和 `plugin/.claude-plugin/plugin.json` 同步 |
 
 当前文件没有继续使用四头像软件图标。旧图标只留在本地备份（`build/`）和本地归档分支里，不在公开历史中。
 
@@ -59,3 +59,5 @@
 同日稍晚发现：贡献者接口只有 `kirito1207`，但仓库首页右侧栏仍显示 `claude`。原因是改写前的两个提交（`af6e614`、`de92ba8`，带 `Co-Authored-By: Claude …`）已推送过，强制推送后不在任何分支上，但仍能按提交号在 GitHub 上打开。处理：仓库 0 star、0 fork、没有 Issue 和 PR，用户在 GitHub 设置里自己删除了仓库，再用 `gh repo create` 以同名、同简介、公开新建，只推送 `main`（当时为 `6ec4917`）。核对后：远端只有 `main`，与本地一致；首页贡献者只有 `kirito1207`；两个旧提交按提交号查询返回 HTTP 422（找不到）。
 
 2026-11-04 发布 0.2.0：版本号提交为 `02f0973`「claudia-pet 0.2.0」，构建脚本从此把 WebView2 包里的 `LICENSE.txt`、`NOTICE.txt` 复制成程序目录下的 `WebView2-LICENSE.txt`、`WebView2-NOTICE.txt`（该包许可允许二进制再分发，须附版权声明和免责声明）。发布前全部测试、WPF 窗口测试和构建都通过；zip 内 98 个文件，扫过无本机路径、邮箱或密钥。用 `gh release create` 建了正式 Release `v0.2.0`（标签指向 `02f0973`，非草稿、非预发布），附件 `claudia-pet-0.2.0-win.zip`（7,065,380 字节，SHA-256 `F4D47926C58677F0C1C53C30C907F8F0CB309B0F6A2FA0184EE29003175A18EC`）。发布后下载回附件比对，校验值一致。未用 zip 里的程序单独启动验证。
+
+2026-11-07 发布 0.3.0：工作树分支 `claude/kind-blackburn-304e7f` 上的 8 个提交（光晕改脚本驱动、精灵图后台解码、撞头第一帧、Codex 审查修复、点击区域上报与移窗去重、窗口切换防闪、中间帧 / 动画衔接 / 火气 / 额度显示、版本号）按用户要求快进推送到 `main`（`818c2f8..02132ad`），只推了 `main`。提交前扫过改动和新增文件：无本机用户路径、邮箱或密钥（Codex 报告里一处本机路径改成了相对说明）；提交作者为 GitHub noreply 邮箱，没有 Claude 署名行。发布前 7 个网页测试、`-MotionTests`（通知策略、点击区域缩放、WPF 位置交接）和正式构建都通过。zip 内 174 个文件（不含构建标记 `.claudia-pet-build-output`），扫过无本机路径、邮箱或密钥。用 `gh release create` 建了正式 Release `v0.3.0`（标签指向 `02132ad`，非草稿、非预发布），附件 `claudia-pet-0.3.0-win.zip`（162,825,130 字节，SHA-256 `5D02F4B0BB22CE5BCD3F0C1D60842D9A55D77AC17ED3B08FA3F40E2590465645`）。发布后核对：下载回附件校验值一致，`releases/latest` 为 `v0.3.0`，远端只有 `main` 一个分支，贡献者只有 `kirito1207`。动画素材占了包的大部分（0.2.0 为 7 MB）。未用 zip 里的程序单独启动验证；本机安装的是同一份 `dist`。
