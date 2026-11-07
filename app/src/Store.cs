@@ -86,32 +86,87 @@ namespace Claudia
         public static bool Flag(string key) => Settings.TryGetValue(key, out var v) && v is bool b && b;
         public static Dictionary<string, object> Names => (Dictionary<string, object>)Settings["names"];
 
-        /// <summary>
-        /// 内置角色每次启动整份覆盖（这样更新后能拿到新立绘），用户自己加的角色文件夹不动；
-        /// </summary>
+        /// <summary>只在内置素材有变化时更新。用户另外添加的角色目录不参与同步。</summary>
         public static void SyncResources()
         {
             Directory.CreateDirectory(Characters);
             Directory.CreateDirectory(State);
             var src = Path.Combine(Install, "characters");
+            if (string.Equals(Path.GetFullPath(src), Path.GetFullPath(Characters), StringComparison.OrdinalIgnoreCase)) return;
             foreach (var dir in Directory.GetDirectories(src))
             {
                 var dst = Path.Combine(Characters, Path.GetFileName(dir));
-                try { if (Directory.Exists(dst)) Directory.Delete(dst, true); CopyDir(dir, dst); }
+                try { SyncCharacter(dir, dst); }
                 catch (Exception e) { Log("同步角色失败 " + dir + ": " + e.Message); }
             }
             // 下面这些复制失败（文件被别的程序占着）只记一笔：旧的那份还能用，不能因为一个说明文件把桌宠拦在启动前
             // （更新失败回退后重开旧版本，characters\LICENSE.md 还被占着，整个启动就失败了）
             foreach (var md in Directory.GetFiles(src, "*.md"))
-                try { File.Copy(md, Path.Combine(Characters, Path.GetFileName(md)), true); } catch (Exception e) { Log("同步说明文件失败 " + md + ": " + e.Message); }
+                try
+                {
+                    var dst = Path.Combine(Characters, Path.GetFileName(md));
+                    if (!SameFile(md, dst)) File.Copy(md, dst, true);
+                }
+                catch (Exception e) { Log("同步说明文件失败 " + md + ": " + e.Message); }
+        }
+
+        static void SyncCharacter(string src, string dst)
+        {
+            // Put scratch data outside Characters so it never appears as another character.
+            var work = Path.Combine(Data, "builtin-resource-sync", Path.GetFileName(dst));
+            var staged = Path.Combine(work, "next");
+            var previous = Path.Combine(work, "previous");
+            if (Directory.Exists(previous))
+            {
+                if (!Directory.Exists(dst)) Directory.Move(previous, dst);
+                else Directory.Delete(previous, true);
+            }
+            if (Directory.Exists(staged)) Directory.Delete(staged, true);
+            if (Directory.Exists(dst) && SameResources(src, dst)) return;
+
+            try
+            {
+                CopyDir(src, staged);
+                if (Directory.Exists(dst)) Directory.Move(dst, previous);
+                try { Directory.Move(staged, dst); }
+                catch
+                {
+                    if (Directory.Exists(previous)) Directory.Move(previous, dst);
+                    throw;
+                }
+                if (Directory.Exists(previous)) Directory.Delete(previous, true);
+            }
+            finally { if (Directory.Exists(staged)) Directory.Delete(staged, true); }
+        }
+
+        static bool SameFile(string src, string dst)
+        {
+            var source = new FileInfo(src);
+            var copy = new FileInfo(dst);
+            return copy.Exists && copy.Length == source.Length && copy.LastWriteTimeUtc == source.LastWriteTimeUtc;
+        }
+
+        static IEnumerable<string> ResourceDirs(string path) => Directory.EnumerateDirectories(path)
+            .Where(dir => !string.Equals(Path.GetFileName(dir), "raw", StringComparison.OrdinalIgnoreCase));
+
+        static bool SameResources(string src, string dst)
+        {
+            var files = Directory.GetFiles(src);
+            if (files.Length != Directory.GetFiles(dst).Length ||
+                files.Any(file => !SameFile(file, Path.Combine(dst, Path.GetFileName(file))))) return false;
+            var dirs = ResourceDirs(src).ToArray();
+            return dirs.Length == Directory.GetDirectories(dst).Length && dirs.All(dir =>
+            {
+                var copy = Path.Combine(dst, Path.GetFileName(dir));
+                return Directory.Exists(copy) && SameResources(dir, copy);
+            });
         }
 
         static void CopyDir(string from, string to)
         {
             Directory.CreateDirectory(to);
             foreach (var f in Directory.GetFiles(from)) File.Copy(f, Path.Combine(to, Path.GetFileName(f)), true);
-            foreach (var d in Directory.GetDirectories(from))
-                if (!string.Equals(Path.GetFileName(d), "raw", StringComparison.OrdinalIgnoreCase)) CopyDir(d, Path.Combine(to, Path.GetFileName(d)));
+            foreach (var d in ResourceDirs(from)) CopyDir(d, Path.Combine(to, Path.GetFileName(d)));
         }
 
         /// <summary>扫描 characters/&lt;id&gt;/：character.json + 立绘</summary>

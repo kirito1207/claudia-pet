@@ -14,6 +14,9 @@ $ErrorActionPreference = 'Stop'
 $src = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\dist\claudia-pet'))
 $dst = Join-Path $env:LOCALAPPDATA 'Programs\claudia-pet'
 if (-not (Test-Path (Join-Path $src 'claudia-pet.exe'))) { throw "dist\claudia-pet not found; run scripts\build.ps1 first" }
+if ($Connect -and -not (Test-Path -LiteralPath (Join-Path $src '.claudia-pet-build-output') -PathType Leaf)) {
+    throw 'Rebuild the package before using -Connect. The current package cannot report integration failures reliably.'
+}
 
 # stop a running copy from this location only
 Get-Process 'claudia-pet' -ErrorAction SilentlyContinue | Where-Object { try { $_.Path -like "$dst\*" } catch { $false } } | ForEach-Object {
@@ -30,8 +33,10 @@ Write-Host "installed to $dst"
 
 $exe = Join-Path $dst 'claudia-pet.exe'
 if ($Connect) {
-    $p = Start-Process -FilePath $exe -ArgumentList '--connect', 'all' -PassThru -Wait
-    Get-Content (Join-Path $env:USERPROFILE '.claudia\windows.log') -Tail 2 -Encoding UTF8
+    $p = Start-Process -FilePath $exe -ArgumentList '--connect', 'all' -WindowStyle Hidden -PassThru -Wait
+    $log = Join-Path $env:USERPROFILE '.claudia\windows.log'
+    if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 2 -Encoding UTF8 }
+    if ($p.ExitCode -ne 0) { throw "claudia-pet was copied to $dst, but Claude integration did not complete (exit $($p.ExitCode))." }
 }
 Start-Process -FilePath $exe
 Write-Host 'claudia-pet started. Open Claude and she will sit in its window.'

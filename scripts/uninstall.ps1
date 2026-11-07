@@ -17,8 +17,14 @@ $oldData = Join-Path $env:LOCALAPPDATA 'Claudia'
 $exe = Join-Path $dst 'claudia-pet.exe'
 
 if (Test-Path $exe) {
-    Start-Process -FilePath $exe -ArgumentList '--disconnect', 'all' -Wait
-    Write-Host 'Claude integrations removed (restart Claude to apply).'
+    $p = Start-Process -FilePath $exe -ArgumentList '--disconnect', 'all' -WindowStyle Hidden -PassThru -Wait
+    if (Test-Path -LiteralPath (Join-Path $dst '.claudia-pet-build-output') -PathType Leaf) {
+        if ($p.ExitCode -ne 0) { throw "Claude integration could not be fully removed (exit $($p.ExitCode)). The installed files and data were kept." }
+        Write-Host 'Claude integrations removed (restart Claude to apply).'
+    } else {
+        # Older installs (0.2.0 and before) always exit 0, so the result cannot be checked; uninstall anyway.
+        Write-Warning "This older install cannot report whether the integrations were removed. Check that ~\.claude\settings.json (env.CLAUDE_CODE_PLUGIN_DIRS) and Claude's claude_desktop_config.json (mcpServers) no longer point to claudia-pet."
+    }
 }
 foreach ($name in 'claudia-pet', 'Claudia') {
     Get-Process $name -ErrorAction SilentlyContinue | Where-Object { try { $_.Path -like "$dst\*" -or $_.Path -like "$oldDst\*" } catch { $false } } | ForEach-Object { Stop-Process -Id $_.Id -Force }

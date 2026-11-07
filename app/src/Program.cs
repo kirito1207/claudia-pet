@@ -36,8 +36,17 @@ namespace Claudia
                 foreach (var t in what == "all" ? new[] { "plugin", "mcp" } : new[] { what })
                 {
                     string msg;
-                    try { msg = t == "plugin" ? Pet.SetPlugin(install) : t == "mcp" ? Pet.SetMcp(install) : "不认识：" + t; }
-                    catch (Exception e) { msg = "没有完成：" + e.Message; }
+                    try
+                    {
+                        if (t == "plugin") msg = Pet.SetPlugin(install);
+                        else if (t == "mcp") msg = Pet.SetMcp(install);
+                        else throw new ArgumentException("不认识：" + t);
+                    }
+                    catch (Exception e)
+                    {
+                        Environment.ExitCode = 1;
+                        msg = "没有完成：" + e.Message;
+                    }
                     Store.Log($"{flag} {t}：{msg.Replace("\n", " ")}");
                     Console.WriteLine($"[{t}] {msg}");
                 }

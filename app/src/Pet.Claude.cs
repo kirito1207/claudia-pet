@@ -100,10 +100,11 @@ namespace Claudia
 
         internal static string SetPlugin(bool install)
         {
-            if (install && !File.Exists(Path.Combine(PluginDir, ".claude-plugin", "plugin.json"))) return "没找到插件文件夹：" + PluginDir + "\n请用完整的安装包重新安装 " + Store.AppName + "。";
+            if (install && !File.Exists(Path.Combine(PluginDir, ".claude-plugin", "plugin.json")))
+                throw new InvalidOperationException("没找到插件文件夹：" + PluginDir + "\n请用完整的安装包重新安装 " + Store.AppName + "。");
             var file = ClaudeSettings;
             var settings = Store.ReadJson(file);
-            if (settings == null && File.Exists(file)) return "读不懂 " + file + "，为了不弄坏它，这次没有改。";
+            if (settings == null && File.Exists(file)) throw new InvalidDataException("读不懂 " + file + "，这次没有改。");
             settings = settings ?? new Dictionary<string, object>();
             var dirs = PluginDirs(settings).Where(d => !SamePath(d, PluginDir) && !SamePath(d, OldPluginDir)).ToList();
             if (install) dirs.Add(PluginDir);
@@ -120,7 +121,7 @@ namespace Claudia
         {
             var file = DesktopConfig;
             var cfg = Store.ReadJson(file);
-            if (cfg == null && File.Exists(file)) return "读不懂 " + file + "，为了不弄坏它，这次没有改。";
+            if (cfg == null && File.Exists(file)) throw new InvalidDataException("读不懂 " + file + "，这次没有改。");
             cfg = cfg ?? new Dictionary<string, object>();
             if (!(cfg.TryGetValue("mcpServers", out var m) && m is Dictionary<string, object> servers)) cfg["mcpServers"] = servers = new Dictionary<string, object>();
             servers.Remove(OldMcpKey);
