@@ -82,7 +82,7 @@ namespace Claudia
             ["fest_newyear"] = "元旦", ["fest_spring"] = "春节", ["fest_lantern"] = "元宵", ["fest_dragonboat"] = "端午",
             ["look"] = "东张西望", ["tap"] = "敲桌面", ["cube"] = "玩魔方", ["bubbles"] = "吹泡泡",
             ["bookspirit"] = "书灵现世", ["flower"] = "凭空生花", ["dove"] = "变鸽子",
-            ["snack"] = "偷吃零食（点她会被抓包）", ["token"] = "吃 Token", ["mutter"] = "对屏碎碎念", ["gamer"] = "玩游戏气急败坏",
+            ["snack"] = "偷吃零食", ["token"] = "吃 Token", ["mutter"] = "对屏碎碎念", ["gamer"] = "玩游戏气急败坏",
             ["animals"] = "动物环绕", ["butterflies"] = "蝴蝶蜜蜂",
             ["juggle"] = "三球抛接", ["cards"] = "扑克魔术", ["flute"] = "吹笛子", ["violin"] = "小提琴", ["dance_skirt"] = "裙摆舞", ["dance_otaku"] = "宅舞", ["dance_swing"] = "摇摆舞", ["dressup"] = "换装试色",
             ["toycar"] = "玩具汽车", ["watergun"] = "玩水枪", ["gomoku"] = "下五子棋", ["top"] = "抽陀螺", ["cat"] = "撸猫", ["shuttlecock"] = "踢毽子", ["rockinghorse"] = "骑木马", ["pagebeat"] = "拍书打节奏",
