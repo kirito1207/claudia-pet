@@ -13,7 +13,8 @@ namespace Claudia
         // 位置按「离 Claude 窗口右下角多远」记：Claude 窗口挪动、改大小，她跟着走；拖到窗口外松手会被推回窗口里。
         // 找 Claude 主窗口时只认有标题的 Chrome_WidgetWin_1：Process.MainWindowHandle 有时会拿到 Claude 留下的空白阴影窗口（SysShadow）。
         const int DefaultOffRight = 40, DefaultOffBottom = 100;
-        int offRight = DefaultOffRight, offBottom = DefaultOffBottom;
+        static int HomeOffRight => DefaultOffRight + PetIndex * StaggerX;   // 多开的几只默认往左错开
+        int offRight = HomeOffRight, offBottom = DefaultOffBottom;
         Native.RECT? lastClaude;
         bool shownInClaude, dragging;
         IntPtr claudeHwnd = IntPtr.Zero;
@@ -47,7 +48,7 @@ namespace Claudia
                 while (unchecked(Environment.TickCount - guardUntil) <= 0)
                 {
                     IntPtr pet = hwnd, claude = claudeHwnd;
-                    if (shownInClaude && !concealed && pet != IntPtr.Zero && claude != IntPtr.Zero) FollowNative.PlaceAbove(pet, claude, true);
+                    if (shownInClaude && !concealed && !desktopMode && pet != IntPtr.Zero && claude != IntPtr.Zero) FollowNative.PlaceAbove(pet, claude, true);
                     System.Threading.Thread.Sleep(1);
                 }
             }
@@ -77,6 +78,7 @@ namespace Claudia
                 pidsAt = now;
                 claudePids = FollowNative.ClaudeAppPids();
                 claudeHwnd = claudePids.Count > 0 ? FollowNative.FindClaudeMain(claudePids) : IntPtr.Zero;
+                PetTick();
             }
             if (claudePids.Count > 0) claudeSeenAt = now;
             else
@@ -108,7 +110,7 @@ namespace Claudia
             if (moveHook != IntPtr.Zero) { FollowNative.Unhook(moveHook); moveHook = IntPtr.Zero; }
             moveHookPid = pid;
             if (pid == 0) return;
-            moveHook = FollowNative.OnLocation(pid, h => { if (h == claudeHwnd) FollowPlace(); });
+            moveHook = FollowNative.OnLocation(pid, h => { if (h == claudeHwnd && !desktopMode) FollowPlace(); });
             if (moveHook == IntPtr.Zero) Store.Log("没能挂上 Claude 窗口的移动通知，仍按 0.1 秒一次跟随");
         }
 
@@ -116,6 +118,7 @@ namespace Claudia
         void FollowPlace()
         {
             if (hwnd == IntPtr.Zero) return;
+            if (desktopMode) { DesktopPlace(); return; }
             Native.GetWindowRect(hwnd, out var pr);
             int w = pr.Right - pr.Left, h = pr.Bottom - pr.Top;
             if (!ClaudeRect(out var c))
@@ -185,9 +188,81 @@ namespace Claudia
 
         void ResetFollowOffsets()
         {
-            offRight = DefaultOffRight; offBottom = DefaultOffBottom;
+            if (desktopMode) { Store.Settings.Remove("desk"); Store.SaveSettings(); PlaceOnDesktop(); return; }
+            offRight = HomeOffRight; offBottom = DefaultOffBottom;
             Store.Settings.Remove("follow"); Store.SaveSettings();
             PlaceInClaude();
+        }
+
+        // ---------------- 待在桌面上 ----------------
+        // 照 dsh-pet 的桌面模式：始终置顶；活动范围是她所在那块显示器的工作区（不含任务栏），拖着她时按鼠标所在的显示器算，
+        // 这样能拖到另一块屏幕上，松手后就在那块屏幕里飞和落地。位置按屏幕上的绝对像素记（settings 的 desk）。
+        // 置顶会被别的置顶窗口挤掉（dsh-pet 的 topmost-watchdog.js 记过这个现场），所以每 5 秒重新钉一次：不挪、不抢焦点
+        volatile bool desktopMode;
+        DateTime topmostAt = DateTime.MinValue;
+
+        /// <summary>她能活动的范围：窗口模式是 Claude 窗口，桌面模式是显示器工作区</summary>
+        bool AreaRect(out Native.RECT r) => desktopMode ? FollowNative.WorkArea(hwnd, dragging, out r) : ClaudeRect(out r);
+
+        void PlaceHome() { if (desktopMode) PlaceOnDesktop(); else PlaceInClaude(); }
+
+        void DesktopPlace()
+        {
+            if (dragging || flying) { UpdateMotionGeometry(); return; }
+            if (!shownInClaude) { PlaceOnDesktop(); UpdatePageHidden(); }
+            else if (!walking && AreaRect(out var a) && Native.GetWindowRect(hwnd, out var pr))
+            {
+                // 分辨率、任务栏位置变了，或者那块屏幕拔掉了：夹回看得见的地方
+                int w = pr.Right - pr.Left, h = pr.Bottom - pr.Top;
+                int x = Math.Max(a.Left, Math.Min(pr.Left, a.Right - w)), y = Math.Max(a.Top, Math.Min(pr.Top, a.Bottom - h));
+                if (x != pr.Left || y != pr.Top) Native.MoveTo(hwnd, x, y);
+            }
+            KeepOnTop();
+        }
+
+        /// <summary>启动时 / 回到默认位置 / 刚改成桌面模式：摆到上次的位置；没记过就放主屏幕右下角，站在任务栏上面</summary>
+        void PlaceOnDesktop()
+        {
+            if (hwnd == IntPtr.Zero) return;
+            Native.GetWindowRect(hwnd, out var pr);
+            int w = pr.Right - pr.Left, h = pr.Bottom - pr.Top, x, y;
+            Native.RECT a;
+            if (Store.Settings.TryGetValue("desk", out var dv) && dv is Dictionary<string, object> d && d.ContainsKey("x") && d.ContainsKey("y"))
+            {
+                x = Convert.ToInt32(d["x"]); y = Convert.ToInt32(d["y"]);
+                if (!FollowNative.WorkAreaAt(x + w / 2, y + h / 2, out a)) return;
+            }
+            else
+            {
+                if (!FollowNative.WorkAreaAt(0, 0, out a, primary: true)) return;
+                x = a.Right - w - HomeOffRight; y = a.Bottom - h;
+            }
+            x = Math.Max(a.Left, Math.Min(x, a.Right - w));
+            y = Math.Max(a.Top, Math.Min(y, a.Bottom - h));
+            Native.MoveTo(hwnd, x, y);
+            shownInClaude = true;
+            topmostAt = DateTime.MinValue;
+            KeepOnTop();
+        }
+
+        void KeepOnTop()
+        {
+            if (concealed || hwnd == IntPtr.Zero) return;
+            var now = DateTime.UtcNow;
+            if ((now - topmostAt).TotalSeconds < 5) return;
+            topmostAt = now;
+            Native.SetWindowPos(hwnd, Native.HWND_TOPMOST, 0, 0, 0, 0, Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+        }
+
+        /// <summary>拖完松手、走完路、改完大小：夹回工作区里，记下位置</summary>
+        void SaveDeskPosition()
+        {
+            if (!AreaRect(out var a) || !Native.GetWindowRect(hwnd, out var pr)) return;
+            int w = pr.Right - pr.Left, h = pr.Bottom - pr.Top;
+            int x = Math.Max(a.Left, Math.Min(pr.Left, a.Right - w)), y = Math.Max(a.Top, Math.Min(pr.Top, a.Bottom - h));
+            if (x != pr.Left || y != pr.Top) Native.MoveTo(hwnd, x, y);
+            Store.Settings["desk"] = new Dictionary<string, object> { ["x"] = x, ["y"] = y };
+            Store.SaveSettings();
         }
 
         static class FollowNative
@@ -285,6 +360,32 @@ namespace Claudia
                 if (prev != IntPtr.Zero && (Native.GetWindowLong(prev, -20) & 0x8) == 0) after = prev;   // 0x8 = WS_EX_TOPMOST
                 Native.SetWindowPos(pet, after, 0, 0, 0, 0, 0x1 | 0x2 | 0x10 | (async ? 0x4000u : 0));   // NOSIZE | NOMOVE | NOACTIVATE (| ASYNCWINDOWPOS)
             }
+            // ---- 显示器工作区（桌面模式用）：按物理像素，和窗口位置同一套坐标 ----
+            [StructLayout(LayoutKind.Sequential)] struct POINT { public int x, y; }
+            [StructLayout(LayoutKind.Sequential)] struct MONITORINFO { public int cbSize; public Native.RECT rcMonitor, rcWork; public uint dwFlags; }
+            [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr h, uint flags);
+            [DllImport("user32.dll")] static extern IntPtr MonitorFromPoint(POINT p, uint flags);
+            [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);
+            [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT p);
+            static bool WorkOf(IntPtr monitor, out Native.RECT r)
+            {
+                r = default;
+                if (monitor == IntPtr.Zero) return false;
+                var mi = new MONITORINFO { cbSize = Marshal.SizeOf(typeof(MONITORINFO)) };
+                if (!GetMonitorInfo(monitor, ref mi)) return false;
+                r = mi.rcWork;
+                return r.Right > r.Left && r.Bottom > r.Top;
+            }
+            /// <summary>窗口所在显示器的工作区；atCursor = 按鼠标所在的显示器（拖着她的时候）</summary>
+            public static bool WorkArea(IntPtr hwnd, bool atCursor, out Native.RECT r)
+            {
+                if (atCursor && GetCursorPos(out var p)) return WorkOf(MonitorFromPoint(p, 2), out r);   // MONITOR_DEFAULTTONEAREST
+                return WorkOf(MonitorFromWindow(hwnd, 2), out r);
+            }
+            /// <summary>某个点所在（最近）的显示器的工作区；primary = 主显示器</summary>
+            public static bool WorkAreaAt(int x, int y, out Native.RECT r, bool primary = false) =>
+                WorkOf(MonitorFromPoint(new POINT { x = x, y = y }, primary ? 1u : 2u), out r);   // 1 = MONITOR_DEFAULTTOPRIMARY
+
             [DllImport("winmm.dll")] public static extern uint timeBeginPeriod(uint ms);
             [DllImport("winmm.dll")] public static extern uint timeEndPeriod(uint ms);
         }

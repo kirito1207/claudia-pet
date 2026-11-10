@@ -39,12 +39,18 @@ namespace Claudia
             var actions = BuildActionMenu(Item);
             if (actions != null) menu.Items.Add(actions);
             Sep();
-            // 层级不在这里选：她始终紧贴在 Claude 窗口上方一层（见 Pet.Follow.cs）
+            // 待在哪（Claude 窗口里 / 桌面上）、再来一只、改名、送走都在设置的「多开」页里一次管（2026-11-10 用户定）
+            menu.Items.Add(Item("多开和位置…", () => OpenSettings("pets")));
             menu.Items.Add(Item("设置…", () => OpenSettings()));
             menu.Items.Add(Item("回到默认位置", Recenter));
-            menu.Items.Add(Item(HotkeyLabel != null ? $"暂时隐藏（{HotkeyLabel}）" : "暂时隐藏", () => SetUserHidden(true)));
+            menu.Items.Add(Item(Store.IsMain && HotkeyLabel != null ? $"暂时隐藏（{HotkeyLabel}）" : "暂时隐藏", () => SetUserHidden(true)));
             Sep();
-            menu.Items.Add(Item("退出 " + Store.AppName, UserQuit));
+            if (Store.IsMain) menu.Items.Add(Item("退出 " + Store.AppName, UserQuit));
+            else
+            {
+                menu.Items.Add(Item("送走这一只", DismissPet));
+                menu.Items.Add(Item("全部退出", QuitAll));
+            }
             SoftMenu.Apply(menu);
         }
 

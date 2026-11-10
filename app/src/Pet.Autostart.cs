@@ -16,6 +16,7 @@ namespace Claudia
         void UserQuit()
         {
             try { File.WriteAllText(UserQuitFlag, ""); } catch { }
+            WriteSignal("quit");   // 多开的几只一起挥手、一起走
             var hint = !Store.Flag("quitHinted");
             if (hint) { Store.Settings["quitHinted"] = true; Store.SaveSettings(); }
             Js(hint ? "farewell('我先走啦～下次打开 Claude 我再出来', 5000)" : "farewell(null, 2000)");
@@ -27,7 +28,7 @@ namespace Claudia
         public void Quit()
         {
             StopMotion();
-            tray.Visible = false; tray.Dispose();
+            if (tray != null) { tray.Visible = false; tray.Dispose(); }   // 多开的几只没有托盘图标
             Application.Current.Shutdown();
         }
     }

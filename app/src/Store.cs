@@ -69,17 +69,45 @@ namespace Claudia
                 Directory.CreateDirectory(Data);
                 var file = Path.Combine(Data, "windows.log");
                 if (File.Exists(file) && new FileInfo(file).Length > 1_000_000) File.Delete(file);
-                File.AppendAllText(file, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss ") + text + "\r\n");
+                File.AppendAllText(file, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss ") + (IsMain ? "" : "[" + PetId + "] ") + text + "\r\n");
             }
             catch { }
         }
 
+        // ---- 多开 ----
+        // 每只桌宠是一个独立的进程：第一只叫 main（Claude 拉起的就是它），多开的那几只由它带起来（claudia-pet.exe --pet 2）。
+        // 各有各的设置文件和网页数据目录，所以名字、大小、待在哪、闲着做什么都互不影响；额度和工作状态读的是同一份
+        public static string PetId = "main";
+        public static bool IsMain => PetId == "main";
+        public const int MaxExtraPets = 4;
+        public static string PetDir => IsMain ? Data : Path.Combine(Data, "pets", PetId);
+        public static string WebViewDir => Path.Combine(PetDir, "webview2");
+        public static bool ValidPetId(string id) => id != null && id.Length >= 1 && id.Length <= 8 && id != "main"
+            && id.All(c => c >= '0' && c <= '9' || c >= 'a' && c <= 'z');
+        static string PetsFile => Path.Combine(Data, "pets.json");
+        /// <summary>除了第一只之外还开着哪几只（按编号）</summary>
+        public static List<string> ExtraPets()
+        {
+            var d = ReadJson(PetsFile);
+            return d != null && d.TryGetValue("ids", out var v) && v is object[] a
+                ? a.OfType<string>().Where(ValidPetId).Distinct().Take(MaxExtraPets).ToList() : new List<string>();
+        }
+        public static void SaveExtraPets(IEnumerable<string> ids) =>
+            WriteJson(PetsFile, new Dictionary<string, object> { ["ids"] = ids.ToArray() });
+
         // ---- 设置 ----
         public static Dictionary<string, object> Settings = new Dictionary<string, object>();
-        static string SettingsFile => Path.Combine(Data, "settings.json");
+        static string SettingsFile => Path.Combine(PetDir, "settings.json");
         public static void LoadSettings()
         {
-            Settings = ReadJson(SettingsFile) ?? new Dictionary<string, object>();
+            var own = ReadJson(SettingsFile);
+            if (own == null && !IsMain)
+            {
+                // 新来的一只：先照第一只的设置（大小、手感这些），位置、待在哪、名字用自己的
+                own = ReadJson(Path.Combine(Data, "settings.json")) ?? new Dictionary<string, object>();
+                foreach (var k in new[] { "follow", "desk", "mode", "names" }) own.Remove(k);
+            }
+            Settings = own ?? new Dictionary<string, object>();
             if (!(Settings.TryGetValue("names", out var n) && n is Dictionary<string, object>)) Settings["names"] = new Dictionary<string, object>();
         }
         public static void SaveSettings() { try { WriteJson(SettingsFile, Settings); } catch (Exception e) { Log("保存设置失败: " + e.Message); } }

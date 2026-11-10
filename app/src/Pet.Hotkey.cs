@@ -32,7 +32,7 @@ namespace Claudia
         bool userHidden, hotkeyFailed;
         void RegisterHideHotKey()
         {
-            if (hwnd == IntPtr.Zero) return;
+            if (hwnd == IntPtr.Zero || !Store.IsMain) return;   // 多开的几只不抢快捷键：第一只按了，它们跟着藏（见 Pet.Pets.cs）
             UnregisterHotKey(hwnd, HotKeyId);
             hotkeyFailed = false;
             var choice = HotkeyChoices.FirstOrDefault(h => h.id == HideHotkey);
@@ -49,6 +49,7 @@ namespace Claudia
         {
             userHidden = hidden;
             SetConcealed(hidden);
+            WriteHiddenSignal(hidden);
         }
 
         /// <summary>双击托盘：藏着就叫出来，位置不动</summary>
@@ -56,6 +57,7 @@ namespace Claudia
         {
             if (userHidden) SetUserHidden(false);
             SetConcealed(false);
+            WriteHiddenSignal(false);   // 多开的几只也一起叫出来
         }
 
         public void Recenter()

@@ -26,7 +26,7 @@ namespace Claudia
             try { dir = Convert.ToDouble(d); speed = Convert.ToDouble(s); ms = Convert.ToDouble(t); } catch { return; }
             if (double.IsNaN(speed) || speed <= 0 || speed > 2000 || double.IsNaN(ms) || ms <= 0 || ms > 60000 || (dir != 1 && dir != -1)) return;
             StopWalk(null);
-            if (dragging || flying || concealed || sessionLocked || hwnd == IntPtr.Zero || !ClaudeRect(out var c)) { Js("walkEnded('blocked')"); return; }
+            if (dragging || flying || concealed || sessionLocked || hwnd == IntPtr.Zero || !AreaRect(out var c)) { Js("walkEnded('blocked')"); return; }
             Native.GetWindowRect(hwnd, out var r);
             var room = dir < 0 ? r.Left - c.Left : c.Right - r.Right;
             if (room < WalkMinRoom) { Js("walkEnded('blocked')"); return; }
@@ -39,7 +39,7 @@ namespace Claudia
         {
             if (!walking) { CompositionTarget.Rendering -= WalkFrame; return; }
             if (dragging || flying) { StopWalk(null); return; }   // 拖动接管
-            if (concealed || sessionLocked || !ClaudeRect(out var c)) { StopWalk("done"); return; }
+            if (concealed || sessionLocked || !AreaRect(out var c)) { StopWalk("done"); return; }
             var now = walkClock.ElapsedMilliseconds;
             var dt = Math.Min(0.1, (now - walkLast) / 1000.0); walkLast = now;
             Native.GetWindowRect(hwnd, out var r);
@@ -51,7 +51,7 @@ namespace Claudia
             var x = (int)Math.Round(walkX);
             if (x != r.Left) Native.MoveTo(hwnd, x, r.Top);
             // 只在内存里跟着改离右下角的距离：Claude 窗口这时候挪了，跟随也按走到的新位置摆
-            offRight = c.Right - (x + w); offBottom = c.Bottom - (r.Top + h);
+            if (!desktopMode) { offRight = c.Right - (x + w); offBottom = c.Bottom - (r.Top + h); }
             if (edge) StopWalk("edge");
             else if (now >= walkUntil) StopWalk("done");
         }

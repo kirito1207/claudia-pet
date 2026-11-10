@@ -39,6 +39,7 @@ namespace Claudia
                     return d;
                 }).ToList(),
                 ["integrations"] = ClaudeIntegrations(),
+                ["pets"] = PetList(), ["maxPets"] = Store.MaxExtraPets + 1,
             };
         }
 
@@ -94,6 +95,7 @@ namespace Claudia
                         Js($"setName({Q(cid)}, {Q(Characters().First(x => x.id == cid).name)})");
                     }
                     break;
+                case "pet": HandlePetCommand(msg); break;
                 case "integrate":
                     if (msg.TryGetValue("target", out var t) && t is string target && msg.TryGetValue("action", out var a) && a is string action)
                         ClaudeIntegrate(target, action == "install");

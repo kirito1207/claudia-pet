@@ -74,7 +74,7 @@ namespace Claudia
         };
         Dictionary<string, object> MotionGeometry()
         {
-            if (!ClaudeRect(out var c) || !Native.GetWindowRect(hwnd, out var r)) return null;
+            if (!AreaRect(out var c) || !Native.GetWindowRect(hwnd, out var r)) return null;
             return new Dictionary<string, object> {
                 ["minX"] = c.Left, ["minY"] = c.Top,
                 ["maxX"] = Math.Max(c.Left, c.Right - (r.Right-r.Left)),
@@ -194,7 +194,7 @@ namespace Claudia
         void UpdateMotionGeometry()
         {
             if (!dragging && !flying) return;
-            if (concealed || sessionLocked || !ClaudeRect(out var c)) { StopMotion(); return; }
+            if (concealed || sessionLocked || !AreaRect(out var c)) { StopMotion(); return; }
             var packet = MotionPacket(); var json = Store.Json.Serialize(packet["bounds"]);
             if (json == lastMotionBounds) return;
             lastMotionBounds = json;

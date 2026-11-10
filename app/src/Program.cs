@@ -52,18 +52,36 @@ namespace Claudia
                 }
                 return;
             }
-            if (!RenderRecovery.WaitForParent(args)) return;
-            // 只开一个：再次打开时让已经在跑的那个回到 Claude 窗口里
-            using (var mutex = new Mutex(true, Ensure.MutexName, out var first))
-            using (var show = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\Claudia-Show-" + Environment.UserName))
+            // 多开的那几只：claudia-pet.exe --pet 2 [--mode desktop|claude]，由第一只带起来（见 Pet.Pets.cs）
+            string firstMode = null;
+            var petArg = Array.IndexOf(args, "--pet");
+            if (petArg >= 0)
             {
-                if (!first) { show.Set(); return; }
+                var id = petArg + 1 < args.Length ? args[petArg + 1] : null;
+                if (!Store.ValidPetId(id)) return;
+                Store.PetId = id;
+                var modeArg = Array.IndexOf(args, "--mode");
+                if (modeArg >= 0 && modeArg + 1 < args.Length && (args[modeArg + 1] == "desktop" || args[modeArg + 1] == "claude")) firstMode = args[modeArg + 1];
+            }
+            if (!RenderRecovery.WaitForParent(args)) return;
+            // 每只只开一个：第一只再次打开时，让已经在跑的那个回到默认位置
+            var main = Store.IsMain;
+            using (var mutex = new Mutex(true, main ? Ensure.MutexName : Ensure.MutexName + "-pet-" + Store.PetId, out var first))
+            using (var show = main ? new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\Claudia-Show-" + Environment.UserName) : new EventWaitHandle(false, EventResetMode.AutoReset))
+            using (var quitAll = main ? new EventWaitHandle(false, EventResetMode.AutoReset, Pet.QuitAllEvent) : new EventWaitHandle(false, EventResetMode.AutoReset))
+            {
+                if (!first) { if (main) show.Set(); return; }
+                if (!main && !Ensure.PetRunning()) { Store.Log("第一只没在跑，不单独打开"); return; }
 
-                Directory.CreateDirectory(Store.Data);
-                Store.MigrateOldData();
+                Directory.CreateDirectory(Store.PetDir);
+                if (main) Store.MigrateOldData();
                 RenderRecovery.Started();
-                try { File.Delete(Pet.UserQuitFlag); } catch { }   // 自己打开了：恢复跟着 Claude 出现
-                try { Directory.CreateDirectory(Store.State); File.WriteAllText(Path.Combine(Store.State, "pet.pid"), Process.GetCurrentProcess().Id.ToString()); } catch { }
+                if (main)
+                {
+                    try { File.Delete(Pet.UserQuitFlag); } catch { }   // 自己打开了：恢复跟着 Claude 出现
+                    try { Directory.CreateDirectory(Store.State); File.WriteAllText(Path.Combine(Store.State, "pet.pid"), Process.GetCurrentProcess().Id.ToString()); } catch { }
+                    Pet.ClearPetSignal();
+                }
                 AppDomain.CurrentDomain.UnhandledException += (_, e) => Store.Log("崩溃: " + e.ExceptionObject);
                 Store.Log($"启动 {Store.Version}，{Environment.OSVersion}，64 位进程 = {Environment.Is64BitProcess}");
                 System.Windows.Forms.Application.EnableVisualStyles();
@@ -89,18 +107,27 @@ namespace Claudia
                 }
                 Store.Log("WebView2 运行时 " + version);
                 Store.LoadSettings();
+                if (firstMode != null && !Store.Settings.ContainsKey("mode")) { Store.Settings["mode"] = firstMode; Store.SaveSettings(); }
 
                 app.Startup += async (_, __) =>
                 {
                     try
                     {
-                        var env = await CoreWebView2Environment.CreateAsync(null, Path.Combine(Store.Data, "webview2"));
+                        var env = await CoreWebView2Environment.CreateAsync(null, Store.WebViewDir);
                         var pet = new Pet(env);
                         pet.Start();
-                        new Thread(() =>
+                        if (main)
                         {
-                            while (show.WaitOne()) app.Dispatcher.BeginInvoke(new Action(pet.Recenter));
-                        }) { IsBackground = true }.Start();
+                            new Thread(() =>
+                            {
+                                while (show.WaitOne()) app.Dispatcher.BeginInvoke(new Action(pet.Recenter));
+                            }) { IsBackground = true }.Start();
+                            new Thread(() =>
+                            {
+                                while (quitAll.WaitOne()) app.Dispatcher.BeginInvoke(new Action(pet.RequestQuit));
+                            }) { IsBackground = true }.Start();
+                            foreach (var id in Store.ExtraPets()) Pet.LaunchPet(id);   // 把上次多开的几只也叫出来
+                        }
                     }
                     catch (Exception e)
                     {
@@ -110,7 +137,7 @@ namespace Claudia
                     }
                 };
                 app.Run();
-                try { File.Delete(Path.Combine(Store.State, "pet.pid")); } catch { }
+                if (main) try { File.Delete(Path.Combine(Store.State, "pet.pid")); } catch { }
             }
         }
     }

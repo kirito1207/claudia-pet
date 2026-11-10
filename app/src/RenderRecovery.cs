@@ -65,7 +65,7 @@ namespace Claudia
                 else Store.Log("渲染线程连续失败，重试预算已耗尽，停止自动重启并提示手动打开");
                 var parent = Process.GetCurrentProcess();
                 // 不经过 cmd/start（安装路径可能含空格、& 等）；子进程先等父进程真正退出，再抢单实例锁。
-                var args = $"--render-restart {parent.Id} {parent.StartTime.ToUniversalTime().Ticks} {(next == null ? "stop" : "retry")}";
+                var args = $"--render-restart {parent.Id} {parent.StartTime.ToUniversalTime().Ticks} {(next == null ? "stop" : "retry")}" + (Store.IsMain ? "" : " --pet " + Store.PetId);
                 if (Process.Start(new ProcessStartInfo(parent.MainModule.FileName, args)
                     { UseShellExecute = false, WorkingDirectory = Store.Install }) == null)
                     throw new InvalidOperationException("未能创建接班进程");
@@ -85,7 +85,7 @@ namespace Claudia
         public static bool WaitForParent(string[] args)
         {
             if (args.Length == 0 || args[0] != "--render-restart") return true;
-            if (args.Length != 4 || !int.TryParse(args[1], out var pid) || pid <= 0
+            if (args.Length < 4 || !int.TryParse(args[1], out var pid) || pid <= 0
                 || !long.TryParse(args[2], out var ticks) || (args[3] != "retry" && args[3] != "stop")) return false;
             try
             {

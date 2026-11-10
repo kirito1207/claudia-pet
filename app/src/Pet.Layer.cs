@@ -33,7 +33,7 @@ namespace Claudia
             if (Window == null || concealed == c) return;
             concealed = c;
             if (c) { openMenu?.Close(); Window.Opacity = 0; if (hwnd != IntPtr.Zero) Native.DropFromTop(hwnd); }
-            else { Window.Opacity = 1; }
+            else { Window.Opacity = 1; topmostAt = DateTime.MinValue; }   // 桌面模式：出来后马上重新置顶
             // 藏着时鼠标穿过整个窗口（只靠不透明度 0 点不透，原因见 ConcealStyle.ClickThrough）
             if (hwnd != IntPtr.Zero) Native.SetWindowLong(hwnd, Native.GWL_EXSTYLE, ConcealStyle.ClickThrough(Native.GetWindowLong(hwnd, Native.GWL_EXSTYLE), c));
             PassThroughBrowserWindows();
@@ -68,6 +68,6 @@ namespace Claudia
         void UpdatePageHidden() => Js($"setPageHidden({(concealed || sessionLocked || !shownInClaude ? "true" : "false")})");
 
         // Claude window following owns z-order; only manual hiding is retained.
-        void ApplyLayer() { if (Window != null && Window.Topmost) Window.Topmost = false; }
+        void ApplyLayer() { if (!desktopMode && Window != null && Window.Topmost) Window.Topmost = false; }   // 桌面模式的置顶见 KeepOnTop
     }
 }

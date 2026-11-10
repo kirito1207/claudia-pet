@@ -54,7 +54,8 @@ namespace Claudia
         // ---------------- 启动 ----------------
         public void Start()
         {
-            Store.SyncResources();
+            if (Store.IsMain) Store.SyncResources();   // 多开的几只用第一只同步好的素材
+            desktopMode = OnDesktop;
             current = Store.Settings.TryGetValue("character", out var c) && c is string s ? s : "claude";
 
             Window = new Window
@@ -89,12 +90,15 @@ namespace Claudia
             Window.Loaded += async (_, __) => await InitWeb();
             Window.Show();
 
-            tray = new Forms.NotifyIcon { Text = Store.AppName, Visible = true };
-            try { tray.Icon = new System.Drawing.Icon(Path.Combine(Store.Install, "AppIcon.ico")); } catch { tray.Icon = System.Drawing.SystemIcons.Application; }
-            var trayMenu = new Forms.ContextMenuStrip();
-            trayMenu.Opening += (_, e) => { FillMenu(trayMenu); e.Cancel = false; };
-            tray.ContextMenuStrip = trayMenu;
-            tray.DoubleClick += (_, __) => ShowAgain();   // 只叫出来、不挪位置（2026-11-07 用户定）；要回默认位置用菜单
+            if (Store.IsMain)   // 托盘图标只有第一只有；系统通知也只从它这里弹（Pet.Notices.cs 靠 tray）
+            {
+                tray = new Forms.NotifyIcon { Text = Store.AppName, Visible = true };
+                try { tray.Icon = new System.Drawing.Icon(Path.Combine(Store.Install, "AppIcon.ico")); } catch { tray.Icon = System.Drawing.SystemIcons.Application; }
+                var trayMenu = new Forms.ContextMenuStrip();
+                trayMenu.Opening += (_, e) => { FillMenu(trayMenu); e.Cancel = false; };
+                tray.ContextMenuStrip = trayMenu;
+                tray.DoubleClick += (_, __) => ShowAgain();   // 只叫出来、不挪位置（2026-11-07 用户定）；要回默认位置用菜单
+            }
 
             Every(TimeSpan.FromMilliseconds(300), Poll);
             StartFollow();
@@ -209,7 +213,7 @@ namespace Claudia
                 grid.Children.Remove(old);
                 grid.Children.Insert(0, web);
                 try { old.Dispose(); } catch { }
-                env = await CoreWebView2Environment.CreateAsync(null, Path.Combine(Store.Data, "webview2"));
+                env = await CoreWebView2Environment.CreateAsync(null, Store.WebViewDir);
                 await InitWeb();
                 Store.Log("WebView2 已恢复");
             }

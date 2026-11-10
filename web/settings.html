@@ -70,6 +70,9 @@ input[type=range] { width: 150px; accent-color: var(--accent); }
 .name-ctl input { width: 140px; }
 input[type=checkbox] { accent-color: var(--accent); }
 .physics-row .ctl { width: 238px; }
+.pet-row { flex-wrap: wrap; }
+.pet-row .ctl { flex-wrap: wrap; justify-content: flex-end; }
+.pet-row input[type=text] { width: 110px; }
 .physics-row input[type=range] { flex: 1; min-width: 70px; width: auto; }
 .physics-row .val { width: 58px; }
 input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
@@ -88,7 +91,7 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
 <div class="sub" id="version"></div>
 
 <nav class="tabs" id="tabs">
-  <button data-tab="look">外观</button><button data-tab="quota">额度</button><button data-tab="claude">接入 Claude</button><button data-tab="physics">互动</button><button data-tab="daily">日常</button><button data-tab="general">通用</button><button data-tab="about">关于</button>
+  <button data-tab="look">外观</button><button data-tab="pets">多开</button><button data-tab="quota">额度</button><button data-tab="claude">接入 Claude</button><button data-tab="physics">互动</button><button data-tab="daily">日常</button><button data-tab="general">通用</button><button data-tab="about">关于</button>
 </nav>
 
 <div class="card" data-tab="look">
@@ -103,6 +106,15 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
     <div class="ctl name-ctl"><input type="text" id="customName" maxlength="20" placeholder="claudia" autocomplete="off"><button id="saveName" disabled>保存</button><button id="resetName" disabled>还原</button></div></div>
   <div class="item"><div class="label">背景光晕<small>深色背景上会变成一圈亮光，「自动」时深色模式下不显示</small></div>
     <div class="ctl"><div class="seg" id="aura"><button data-v="auto">自动</button><button data-v="on">始终显示</button><button data-v="off">关闭</button></div></div></div>
+</div>
+
+<div class="card" data-tab="pets">
+  <div id="pets"></div>
+  <div class="item"><div class="label">再来一只<small id="petsNote"></small></div>
+    <div class="ctl"><button data-add-pet="claude">放在 Claude 窗口里</button><button data-add-pet="desktop">放在桌面上</button></div></div>
+</div>
+<div class="card" data-tab="pets">
+  <div class="item"><div class="label">说明<small>每一只都是独立的：名字、大小、闲着做什么互不影响，各自右键打开的是自己的设置。<br>待在桌面上的那只始终在最上面，全屏看视频时也会盖在上面，不想看到可以按隐藏快捷键。<br>托盘图标、系统通知、隐藏快捷键只归第 1 只管；Claude 关掉后全部一起退出。</small></div></div>
 </div>
 
 <div class="card" data-tab="quota">
@@ -217,7 +229,41 @@ function setState(s) {
   const idleOn = s.idleEnabled !== false
   for (const b of $('idleFrequency').children) { b.classList.toggle('on', b.dataset.v === (s.idleFrequency || 'normal')); b.disabled = !idleOn }
   renderIntegrations(s.integrations)
+  renderPets(s.pets, s.maxPets)
 }
+
+// 多开：每一只一行 { id, index, self, name, mode }。改的是别的那只时，外壳把指令转交给它，过一两秒这一页会自己刷新
+function renderPets(list, max) {
+  if (!list) return
+  const editing = document.activeElement?.dataset?.petName   // 正在改名字的那一行不重画，免得打到一半被清掉
+  const full = list.length >= (max || 5)
+  for (const b of document.querySelectorAll('[data-add-pet]')) b.disabled = full
+  $('petsNote').textContent = full ? `已经有 ${list.length} 只了，最多 ${max} 只` : `现在 ${list.length} 只，最多 ${max} 只；每多一只大约多占一百多兆内存`
+  const rows = list.map(p => {
+    const old = editing === p.id && document.querySelector(`.pet-row[data-pet="${p.id}"]`)
+    if (old) return old
+    const row = document.createElement('div'); row.className = 'item pet-row'; row.dataset.pet = p.id
+    row.innerHTML = `<div class="label"></div><div class="ctl"><input type="text" maxlength="20" placeholder="claudia" autocomplete="off"><button data-p="rename">改名</button>
+      <div class="seg"><button data-v="claude">Claude 窗口里</button><button data-v="desktop">桌面上</button></div><button data-p="dismiss">送走</button></div>`
+    row.querySelector('.label').textContent = `第 ${p.index} 只 · ${p.name || 'claudia'}`
+    if (p.self) { const n = document.createElement('small'); n.textContent = '就是打开这个设置的这一只'; row.querySelector('.label').appendChild(n) }
+    const input = row.querySelector('input'); input.value = p.name || ''; input.dataset.petName = p.id
+    const send = (action, value) => post({ cmd: 'pet', id: p.id, action, value })
+    const rename = () => { send('rename', input.value.trim()); input.blur(); toast('名字已改') }
+    row.querySelector('[data-p=rename]').onclick = rename
+    input.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); rename() } }
+    for (const b of row.querySelector('.seg').children) {
+      b.classList.toggle('on', b.dataset.v === p.mode)
+      b.onclick = () => { if (b.dataset.v !== p.mode) { send('mode', b.dataset.v); toast(b.dataset.v === 'desktop' ? '挪到桌面上' : '挪回 Claude 窗口里') } }
+    }
+    const bye = row.querySelector('[data-p=dismiss]')
+    if (p.id === 'main') { bye.disabled = true; bye.title = '第 1 只送不走：要全部退出请用右键菜单的「退出」' }
+    else bye.onclick = () => { bye.disabled = true; send('dismiss'); toast('已送走') }
+    return row
+  })
+  $('pets').replaceChildren(...rows)
+}
+for (const b of document.querySelectorAll('[data-add-pet]')) b.onclick = () => { b.disabled = true; post({ cmd: 'pet', action: 'add', value: b.dataset.addPet }); toast('再来一只…') }
 
 // 接入 Claude：每一项 { id, label, note, installed, detail }，外壳自己改配置（不跑任何脚本）
 function renderIntegrations(list) {
