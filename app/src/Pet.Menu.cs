@@ -49,7 +49,7 @@ namespace Claudia
             else
             {
                 menu.Items.Add(Item("送走这一只", DismissPet));
-                menu.Items.Add(Item("全部退出", QuitAll));
+                menu.Items.Add(Item("送走所有新加的", DismissExtras));
             }
             SoftMenu.Apply(menu);
         }

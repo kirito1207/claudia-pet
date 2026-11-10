@@ -72,10 +72,13 @@ namespace Claudia
         // 全部退出：多开的那几只里点了，是请第一只来退；第一只退出时把「quit」写进信号文件，大家一起挥手、一起走
         // （2026-11-10 用户实测：原来是第一只先走，别的过两三秒才发现它不在了）
         public static string QuitAllEvent => @"Local\Claudia-Quit-" + Environment.UserName;
-        void QuitAll()
+        /// <summary>多开的那几只菜单里的「送走所有新加的」：新加的全部送走，第一只不受影响（2026-11-10 用户定）</summary>
+        void DismissExtras()
         {
-            try { using (var e = EventWaitHandle.OpenExisting(QuitAllEvent)) e.Set(); }
-            catch (Exception e) { Store.Log("没能通知第一只退出: " + e.Message); Quit(); }
+            foreach (var id in Store.ExtraPets().Where(i => i != Store.PetId))
+                try { Store.WriteJson(CommandFile(id), new Dictionary<string, object> { ["action"] = "dismiss", ["value"] = "" }); }
+                catch (Exception e) { Store.Log("没能把指令交给第 " + id + " 只: " + e.Message); }
+            DismissPet();
         }
         public void RequestQuit() => UserQuit();
 
