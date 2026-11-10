@@ -14,7 +14,8 @@
 |---|---|---|
 | 待机呼吸休闲.webp | idle 待机 | 循环 |
 | 工作状态-思考冒泡.webp | thinking 思考 | 循环 |
-| 写代码.webp、轻快记录.webp | writing 写东西 | 随机一张，循环 |
+| 写代码.webp | writing 写东西（2026-11-10 起只用这张；轻快记录改给听你说） | 循环 |
+| 轻快记录.webp | listening 听你说（2026-11-10 起替换静态图 listening.webp；从第 10 帧起，掏出本子记，1.8 秒后转思考） | 循环 |
 | 工作状态-忙碌点按.webp | running 敲命令 | 循环 |
 | 工作状态-清点归档.webp | compact 整理记忆 | 循环 |
 | 原地小憩沉眠.webp | sleeping 睡觉 | 播到第 76 帧后在第 28–76 帧来回（一直睡着）；被点醒或要去干活时先播第 77–119 帧（醒过来） |
@@ -40,10 +41,12 @@
 | 动物环绕.webp、蝴蝶蜜蜂环绕头顶开花.webp | animals / butterflies 魔法 | 闲置随机，整段 |
 | 三球抛接、扑克魔术、吹笛子、小提琴演奏、优雅裙摆舞、可爱宅舞、轻快摇摆舞、整体换装试色.webp | 才艺（juggle、cards、flute、violin、dance_skirt、dance_otaku、dance_swing、dressup） | 闲置随机，整段 |
 | 原地蹲下玩玩具汽车、玩水枪、下五子棋、抽陀螺、撸猫、踢毽子、骑木马、书页拍打节奏.webp | 玩耍（toycar、watergun 5–9 月、gomoku、top、cat、shuttlecock、rockinghorse、pagebeat） | 闲置随机，整段 |
-| 吃午餐、吃晚餐、吃白饭.webp | 吃喝 lunch（11–14 点）、dinner（17–20 点）、rice（两段饭点） | 闲置随机，整段 |
-| 涮火锅、吃大闸蟹、吃西瓜、吃糖葫芦、吃年糕.webp | 吃喝 hotpot（11–2 月饭点）、crab（9–11 月）、watermelon（6–8 月）、tanghulu（12–2 月，119 帧）、niangao（1–2 月） | 闲置随机，整段 |
+| 吃白饭.webp | 吃喝 rice（两段饭点） | 闲置随机，整段 |
+| 涮火锅、吃大闸蟹、吃西瓜.webp | 吃喝 hotpot（11–2 月饭点）、crab（9–11 月）、watermelon（6–8 月） | 闲置随机，整段 |
 | 吃青团、吃腊八粥、吃重阳糕.webp | 吃喝 qingtuan（公历 3/25–4/15，94 帧）、laba（农历腊月初一到初八）、chongyanggao（农历九月初七到十一） | 闲置随机，整段 |
-| 放风筝、摇扇纳凉、被落叶淹没v2、堆雪人.webp | 时令 kite（3–4 月）、fan（6–8 月）、leaves（10–11 月；第一版结束时落叶还在，没用）、snowman（12–2 月） | 闲置随机，整段 |
+| 放风筝、摇扇纳凉、被落叶淹没v2.webp | 时令 kite（3–4 月）、fan（6–8 月）、leaves（10–11 月；第一版结束时落叶还在，没用） | 闲置随机，整段 |
+| 晨间刷牙 / 吃午餐 / 闻咖啡豆、冲可可 / 吃晚餐 / 拍枕头.webp | 问候 greet_morning 早上好 / greet_noon 中午好 / greet_afternoon 下午好（两张随机）/ greet_evening 晚上好 / greet_night 晚安（2026-11-10 起替换问候静态图；原来分别是闲置随机的 toothbrush、lunch、coffee、cocoa、dinner、pillow，不再单独随机，可可也不再限月份）。凌晨问候 greet_dawn 同日删掉 | 每个时段第一次打招呼，整段 |
+| 堆雪人、吃糖葫芦、吃年糕.webp | fest_newyear 元旦（2026-11-10 起替换静态图 fest_newyear.webp；三段随机，播到第 118 帧——吃糖葫芦只有 119 帧；原来分别是时令 snowman、吃喝 tanghulu / niangao，不再单独随机） | 元旦打招呼，整段 |
 | 穿针乞巧、放河灯、插茱萸赏菊.webp | 时令 qixi（农历七月初五到初七）、zhongyuan（七月十三到十五）、chongyang（九月初七到十一） | 闲置随机，整段 |
 | 螃蟹走路.webp、原地漂浮踏步.webp | walk_crab / walk_float 走路 | 起步后在第 37–58 / 51–84 帧循环，同时平移窗口；螃蟹步身体朝左，只往左走（2026-11-07），漂浮踏步左右都走 |
 | 原地左转奔跑.webp | run_left 往左跑 | 起步（灵光一闪、转身）后在第 38–46 帧循环，只往左（不做镜像）；收尾从第 69 帧（2026-11-07） |
@@ -55,13 +58,15 @@
 |---|---|---|
 | 工作状态-垂头叹气冒汗.webp | oops 哎呀（2026-11-07 起替换静态图 oops.webp） | 整段 |
 | 拆礼物.webp | update 拆礼物（2026-11-07 起替换静态图 update.webp「抱礼物」；没有专门的触发时机，放在玩耍组闲置随机） | 整段 |
-| 伸脚趾、咬指甲、抓痒、抖腿、抠鼻子、挠脚心、掰手指、揉眼睛、揪耳朵、摸肚子、甩手甩水、转手腕、憋气鼓腮、转笔、拍枕头、晨间刷牙.webp | 发呆小动作 toes、nails、scratch、leg_bounce、nose_pick、sole_tickle、finger_count、eye_rub、ear_pull、tummy、hand_flick、wrist_roll、cheek_puff、pen_spin、pillow、toothbrush（6–10 点） | 闲置随机，整段 |
-| 吹叶笛、弹玻璃杯沿、弹空气吉他、弹空气吉他v2、弹空气吉他v3、手摇八音盒、打拍子数拍、按音叉、摇沙锤、敲三角铁、敲木鱼、摇小风铃、淑女屈膝礼.webp | 才艺 leaf_flute、glass_harp、air_guitar、music_box、beat、tuning_fork、maracas、triangle、woodfish、wind_chime、curtsy | 闲置随机，整段 |
+| 伸脚趾、咬指甲、抓痒、抖腿、掰手指、揉眼睛、摸肚子、甩手甩水、转手腕、转笔.webp | 发呆小动作 toes、nails、scratch、leg_bounce、finger_count、eye_rub、tummy、hand_flick、wrist_roll、pen_spin | 闲置随机，整段 |
+| 吹叶笛、弹玻璃杯沿、弹空气吉他、弹空气吉他v2、弹空气吉他v3、手摇八音盒、敲木鱼、淑女屈膝礼.webp | 才艺 leaf_flute、glass_harp、air_guitar、music_box、woodfish、curtsy | 闲置随机，整段 |
 | 叠叠乐、吹蒲公英、弹脑门、戳泡泡纸、打水漂、抖空竹、抛帽接帽、抛接小苹果、摇骰盅、翻花绳、踩影子、转伞、转盘子.webp | 玩耍 jenga、dandelion、forehead_flick、bubble_wrap、skip_stone、diabolo、hat_toss、apple_toss、dice、cats_cradle、shadow_step、umbrella_spin、plate_spin | 闲置随机，整段 |
-| 冲可可、分巧克力、刨冰屑、剥栗子、吸布丁、咬脆饼、啃玉米、喝汤吹凉、挑鱼刺、捏饭团、摇汽水瓶、烤红薯、舀蜂蜜v2、闻咖啡豆.webp | 吃喝 cocoa（10、11、12、1、2、3 月）、chocolate、shaved_ice（6、7、8 月）、chestnut（9、10、11 月）、pudding、cracker、corn（7、8、9、10 月）、soup、fishbone、onigiri、soda（5、6、7、8、9 月）、sweet_potato（11、12、1、2 月）、honey、coffee | 闲置随机，整段 |
+| 分巧克力、刨冰屑、剥栗子、吸布丁、咬脆饼、啃玉米、喝汤吹凉、挑鱼刺、捏饭团、摇汽水瓶、烤红薯、舀蜂蜜v2.webp | 吃喝 chocolate、shaved_ice（6、7、8 月）、chestnut（9、10、11 月）、pudding、cracker、corn（7、8、9、10 月）、soup、fishbone、onigiri、soda（5、6、7、8、9 月）、sweet_potato（11、12、1、2 月）、honey | 闲置随机，整段 |
 | 举手遮阳偷看、原地踏雪、听蝉、抱暖手炉、掌心接雪花、接雨滴、搓手哈气取暖、撑透明小伞、被风吹乱发型.webp | 时令 sunshade（5、6、7、8、9 月）、snow_step（12、1、2 月）、cicada（6、7、8 月）、hand_warmer（11、12、1、2 月）、snowflake（12、1、2 月）、raindrop（3、4、5、6、7 月）、warm_breath（11、12、1、2 月）、clear_umbrella（3、4、5、6、7 月）、windy（3、4、10、11 月） | 闲置随机，整段 |
-| 串珠链、削铅笔、扎束干花、打铁小铃、折小纸船、捏陶土、描瓷纹、磨墨、糊纸伞骨、绕线轴、编草蚱蜢、缝布偶.webp | 手工（新组） beads、pencil、dried_flowers、bell_forge、paper_boat、clay、porcelain、ink、paper_umbrella、spool、grasshopper、doll_sew | 闲置随机，整段 |
+| 串珠链、折小纸船、捏陶土、磨墨、编草蚱蜢.webp | 手工（新组） beads、paper_boat、clay、ink、grasshopper | 闲置随机，整段 |
 | 拨算盘珠、深度思考碎碎念v4.webp | Claude 梗 abacus、mutter_lazy | 闲置随机，整段 |
+
+2026-11-09 删掉其中 16 张（随机动作太多，随时能触发的从 96 个减到 80 个，和 dsh-pet 的 80 个相当）：发呆小动作 抠鼻子、挠脚心、揪耳朵、憋气鼓腮；才艺 打拍子数拍、按音叉、摇沙锤、敲三角铁、摇小风铃；手工 削铅笔、扎束干花、打铁小铃、描瓷纹、糊纸伞骨、绕线轴、缝布偶。要找回从作者库 `da5a6fe` 取。
 
 圣诞 fest_christmas 加入 装点圣诞树.webp，和装点圣诞树v3 随机轮换。
 

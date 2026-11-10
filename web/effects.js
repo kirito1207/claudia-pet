@@ -413,9 +413,6 @@ const shootingStar = (() => {
 const fxNight = `${moonDefs}<g>${crescent(66, 76, 1)}${fxEnter(16, '1.2s')}</g>` +
   star(140, 36, 0.6, '0s', '#fff3c4', '2.2s') + star(500, 90, 0.8, '0.7s', '#fff3c4', '2.4s') + star(548, 190, 0.5, '1.4s', '#fff3c4', '2s') +
   star(30, 220, 0.5, '1.1s', '#fff3c4', '2.6s') + shootingStar
-// 凌晨：淡淡的月亮和稀疏的星星
-const fxDawn = `${moonDefs}<g opacity="0.85">${crescent(520, 66, 0.7)}${fxEnter(0, '1.5s')}</g>` +
-  star(60, 70, 0.5, '0s', '#e8ecff', '3.4s') + star(36, 180, 0.4, '1.2s', '#e8ecff', '3.4s') + star(470, 40, 0.4, '2.1s', '#e8ecff', '3.4s')
 
 // 万圣节：两侧扑扇翅膀的小蝙蝠
 const bat = (path, dur, begin) => `<g opacity="0"><g><path d="M0 0 C-6 -10 -14 -12 -22 -6 C-18 -4 -16 0 -18 4 C-12 0 -6 2 0 6 C6 2 12 0 18 4 C16 0 18 -4 22 -6 C14 -12 6 -10 0 0Z" fill="#3b2a3f" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>` +
@@ -472,13 +469,13 @@ const osmanthus = i => `<g fill="#ffb627" stroke="${INK}" stroke-width="1">${[0,
 const fxMidAutumn = fullMoon + fall([22, 52, 82, 470, 540, 560], osmanthus, { dur: 4.8, dy: 320, sway: 14, spin: 180, y0: 140 })
 
 const GREET_FX = {
-  greet_morning: fxMorning, greet_noon: fxNoon, greet_afternoon: fxAfternoon, greet_evening: fxEvening, greet_night: fxNight, greet_dawn: fxDawn,
+  greet_morning: fxMorning, greet_noon: fxNoon, greet_afternoon: fxAfternoon, greet_evening: fxEvening, greet_night: fxNight,
   fest_halloween: fxHalloween, fest_christmas: fxChristmas, fest_newyear: fxNewYear, fest_spring: fxSpring, fest_lantern: fxLantern,
   fest_dragonboat: fxDragonBoat, fest_midautumn: fxMidAutumn,
 }
 Object.assign(AURA, {
   greet_morning: ['#ffe2a8', 0.5], greet_noon: ['#fff0a8', 0.5], greet_afternoon: ['#ffd2b8', 0.45], greet_evening: ['#ffc98a', 0.5],
-  greet_night: ['#9fb0e8', 0.45], greet_dawn: ['#c9bff0', 0.45],
+  greet_night: ['#9fb0e8', 0.45],
   fest_halloween: ['#ffb36b', 0.5], fest_christmas: ['#cfe6ff', 0.5], fest_newyear: ['#ffe08a', 0.6], fest_spring: ['#ff9b8a', 0.55],
   fest_lantern: ['#ffcf8a', 0.55], fest_dragonboat: ['#a8e0b8', 0.5], fest_midautumn: ['#ffe7a3', 0.55],
 })

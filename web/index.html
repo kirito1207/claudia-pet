@@ -247,7 +247,7 @@ const MOTION = {
   // 被扔出去碰边（tumble.js）
   bonk: 'm-bonk', stagger: 'm-stagger', fallen: 'm-fallen', faceplant: 'm-faceplant',
   // 按时段 / 节日打招呼
-  greet_morning: 'm-hop', greet_noon: 'm-bob', greet_afternoon: 'm-sway', greet_evening: 'm-sway', greet_night: 'm-slow', greet_dawn: 'm-slow',
+  greet_morning: 'm-hop', greet_noon: 'm-bob', greet_afternoon: 'm-sway', greet_evening: 'm-sway', greet_night: 'm-slow',
   fest_halloween: 'm-gift', fest_christmas: 'm-gift', fest_newyear: 'm-jump', fest_spring: 'm-gift', fest_lantern: 'm-gift',
   fest_dragonboat: 'm-gift', fest_midautumn: 'm-gift',
 }
@@ -960,6 +960,7 @@ const pad2 = n => String(n).padStart(2, '0')
 const ymd = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
 function timeSlot(d) {
   const h = d.getHours()
+  // 凌晨 2–5 点（dawn）2026-11-10 起不打招呼：没有 greet_dawn，timeGreet 自然跳过
   return h >= 23 || h < 2 ? 'night' : h < 5 ? 'dawn' : h < 11 ? 'morning' : h < 14 ? 'noon' : h < 18 ? 'afternoon' : 'evening'
 }
 function festivalOf(d) {

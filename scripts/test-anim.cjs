@@ -39,7 +39,7 @@ function manifest() {
   assert.ok(m.characters.claude.poses.idle && m.characters.claude.blink, '待机图和眨眼帧要留着')
   for (const p of replaced.filter(p => p !== 'idle')) assert.ok(!m.characters.claude.poses[p], `${p} 的旧静态立绘应已移出`)
   // 帧数不满 120 的两张，配置里要把结束帧写对
-  assert.equal(m.characters.claude.animations.qingtuan.to, 93); assert.equal(m.characters.claude.animations.tanghulu.to, 118)
+  assert.equal(m.characters.claude.animations.qingtuan.to, 93); assert.equal(m.characters.claude.animations.fest_newyear.to, 118)   // 元旦里有吃糖葫芦（2026-11-10 起）
 
   const browser = await chromium.launch({ channel: 'msedge', headless: true })
   try {
@@ -208,7 +208,7 @@ function manifest() {
     await page.evaluate(() => { setPowerSave(true); pose = null; setPose('idle', true) }); await page.waitForTimeout(300)
     assert.equal((await state()).on, false)
     await page.evaluate(() => setPose('writing', true)); await waitSheet()
-    assert.ok(['写代码.webp', '轻快记录.webp'].includes((await state()).url))
+    assert.equal((await state()).url, '写代码.webp')   // 2026-11-10 写东西只用写代码，轻快记录给了听你说
     await page.evaluate(() => setPowerSave(false))
 
     // 系统要求减少动画：全部静态
@@ -272,9 +272,9 @@ function manifest() {
     assert.deepEqual((await pool(['magic'])).sort(), ['animals', 'bookspirit', 'butterflies', 'dove', 'flower'])
     const groupOf = g => Object.entries(JSON.parse(fs.readFileSync(path.join(root, 'characters/claude/character.json'), 'utf8')).animations).filter(([, a]) => a.idle === g).map(([p]) => p)
     assert.deepEqual((await pool(['hum', 'fidget'])).sort(), ['hum', ...groupOf('fidget')].sort())
-    for (const p of ['look', 'tap', 'cube', 'bubbles', 'nails', 'pen_spin', 'toothbrush']) assert.ok(groupOf('fidget').includes(p), `fidget group lacks ${p}`)
+    for (const p of ['look', 'tap', 'cube', 'bubbles', 'nails', 'pen_spin', 'eye_rub']) assert.ok(groupOf('fidget').includes(p), `fidget group lacks ${p}`)
     // 2026-11-07 新加的手工组：开了才有，关了没有
-    assert.deepEqual((await pool(['craft'])).sort(), groupOf('craft').sort()); assert.ok(groupOf('craft').length >= 12)
+    assert.deepEqual((await pool(['craft'])).sort(), groupOf('craft').sort()); assert.ok(groupOf('craft').length >= 5)   // 2026-11-09 手工从 12 个减到 5 个
     assert.ok(!(await pool(['play'])).some(p => groupOf('craft').includes(p)))
     // 拆礼物没有专门的触发时机，放在玩耍组里随机
     assert.ok((await pool(['play'])).includes('update'))
@@ -288,24 +288,28 @@ function manifest() {
     // 时令：按月份、时段、公历和农历日期筛选（农历用浏览器自带的日历）
     const at = s => page.evaluate(s => { setBehavior({ idleEnabled: false }); idleSettings.actions = ['food', 'season', 'play']; clearTimeout(idleTimer); return idleAnimations(new Date(s)) }, s)
     let list = await at('2026-08-19T12:30:00')   // 农历七月初七、夏天、中午
-    for (const p of ['qixi', 'lunch', 'rice', 'watermelon', 'fan', 'watergun']) assert.ok(list.includes(p), `${p} missing on 2026-08-19 noon`)
-    for (const p of ['dinner', 'snowman', 'hotpot', 'zhongyuan', 'chongyang', 'laba']) assert.ok(!list.includes(p), `${p} should not be on 2026-08-19 noon`)
+    for (const p of ['qixi', 'rice', 'watermelon', 'fan', 'watergun']) assert.ok(list.includes(p), `${p} missing on 2026-08-19 noon`)
+    for (const p of ['dinner', 'snow_step', 'hotpot', 'zhongyuan', 'chongyang', 'laba']) assert.ok(!list.includes(p), `${p} should not be on 2026-08-19 noon`)
     list = await at('2026-10-18T18:00:00')   // 农历九月初九、秋天、傍晚
-    for (const p of ['chongyang', 'chongyanggao', 'dinner', 'leaves', 'crab']) assert.ok(list.includes(p), `${p} missing on 2026-10-18 evening`)
+    for (const p of ['chongyang', 'chongyanggao', 'rice', 'leaves', 'crab']) assert.ok(list.includes(p), `${p} missing on 2026-10-18 evening`)
     list = await at('2027-01-15T09:00:00')   // 农历腊月初八、冬天、上午
-    for (const p of ['laba', 'snowman', 'tanghulu', 'niangao']) assert.ok(list.includes(p), `${p} missing on 2027-01-15`)
-    assert.ok(!list.includes('lunch') && !list.includes('hotpot'))
+    // 堆雪人、糖葫芦、年糕 2026-11-10 起归元旦，不在随机里
+    for (const p of ['laba', 'snow_step', 'hand_warmer', 'sweet_potato']) assert.ok(list.includes(p), `${p} missing on 2027-01-15`)
+    assert.ok(!list.includes('rice') && !list.includes('hotpot'))
     list = await at('2026-04-05T15:00:00'); assert.ok(list.includes('qingtuan') && list.includes('kite'))
     // 2026-11-07 新加的时令 / 吃喝：夏天有刨冰、听蝉、汽水，冬天有踏雪、烤红薯、暖手炉
     list = await at('2026-08-19T12:30:00')
     for (const p of ['shaved_ice', 'cicada', 'soda', 'corn', 'sunshade', 'pudding']) assert.ok(list.includes(p), `${p} missing in August`)
-    for (const p of ['snow_step', 'sweet_potato', 'cocoa', 'hand_warmer', 'snowflake']) assert.ok(!list.includes(p), `${p} should not be in August`)
+    for (const p of ['snow_step', 'sweet_potato', 'hand_warmer', 'snowflake']) assert.ok(!list.includes(p), `${p} should not be in August`)
     list = await at('2027-01-15T09:00:00')
-    for (const p of ['snow_step', 'sweet_potato', 'cocoa', 'hand_warmer', 'warm_breath', 'snowflake']) assert.ok(list.includes(p), `${p} missing in January`)
+    for (const p of ['snow_step', 'sweet_potato', 'hand_warmer', 'warm_breath', 'snowflake']) assert.ok(list.includes(p), `${p} missing in January`)
     for (const p of ['cicada', 'shaved_ice', 'soda']) assert.ok(!list.includes(p), `${p} should not be in January`)
-    // 刷牙只在早上 6–10 点
-    const brush = s => page.evaluate(s => { setBehavior({ idleEnabled: false }); idleSettings.actions = ['fidget']; clearTimeout(idleTimer); return idleAnimations(new Date(s)).includes('toothbrush') }, s)
-    assert.equal(await brush('2026-11-07T08:00:00'), true); assert.equal(await brush('2026-11-07T15:00:00'), false)
+    // 2026-11-10 起这些归问候：早上好=刷牙、中午好=午餐、下午好=咖啡/可可、晚上好=晚餐、晚安=拍枕头，随便什么时候都不在随机里；凌晨不再打招呼
+    const anyTime = await page.evaluate(() => { setBehavior({ idleEnabled: false }); idleSettings.actions = ['fidget', 'food']; clearTimeout(idleTimer)
+      return ['2026-11-07T08:00:00', '2026-11-07T12:00:00', '2026-11-07T15:00:00', '2026-11-07T18:00:00', '2027-01-15T15:00:00', '2026-11-07T23:30:00'].flatMap(s => idleAnimations(new Date(s))) })
+    for (const p of ['lunch', 'dinner', 'toothbrush', 'coffee', 'cocoa', 'pillow']) assert.ok(!anyTime.includes(p), `${p} should be a greeting now, not idle`)
+    const greet = await page.evaluate(() => Object.fromEntries(['greet_morning', 'greet_noon', 'greet_afternoon', 'greet_evening', 'greet_night', 'greet_dawn'].map(p => [p, anim(p)?.sheets || null])))
+    assert.deepEqual(greet, { greet_morning: ['晨间刷牙'], greet_noon: ['吃午餐'], greet_afternoon: ['闻咖啡豆', '冲可可'], greet_evening: ['吃晚餐'], greet_night: ['拍枕头'], greet_dawn: null })
     // 抽签：先抽组再抽组里的，组多了也不会把哼歌挤掉
     const picks = await page.evaluate(() => { setBehavior({ idleEnabled: true, idleFrequency: 'lively' }); idleSettings.actions = ['hum', 'talent', 'play']; clearTimeout(idleTimer)
       const seen = {}; for (let i = 0; i < 300; i++) { setPose('idle', true); clearTimeout(revertTimer); lastActive = Date.now(); idleTick(); seen[pose] = (seen[pose] || 0) + 1 }
