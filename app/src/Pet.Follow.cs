@@ -91,6 +91,31 @@ namespace Claudia
                 }
             }
 
+            WatchClaudeMoves();
+            FollowPlace();
+        }
+
+        // Claude 窗口被拖动、改大小时，系统每挪一下就发一次「位置变了」。原来只靠每 0.1 秒查一次，
+        // 她是一格一格跳着跟的（2026-11-10 用户说窗口跟随「一卡一卡」）。现在一收到通知就摆。
+        // 只挂在 Claude 主窗口所在的进程上：挂全系统的话连鼠标移动都会报。0.1 秒一次的检查照旧，兜住漏掉的情况
+        IntPtr moveHook;
+        uint moveHookPid;
+        void WatchClaudeMoves()
+        {
+            uint pid = 0;
+            if (claudeHwnd != IntPtr.Zero) Native.GetWindowThreadProcessId(claudeHwnd, out pid);
+            if (pid == moveHookPid) return;
+            if (moveHook != IntPtr.Zero) { FollowNative.Unhook(moveHook); moveHook = IntPtr.Zero; }
+            moveHookPid = pid;
+            if (pid == 0) return;
+            moveHook = FollowNative.OnLocation(pid, h => { if (h == claudeHwnd) FollowPlace(); });
+            if (moveHook == IntPtr.Zero) Store.Log("没能挂上 Claude 窗口的移动通知，仍按 0.1 秒一次跟随");
+        }
+
+        /// <summary>按 Claude 窗口现在的位置把她摆好：定时检查和 Claude 窗口挪动时都走这里</summary>
+        void FollowPlace()
+        {
+            if (hwnd == IntPtr.Zero) return;
             Native.GetWindowRect(hwnd, out var pr);
             int w = pr.Right - pr.Left, h = pr.Bottom - pr.Top;
             if (!ClaudeRect(out var c))
@@ -177,6 +202,19 @@ namespace Claudia
                 foregroundProc = (_, __, ___, ____, _____, ______, _______) => { try { a(); } catch (Exception e) { Store.Log("前台切换处理出错: " + e.Message); } };
                 return SetWinEventHook(0x0003, 0x0003, IntPtr.Zero, foregroundProc, 0, 0, 0x0000 | 0x0002);
             }
+            static WinEventProc locationProc;     // 同上，留着引用；同一时间只挂一个
+            /// <summary>进程 pid 里有窗口挪动 / 改大小就调 a（EVENT_OBJECT_LOCATIONCHANGE，只要窗口本身的：光标、滚动条这些子对象不算）</summary>
+            public static IntPtr OnLocation(uint pid, Action<IntPtr> a)
+            {
+                locationProc = (_, __, h, obj, child, ______, _______) =>
+                {
+                    if (obj != 0 || child != 0) return;   // OBJID_WINDOW、CHILDID_SELF
+                    try { a(h); } catch (Exception e) { Store.Log("跟随 Claude 窗口移动出错: " + e.Message); }
+                };
+                return SetWinEventHook(0x800B, 0x800B, IntPtr.Zero, locationProc, pid, 0, 0x0000 | 0x0002);
+            }
+            [DllImport("user32.dll")] static extern bool UnhookWinEvent(IntPtr hook);
+            public static void Unhook(IntPtr hook) { try { UnhookWinEvent(hook); } catch { } }
             [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd);
             [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder s, int n);
             [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowTextLength(IntPtr h);
