@@ -261,8 +261,8 @@ function renderPets(list, max) {
     row.querySelector('[data-p=rename]').onclick = rename
     input.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); rename() } }
     for (const b of row.querySelector('.seg').children) {
-      // Linux 版还不能跟着 Claude 窗口（外壳报 claudeWindow: false）：这个选项先置灰，她都待在桌面上
-      if (b.dataset.v === 'claude' && state?.claudeWindow === false) { b.disabled = true; b.title = 'Linux 版暂时只能待在桌面上，跟着 Claude 窗口还在做' }
+      // Linux、macOS 版还不能跟着 Claude 窗口（外壳报 claudeWindow: false）：这个选项先置灰，她都待在桌面上
+      if (b.dataset.v === 'claude' && state?.claudeWindow === false) { b.disabled = true; b.title = `${state.platform === 'macos' ? 'macOS' : 'Linux'} 版暂时只能待在桌面上，跟着 Claude 窗口还在做` }
       b.classList.toggle('on', b.dataset.v === p.mode || state?.claudeWindow === false && b.dataset.v === 'desktop')
       b.onclick = () => { if (b.dataset.v !== p.mode) { send('mode', b.dataset.v); toast(b.dataset.v === 'desktop' ? '挪到桌面上' : '挪回 Claude 窗口里') } }
     }

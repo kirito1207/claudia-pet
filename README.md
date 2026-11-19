@@ -2,7 +2,7 @@
 
 <img src="icon/AppIcon.png" width="144" alt="claudia 抱着 Clawd 的图标">
 
-claudia-pet 是一个 Windows 上的 Claude 桌宠（也有 Linux 版，见 [linux/README.md](linux/README.md)）。桌宠的名字叫 claudia，她待在 Claude 桌面端的窗口里（也可以放到桌面上），跟着 Claude Code 的工作状态做动作，陪你聊天、写代码。
+claudia-pet 是一个 Windows 上的 Claude 桌宠（也有 Linux 版和 macOS 版，见 [linux/README.md](linux/README.md)、[macos/README.md](macos/README.md)）。桌宠的名字叫 claudia，她待在 Claude 桌面端的窗口里（也可以放到桌面上），跟着 Claude Code 的工作状态做动作，陪你聊天、写代码。
 
 本项目基于 [CrossPet](https://github.com/lokicorvus/crosspet)（lokicorvus）修改而来，并参考了 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet)（PC2005-cloud）。代码、立绘、图标各自的来源和授权写在本文末尾的「来源与授权」和 [NOTICE.md](NOTICE.md) 里。这是非官方同人项目，与 Anthropic 无关。
 
@@ -180,7 +180,7 @@ Claude Code 插件只往本机的 `%USERPROFILE%\.claudia\state` 写几个小文
 
 ## 已知限制
 
-- 只认 Claude 桌面端。Linux 版另见 [linux/README.md](linux/README.md)，还不能待在 Claude 窗口里。
+- 只认 Claude 桌面端。Linux 版、macOS 版另见 [linux/README.md](linux/README.md)、[macos/README.md](macos/README.md)，都还不能待在 Claude 窗口里。
 - 目前只在 Windows 11、单显示器、100% 缩放下完整用过；多显示器（包括桌面模式下把她拖到另一块屏幕）、其他缩放比例和 Windows 10 还没有完整验证。
 - 真实 Code 会话里的 Windows 通知还没有完整验收。
 

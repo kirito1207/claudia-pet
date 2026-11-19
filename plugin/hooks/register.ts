@@ -8,7 +8,7 @@ import type { EngineInterface, Register } from 'claude-code'
 // 会话开始、你发消息时顺便看一眼桌宠在不在，不在就叫她出来（交给 claudia-pet.exe --ensure，见 app/src/Ensure.cs）。
 // 只写本机的状态文件，不改 Claude 的行为，出错也不影响会话。改自 CrossPet 的 Claude Code mod（MIT）。
 
-// Windows 有 USERPROFILE、用反斜杠；Linux 版（linux/）用 HOME 和斜杠。两边的桌宠读的都是 ~/.claudia/state
+// Windows 有 USERPROFILE、用反斜杠；Linux 版（linux/）、macOS 版（macos/）用 HOME 和斜杠。几版的桌宠读的都是 ~/.claudia/state
 let dir: string | undefined
 let sep = '\\'
 async function stateDir($: EngineInterface): Promise<string | undefined> {
@@ -62,7 +62,7 @@ async function notify($: EngineInterface, kind: 'complete' | 'error' | 'waiting'
   } catch {} // Notification failure must never affect a Claude session.
 }
 
-// 叫她出来：claudia-pet.exe（Linux 是 ~/.local/bin/claudia-pet）--ensure 自己判断（已经在跑、你刚从菜单退出过就不开），并用独立进程打开，不会跟着这个会话一起被关掉。
+// 叫她出来：claudia-pet.exe（Linux、macOS 是 ~/.local/bin/claudia-pet）--ensure 自己判断（已经在跑、你刚从菜单退出过就不开），并用独立进程打开，不会跟着这个会话一起被关掉。
 // 一分钟内最多看一次；不等它跑完，失败也不影响 Claude
 let lastEnsure = 0
 async function ensurePet($: EngineInterface): Promise<void> {

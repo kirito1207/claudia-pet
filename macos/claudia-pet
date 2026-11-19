@@ -1,0 +1,15 @@
+#!/bin/sh
+# claudia-pet macOS 版启动脚本：装好后 ~/.local/bin/claudia-pet 和 ~/Applications/claudia-pet.app 都指向这里。
+# 用安装时建好的 venv（里面装了 PyObjC）；直接从仓库运行时没有 venv，就用 $CLAUDIA_PYTHON 或 python3。
+SELF=$0
+while [ -L "$SELF" ]; do   # 跟着软链接找到真正的位置（老版本 macOS 的 readlink 没有 -f）
+  L=$(readlink "$SELF")
+  case "$L" in
+    /*) SELF=$L ;;
+    *) SELF=$(dirname "$SELF")/$L ;;
+  esac
+done
+HERE=$(cd "$(dirname "$SELF")" && pwd -P)
+PY="$HERE/../venv/bin/python3"
+[ -x "$PY" ] || PY=${CLAUDIA_PYTHON:-python3}
+exec "$PY" -I "$HERE/claudia/main.py" "$@"
