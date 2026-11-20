@@ -151,18 +151,41 @@ namespace Claudia
             standalone = on; runCheckedAt = DateTime.MinValue;
         }
 
-        /// <summary>只在内置素材有变化时更新。用户另外添加的角色目录不参与同步。</summary>
+        /// <summary>程序自带的角色（安装目录\characters）。直接从这里读，不再往数据目录拷一份：
+        /// 原来每次启动把它镜像到数据目录，立绘（约 283 MB）在磁盘上存两份（2026-11-20）。
+        /// 数据目录\characters 现在只放用户另外添加的角色；和自带角色重名的以自带的为准。</summary>
+        public static string BuiltinCharacters => Path.Combine(Install, "characters");
+        static bool IsBuiltin(string id) => !string.IsNullOrEmpty(id) && id.IndexOfAny(new[] { '/', '\\', ':' }) < 0 && id != "." && id != ".."
+            && Directory.Exists(Path.Combine(BuiltinCharacters, id));
+        /// <summary>这个角色的文件夹：自带的在安装目录，另外添加的在数据目录</summary>
+        public static string CharacterDir(string id) => Path.Combine(IsBuiltin(id) ? BuiltinCharacters : Characters, id ?? "");
+        /// <summary>立绘地址 /characters/&lt;角色&gt;/… 该到哪个 characters 目录下找（路径本身的校验在 SpritePath.TryResolve）</summary>
+        public static string CharactersRootFor(string absolutePath)
+        {
+            var parts = (absolutePath ?? "").Split('/');
+            string id = null;
+            try { if (parts.Length > 2) id = Uri.UnescapeDataString(parts[2]); } catch { }
+            return IsBuiltin(id) ? BuiltinCharacters : Characters;
+        }
+
+        /// <summary>自带角色不再拷进数据目录；以前版本留在那里的镜像，和自带的一模一样就删掉，不一样（被改过）的留着不动。
+        /// 用户另外添加的角色目录不碰。</summary>
         public static void SyncResources()
         {
             Directory.CreateDirectory(Characters);
             Directory.CreateDirectory(State);
-            var src = Path.Combine(Install, "characters");
+            var src = BuiltinCharacters;
             if (string.Equals(Path.GetFullPath(src), Path.GetFullPath(Characters), StringComparison.OrdinalIgnoreCase)) return;
             foreach (var dir in Directory.GetDirectories(src))
             {
-                var dst = Path.Combine(Characters, Path.GetFileName(dir));
-                try { SyncCharacter(dir, dst); }
-                catch (Exception e) { Log("同步角色失败 " + dir + ": " + e.Message); }
+                var old = Path.Combine(Characters, Path.GetFileName(dir));
+                try
+                {
+                    if (!Directory.Exists(old)) continue;
+                    if (SameResources(dir, old)) { Directory.Delete(old, true); Log("自带角色改为直接从安装目录读，删掉数据目录里的镜像：" + old); }
+                    else Log("数据目录里的 " + old + " 和自带角色不一样，留着没删；显示用的是安装目录里的那份");
+                }
+                catch (Exception e) { Log("清理角色镜像失败 " + old + ": " + e.Message); }
             }
             // 下面这些复制失败（文件被别的程序占着）只记一笔：旧的那份还能用，不能因为一个说明文件把桌宠拦在启动前
             // （更新失败回退后重开旧版本，characters\LICENSE.md 还被占着，整个启动就失败了）
@@ -173,35 +196,6 @@ namespace Claudia
                     if (!SameFile(md, dst)) File.Copy(md, dst, true);
                 }
                 catch (Exception e) { Log("同步说明文件失败 " + md + ": " + e.Message); }
-        }
-
-        static void SyncCharacter(string src, string dst)
-        {
-            // Put scratch data outside Characters so it never appears as another character.
-            var work = Path.Combine(Data, "builtin-resource-sync", Path.GetFileName(dst));
-            var staged = Path.Combine(work, "next");
-            var previous = Path.Combine(work, "previous");
-            if (Directory.Exists(previous))
-            {
-                if (!Directory.Exists(dst)) Directory.Move(previous, dst);
-                else Directory.Delete(previous, true);
-            }
-            if (Directory.Exists(staged)) Directory.Delete(staged, true);
-            if (Directory.Exists(dst) && SameResources(src, dst)) return;
-
-            try
-            {
-                CopyDir(src, staged);
-                if (Directory.Exists(dst)) Directory.Move(dst, previous);
-                try { Directory.Move(staged, dst); }
-                catch
-                {
-                    if (Directory.Exists(previous)) Directory.Move(previous, dst);
-                    throw;
-                }
-                if (Directory.Exists(previous)) Directory.Delete(previous, true);
-            }
-            finally { if (Directory.Exists(staged)) Directory.Delete(staged, true); }
         }
 
         static bool SameFile(string src, string dst)
@@ -225,13 +219,6 @@ namespace Claudia
                 var copy = Path.Combine(dst, Path.GetFileName(dir));
                 return Directory.Exists(copy) && SameResources(dir, copy);
             });
-        }
-
-        static void CopyDir(string from, string to)
-        {
-            Directory.CreateDirectory(to);
-            foreach (var f in Directory.GetFiles(from)) File.Copy(f, Path.Combine(to, Path.GetFileName(f)), true);
-            foreach (var d in ResourceDirs(from)) CopyDir(d, Path.Combine(to, Path.GetFileName(d)));
         }
 
         /// <summary>扫描 characters/&lt;id&gt;/：character.json + 立绘</summary>
@@ -278,7 +265,10 @@ namespace Claudia
         public static Dictionary<string, object> Manifest()
         {
             var chars = new Dictionary<string, object>();
-            var dirs = Directory.GetDirectories(Characters).OrderBy(d => d, StringComparer.Ordinal).ToList();
+            // 自带的（安装目录）加上用户另外添加的（数据目录）；重名的以自带的为准
+            var builtin = Directory.Exists(BuiltinCharacters) ? Directory.GetDirectories(BuiltinCharacters) : new string[0];
+            var dirs = builtin.Concat(Directory.GetDirectories(Characters).Where(d => !IsBuiltin(Path.GetFileName(d))))
+                .OrderBy(d => Path.GetFileName(d), StringComparer.Ordinal).ToList();
             foreach (var dir in dirs)
             {
                 var info = ReadJson(Path.Combine(dir, "character.json"));

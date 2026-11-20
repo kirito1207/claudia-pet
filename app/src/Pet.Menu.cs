@@ -107,7 +107,7 @@ namespace Claudia
         Forms.ToolStripMenuItem BuildActionMenu(Func<string, Action, bool?, Forms.ToolStripMenuItem> item)
         {
             if (string.IsNullOrEmpty(current)) return null;
-            var dir = Path.Combine(Store.Characters, current);
+            var dir = Store.CharacterDir(current);
             if (!Directory.Exists(dir)) return null;
             var have = new HashSet<string>(StringComparer.Ordinal);
             foreach (var f in Directory.GetFiles(dir))

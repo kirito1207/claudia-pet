@@ -24,7 +24,7 @@ namespace Claudia
                 try
                 {
                     if (e.Request.Method != "GET" && e.Request.Method != "HEAD") { e.Response = Reply(core, 405, "Method Not Allowed"); return; }
-                    if (!SpritePath.TryResolve(Store.Characters, uri.AbsolutePath, out var file, out var mime)) { e.Response = Reply(core, 403, "Forbidden"); return; }
+                    if (!SpritePath.TryResolve(Store.CharactersRootFor(uri.AbsolutePath), uri.AbsolutePath, out var file, out var mime)) { e.Response = Reply(core, 403, "Forbidden"); return; }
                     if (!File.Exists(file)) { e.Response = Reply(core, 404, "Not Found"); return; }
                     // 整个文件读进内存再交出去：WebView2 在这个回调结束后才异步读流，不能交一个马上要关掉的文件流
                     var bytes = await Task.Run(() => File.ReadAllBytes(file));

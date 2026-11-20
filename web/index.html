@@ -586,7 +586,7 @@ function scheduleHitRects() {
       window.chrome.webview.postMessage({ hitRects: rects })
     }
     // CSS 变形和 Q 弹不改变布局尺寸，沿用原来的采样间隔，但只在动画期间由网页自己量。
-    if (hitTransformElements.some(el => el.getAnimations().some(a => a.pending || a.playState === 'running')))
+    if (hitTransformElements.some(el => el.getAnimations().some(a => a.pending || a.playState === 'running' || a._bodyT !== undefined)))   // 限帧的循环动画是停着拨时间的，也算在动
       hitAnimationTimer = setTimeout(scheduleHitRects, 250)
   })
 }
@@ -926,7 +926,7 @@ let fxRaf = 0, fxLast = 0
 function fxLoop(t) {
   fxRaf = 0
   if (fxFps <= 0) return
-  if (t - fxLast >= 1000 / fxFps - 4) { fxLast = t; fxTick() }
+  if (t - fxLast >= 1000 / fxFps - 4) { fxLast = t; fxTick(); if (fxFps >= 30) bodyTick() }
   fxRaf = requestAnimationFrame(fxLoop)
 }
 const fxObserver = new MutationObserver(() => {
@@ -940,6 +940,36 @@ function noteRest(p) {
   if (fxResting) { fxResting = false; applyFxRate() }
   if (RESTING.has(p)) restTimer = setTimeout(() => { if (RESTING.has(pose)) { fxResting = true; applyFxRate() } }, 30000)
 }
+// ---- 身体晃动限帧 ----
+// 身体的浮动、摇晃是一直循环的 CSS 动画，跟着屏幕刷新率出帧：60 Hz 屏上每秒 60 帧，高刷屏上是几百帧，
+// 每一帧外壳都要拷进透明窗口。实测 319 Hz 屏、静态立绘加 m-quick：外壳常驻约 20% 单核，渲染和显卡进程
+// 每分钟还有一阵各冲到 100% 以上；停掉这类动画后外壳约 1.5%（2026-11-20）。
+// 做法和上面的 SVG 特效一样：停住动画自己的时钟，按固定帧数拨时间，动作本身不变。
+// 只管无限循环的；一次性的（撞头、弹一下、卡片抖）很短，照旧按屏幕刷新率走。
+// 特效在按 30 帧以上出帧时（fxLoop），晃动跟它同一拍出，两边合起来不超过特效的帧数；特效歇着时自己按 BODY_FPS 走。
+const BODY_FPS = 60
+let bodyClock = null, bodyRaf = 0
+function bodyTick(now = performance.now()) {
+  for (const a of document.getAnimations()) {
+    const target = a.effect?.target
+    if (!(a instanceof CSSAnimation) || !target || a.effect.getComputedTiming().iterations !== Infinity) continue
+    // 样式里叫停的（点击时、窗口藏起来时）照样停着，放开后从停下的地方接着走
+    const held = getComputedStyle(target).animationPlayState.split(', ').every(v => v === 'paused')
+    if (a._bodyT === undefined || held) {
+      if (a.playState !== 'paused') a.pause()
+      a._bodyT = Number(a.currentTime) || 0; a._bodyS = now
+    } else a.currentTime = a._bodyT + (now - a._bodyS)
+  }
+}
+// 先等到下一帧的时间差不多了，再跟着屏幕刷新出这一帧：节拍均匀，也不用每次刷新都醒一次
+function bodyLoop() {
+  bodyRaf = 0
+  if (pageHidden) return
+  if (!(fxFps >= 30 && fxRaf)) bodyTick()
+  bodyClock = setTimeout(() => { bodyClock = null; updateBodyClock() }, 1000 / BODY_FPS - 8)
+}
+function updateBodyClock() { if (!pageHidden && bodyClock === null && !bodyRaf) bodyRaf = requestAnimationFrame(bodyLoop) }
+updateBodyClock()
 // ---- 光晕呼吸：3 秒一次，放大到 1.04 再缩回（两段都是 ease-in-out，和原来的 CSS 动画一样）----
 // 原来用 CSS 动画一直在动，网页每秒出 60 帧，外壳要把每一帧拷进透明窗口（WebView2CompositionControl）：
 // 实测待机时外壳约 15%、显卡进程 13–24% 单核几乎全花在这（2026-11-06）。改成脚本每秒设 12 次：
@@ -977,6 +1007,7 @@ function setPageHidden(h) {
   applyFxRate()
   if (wasHidden && !pageHidden) { upgradeScaledSheet(); sheetDraw() }
   updateAnimationTimers()
+  updateBodyClock()
   scheduleHitRects()
 }
 applyFxRate()

@@ -28,7 +28,7 @@ namespace Claudia
                 ["character"] = current,
                 ["characters"] = Characters().Select(c =>
                 {
-                    var info = Store.ReadJson(Path.Combine(Store.Characters, c.id, "character.json"));
+                    var info = Store.ReadJson(Path.Combine(Store.CharacterDir(c.id), "character.json"));
                     var d = new Dictionary<string, object>
                     {
                         ["id"] = c.id, ["name"] = c.name,

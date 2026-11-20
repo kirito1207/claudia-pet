@@ -114,16 +114,19 @@ const BIG_JOB_TOOLS = 8   // 一轮里用了这么多次工具，完成时「得
 
 export const register: Register = on => {
   let tools = 0
+  let sawQuota = false   // 这次会话有没有拿到过认得的额度
   const now = () => Date.now() / 1000
 
   on('session.start', async ($, e, next) => {
     void ensurePet($).catch(() => {})
     await setState($, { pose: 'idle', event: 'SessionStart', tool: '', ts: now() })
-    // 这次会话 Claude Code 一个认得的额度都没报（换成别的模型 / 别家接口时就是这样）：写一份空额度把旧数字清掉，
-    // 不然桌宠会一直挂着上次官方账号的数（2026-11-15）。只有 usage() 真的拿到了结果才清，读不到（抛错）就不动
+    // 会话刚开始、还没收到过模型回复时，官方账号这里也是一个额度都没有（额度随回复一起推来）：
+    // 原来这时就写空额度，每次新开 / 恢复会话桌宠上的额度都要空到第一次回复（2026-11-20）。
+    // 现在这里只在拿到数时写；要不要清掉旧数字，等第一轮回复完了再看（见 turn.complete）
+    sawQuota = false
     try {
       const q = quotaOf((await $.session.usage()).rateLimits ?? [])
-      await write($, 'claude-quota.json', q ?? NO_QUOTA)
+      if (q) { sawQuota = true; await write($, 'claude-quota.json', q) }
     } catch {}
     return next(e)
   })
@@ -152,6 +155,15 @@ export const register: Register = on => {
     await setState($, { pose, event: 'Stop', tool: '', ts: now() })
     if (e.reason === 'answer') await notify($, 'complete')
     else if (e.reason !== 'aborted') await notify($, 'error')
+    // 一轮回复都完了，Claude Code 还是一个认得的额度都没报（换成别的模型 / 别家接口时就是这样）：写一份空额度把旧数字清掉，
+    // 不然桌宠会一直挂着上次官方账号的数（2026-11-15）。只有 usage() 真的拿到了结果才清，读不到（抛错）就不动
+    if (e.reason === 'answer' && !sawQuota) {
+      try {
+        const q = quotaOf((await $.session.usage()).rateLimits ?? [])
+        if (q) sawQuota = true
+        await write($, 'claude-quota.json', q ?? NO_QUOTA)
+      } catch {}
+    }
     return r
   })
 
@@ -179,7 +191,7 @@ export const register: Register = on => {
   on('session.measure', async ($, e, next) => {
     try {
       const q = quotaOf(e.rateLimits.map(l => ({ kind: l.kind, percentUsed: l.percentUsed, resetsAt: l.resetsAt })))
-      if (q) await write($, 'claude-quota.json', q)
+      if (q) { sawQuota = true; await write($, 'claude-quota.json', q) }
     } catch {}
     return next(e)
   })
