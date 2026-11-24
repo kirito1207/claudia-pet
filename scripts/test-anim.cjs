@@ -247,6 +247,14 @@ function manifest() {
     // 再见从挥手那段开始
     await page.evaluate(() => { pose = null; setPose('bye', true) }); await waitSheet()
     assert.ok((await state()).frame >= 40)
+    // 从菜单退出时正睡着 / 正在醒：不等收尾，马上挥手（原来演完收尾再换 bye 会被 farewellLine 挡掉，一下都不挥）
+    for (const waking of [false, true]) {
+      await page.evaluate(() => { clearTimeout(revertTimer); pose = null; setPose('sleeping', true) }); await waitSheet()
+      if (waking) { await page.evaluate(() => performClick('pat')); assert.ok(await page.evaluate(() => !!exiting), 'click on sleeping should start waking') }
+      const bye = await page.evaluate(() => { farewell(null, 600000); const r = { pose, exiting: !!exiting }; farewellLine = null; say(''); return r })
+      assert.deepEqual(bye, { pose: 'bye', exiting: false }, `farewell while ${waking ? 'waking' : 'asleep'}`)
+      await page.evaluate(() => { clearTimeout(revertTimer); $('body').className = ''; pose = null; setPose('idle', true) })
+    }
 
     // 睡觉：入睡后在 28～76 帧来回，不会醒过来
     await page.evaluate(() => { pose = null; setPose('sleeping', true) }); await waitSheet()

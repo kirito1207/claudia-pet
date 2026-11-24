@@ -671,6 +671,9 @@ function farewell(line, ms = 2000) {
   clickSequence.cancel()
   if (multi) { const m = multi; multi = null; clearInterval(m.flipTimer); clearTimeout(m.recheck); clearTimeout(m.chatter); clearTimeout(m.sayTimer); for (const c of m.cards.values()) c.el.remove(); $('more').classList.remove('on') }
   clearTimeout(thinkTimer); clearTimeout(stuckTimer)
+  // 道别不等收尾：睡着、举手、多会话（busy）这些带离场动作的姿态，原来会先演收尾、演完再换 bye，
+  // 可那时 farewellLine 已经设上、show 直接返回，外壳 2 秒后就退了——一下都没挥（2026-11-25 用户反馈退出有时不挥手）
+  cancelExit(); exitedFrom = pose
   show('bye', true)
   $('body').className = 'm-bob'   // 先挥着手轻轻晃，别一上来就走
   setTimeout(() => { $('body').className = 'm-leave' }, Math.max(0, ms - 1100))
