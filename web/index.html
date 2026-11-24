@@ -265,7 +265,8 @@ const POSE_FALLBACK = { pout: 'pat', compact: 'writing', sorry: 'listening', ask
   annoyed: 'surprised', puffed: 'surprised', redhot: 'surprised', sulk: 'surprised', dizzy: 'oops', coaxed: 'pat', forgiven: 'happy',
   bonk: 'surprised', stagger: 'dizzy', fallen: 'dizzy', faceplant: 'dizzy' }
 const TRANSIENT = { happy: 5000, proud: 6000, oops: 4000, surprised: 3000, pat: 4000, hum: 4000, stretch: 3200, yawn: 3000,
-  annoyed: 4500, puffed: 5000, dizzy: 3000, coaxed: 3500, forgiven: 5000 }
+  annoyed: 4500, puffed: 5000, dizzy: 3000, coaxed: 3500, forgiven: 5000,
+  sorry: 3000 }   // 道歉有了鞠躬动画（2026-11-25）：菜单点播时鞠一会儿就直起身挠头，不一直鞠着；工作中照旧由 thinkTimer 接「思考」
 for (const p of Object.keys(MOTION)) if (p.startsWith('greet_')) TRANSIENT[p] = 5500; else if (p.startsWith('fest_')) TRANSIENT[p] = 6500
 const DWELL = 2500              // 每个状态至少停留这么久，太快的切换合并成最后一个
 const BACK_TO_THINKING = 1500   // 工具做完后等这么久没有新工具，才回到「思考」

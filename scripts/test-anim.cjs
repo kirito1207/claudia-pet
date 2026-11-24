@@ -32,7 +32,7 @@ function manifest() {
   for (const [p, a] of Object.entries(m.characters.claude.animations))
     for (const n of a.sheets) assert.ok(m.characters.claude.sheets[n], `${p} 用的 ${n}.webp 不在 anim 里`)
   // 被动画替换的姿态（2026-11-18 起连待机也算）一律不留静态立绘
-  const replaced = ['idle', 'thinking', 'writing', 'running', 'compact', 'sleeping', 'happy', 'surprised', 'pat', 'bye', 'hum', 'stretch', 'yawn',
+  const replaced = ['idle', 'thinking', 'writing', 'running', 'compact', 'sleeping', 'happy', 'surprised', 'pat', 'bye', 'hum', 'stretch', 'yawn', 'sorry',
     'fest_spring', 'fest_lantern', 'fest_dragonboat', 'fest_midautumn', 'fest_halloween', 'fest_christmas']
   for (const p of replaced) assert.ok(m.characters.claude.animations[p], `${p} 要有动画`)
   // 2026-11-18 用户定：有动画的姿态，静态立绘全部移出项目（待机 idle.webp、眨眼帧也不留，程序看待机动画识别角色）
@@ -90,6 +90,14 @@ function manifest() {
       sheet.frame = 109; sheetStep(sheet); r.push(sheet.frame); sheetStep(sheet); r.push(sheet.frame)
       sheet.frame = 80; show('thinking', true); r.push(sheet.frame, sheet.to)
       return r }), [24, 0, '73,110', 110, 73, 80, 163], 'swamped must drop the books in, loop the sway 73-110 at 24 fps, and stop before the books fade so it can crossfade out')
+    // 道歉（2026-11-25 自制）：鞠躬后在 44-77 保持循环；离开时从当前帧接着播完直起身、挠头、站好（第 162 帧）
+    await page.evaluate(() => { setPose('idle', true); setPose('sorry', true) })
+    await page.waitForFunction(() => pose === 'sorry' && sheet?.img && sheet.to === 77)
+    assert.deepEqual(await page.evaluate(() => {
+      const r = [sheet.fps, sheet.frame, sheet.cycle.join()]
+      sheet.frame = 77; sheetStep(sheet); r.push(sheet.frame)
+      sheet.frame = 60; show('thinking', true); r.push(pose, sheet.frame, sheet.to)
+      cancelExit(); return r }), [24, 0, '44,77', 44, 'sorry', 60, 162], 'sorry must bow, hold the bow 44-77 at 24 fps, and on leaving play on through the head scratch to frame 162')
     await page.evaluate(() => setPose('delegating', true))
     await page.waitForFunction(() => pose === 'delegating' && sheet?.img && sheet.to === 129)
     assert.deepEqual(await page.evaluate(() => {
