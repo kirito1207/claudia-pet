@@ -62,7 +62,7 @@ namespace Claudia
             // 2026-11-10 重排：状态类（日常 / 工作 / 心情 / 互动 / 问候）→ 闲置随机（小动作 / Claude 梗 / 才艺 / 玩耍 / 手工 / 吃喝）→ 日历（节日按日期、四季按季节）→ 走路、余额。
             // 只是菜单里放哪；闲置随机按 character.json 的 idle 分组抽，和这里无关
             ("日常", new[] { "idle", "hum", "stretch", "yawn", "sleeping", "clawd" }),
-            ("工作", new[] { "listening", "thinking", "reading", "searching", "writing", "running", "delegating", "compact", "busy", "swamped_left", "swamped_right", "asking", "sorry" }),
+            ("工作", new[] { "listening", "thinking", "reading", "searching", "writing", "running", "delegating", "compact", "busy", "swamped", "asking", "sorry" }),
             ("心情", new[] { "happy", "proud", "surprised", "oops", "annoyed", "puffed", "redhot", "sulk", "coaxed", "forgiven" }),
             ("互动", new[] { "pat", "pout", "bye", "bonk", "stagger", "fallen", "faceplant", "dizzy" }),
             ("问候", new[] { "greet_morning", "greet_noon", "greet_afternoon", "greet_evening", "greet_night" }),
@@ -82,7 +82,7 @@ namespace Claudia
             ["idle"] = "待机", ["hum"] = "哼歌", ["stretch"] = "伸懒腰", ["yawn"] = "打哈欠", ["tired"] = "累了", ["sleeping"] = "睡觉", ["clawd"] = "抱 Clawd",
             ["listening"] = "听你说", ["thinking"] = "思考", ["reading"] = "看书", ["writing"] = "写东西", ["running"] = "敲命令", ["searching"] = "查资料",
             ["delegating"] = "派活", ["compact"] = "整理记忆", ["busy"] = "忙碌",
-            ["swamped_left"] = "忙不过来（左）", ["swamped_right"] = "忙不过来（右）", ["update"] = "拆礼物",
+            ["swamped"] = "忙不过来", ["update"] = "拆礼物",
             ["happy"] = "开心", ["proud"] = "得意", ["surprised"] = "吃惊", ["oops"] = "哎呀", ["sorry"] = "道歉", ["asking"] = "有事问你",
             ["annoyed"] = "不耐烦", ["puffed"] = "鼓脸", ["redhot"] = "红温", ["sulk"] = "赌气", ["coaxed"] = "被哄", ["forgiven"] = "原谅你了", ["dizzy"] = "晕乎乎",
             ["pat"] = "被摸头", ["pout"] = "傲娇", ["bye"] = "再见",
@@ -144,7 +144,7 @@ namespace Claudia
                 if (sub.DropDownItems.Count > 0) root.DropDownItems.Add(sub);
             }
             // busy_left / busy_right 只在关掉动画时给「忙碌」当后备（2026-11-24 忙碌换成一整段动画），不进菜单
-            var others = have.Where(p => !used.Contains(p) && p != "busy_left" && p != "busy_right").OrderBy(p => p, StringComparer.Ordinal).ToList();
+            var others = have.Where(p => !used.Contains(p) && p != "busy_left" && p != "busy_right" && p != "swamped_left" && p != "swamped_right").OrderBy(p => p, StringComparer.Ordinal).ToList();
             if (others.Count > 0)
             {
                 var sub = new Forms.ToolStripMenuItem("其他");

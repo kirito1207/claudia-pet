@@ -82,6 +82,14 @@ function manifest() {
     assert.deepEqual(await page.evaluate(() => { sheet.frame = 30; demoFocus()
       const r = [demo?.cards.length, demo?.cards.filter(c => c.el.classList.contains('focus')).map(c => c.side).join()]
       setPose('idle', true); r.push(demo); return r }), [2, 'left', null], 'busy from the menu must show two demo cards that light up with her gaze and go away afterwards')
+    await page.evaluate(() => { setPose('idle', true); setPose('swamped', true) })
+    await page.waitForFunction(() => pose === 'swamped' && sheet?.img && sheet.to === 110)
+    assert.equal(await page.evaluate(() => demo?.cards.length), 4, 'swamped from the menu must show four demo cards (three or more sessions)')
+    assert.deepEqual(await page.evaluate(() => {
+      const r = [sheet.fps, sheet.frame, sheet.cycle.join()]
+      sheet.frame = 109; sheetStep(sheet); r.push(sheet.frame); sheetStep(sheet); r.push(sheet.frame)
+      sheet.frame = 80; show('thinking', true); r.push(sheet.frame, sheet.to)
+      return r }), [24, 0, '73,110', 110, 73, 80, 163], 'swamped must drop the books in, loop the sway 73-110 at 24 fps, and stop before the books fade so it can crossfade out')
     await page.evaluate(() => setPose('delegating', true))
     await page.waitForFunction(() => pose === 'delegating' && sheet?.img && sheet.to === 129)
     assert.deepEqual(await page.evaluate(() => {

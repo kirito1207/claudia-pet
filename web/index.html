@@ -1221,7 +1221,7 @@ function startMulti() {
   clearTimeout(thinkTimer); clearTimeout(pending); clearTimeout(revertTimer); clearTimeout(stuckTimer)
   multi = { side: 'left', cards: new Map(), order: [], busy: 0, asking: false }
   $('fx').classList.add('hide')
-  multi.flipTimer = setInterval(() => { if (multi && !multi.asking && pose !== 'busy') { multi.side = multi.side === 'left' ? 'right' : 'left'; multiPose() } }, SESSION_FLIP)
+  multi.flipTimer = setInterval(() => { if (multi && !multi.asking && pose !== 'busy' && pose !== 'swamped') { multi.side = multi.side === 'left' ? 'right' : 'left'; multiPose() } }, SESSION_FLIP)
   multi.lookTimer = setInterval(multiLook, 100)
   chatterLater()
 }
@@ -1251,7 +1251,9 @@ function multiPose() {
   if (multi.asking) { if (pose !== 'asking') { setPose('asking'); $('fx').classList.add('hide') } }
   else {
     // 两个对话：有「忙碌」动画就整段循环播（她自己左右看，卡片跟着她看的方向亮，见 multiLook）；没有就用左右两张静态图来回切
-    const p = multi.busy < 3 && anim('busy') ? 'busy' : `${multi.busy >= 3 ? 'swamped' : 'busy'}_${multi.side}`
+    // 两个对话播「忙碌」，三个以上播「忙不过来」（抱着书摞左右晃）；没有动画时退回左右两张静态图
+    const lvl = multi.busy >= 3 ? 'swamped' : 'busy'
+    const p = anim(lvl) ? lvl : `${lvl}_${multi.side}`
     if (pose !== p) { setPose(p, true); $('fx').classList.add('hide') }
   }
   multiFocus()
@@ -1260,17 +1262,22 @@ function multiPose() {
 // 卡片跟真的多会话一样亮（忙碌按动画里她看的方向，忙不过来按左右哪张图），换别的姿态就收起（2026-11-24 用户反馈）
 let demo = null
 function demoCards() {
-  const want = !multi && (pose === 'busy' || pose === 'swamped_left' || pose === 'swamped_right')
-  if (!want) {
+  const want = !multi && (pose === 'busy' || pose === 'swamped' || pose === 'swamped_left' || pose === 'swamped_right')
+  // 忙碌两张、忙不过来四张（和真的多会话一样：两个对话 / 三个以上），摆法同 refreshMulti
+  const kind = pose === 'busy' ? 'busy' : 'swamped'
+  if (!want || (demo && demo.kind !== kind)) {
     if (demo) { clearInterval(demo.timer); for (const c of demo.cards) { c.el.classList.remove('on'); setTimeout(() => c.el.remove(), 400) } demo = null }
-    return
+    if (!want) return
   }
   if (!demo) {
-    demo = { cards: [], timer: null }
-    ;[['left', -6, 'reading'], ['right', 190, 'running']].forEach(([side, x, prop]) => {
+    demo = { cards: [], timer: null, kind }
+    const set = kind === 'busy'
+      ? [['left', -6, 92, 'reading'], ['right', 190, 92, 'running']]
+      : [['left', -6, 34, 'reading'], ['right', 190, 34, 'running'], ['left', -6, 152, 'writing'], ['right', 190, 152, 'searching']]
+    set.forEach(([side, x, y, prop]) => {
       const c = { el: document.createElement('div'), pose: null, shownAt: 0, side }
       c.el.className = 'scard'; c.el.innerHTML = '<svg></svg><div class="badge">✓</div>'
-      c.el.style.left = x + 'px'; c.el.style.top = '92px'
+      c.el.style.left = x + 'px'; c.el.style.top = y + 'px'
       $('cards').appendChild(c.el); demo.cards.push(c)
       setCardPose(c, prop)
       requestAnimationFrame(() => c.el.classList.add('on'))
@@ -1284,7 +1291,7 @@ function demoFocus() {
   let side = null
   if (pose === 'swamped_left') side = 'left'
   else if (pose === 'swamped_right') side = 'right'
-  else if (pose === 'busy' && sheet?.img) { const hit = (anim('busy')?.look || []).find(([a, b]) => sheet.frame >= a && sheet.frame <= b); side = hit ? hit[2] : null }
+  else if ((pose === 'busy' || pose === 'swamped') && sheet?.img) { const hit = (anim(pose)?.look || []).find(([a, b]) => sheet.frame >= a && sheet.frame <= b); side = hit ? hit[2] : null }
   for (const c of demo.cards) c.el.classList.toggle('focus', c.side === side)
 }
 function multiFocus() {
@@ -1292,8 +1299,8 @@ function multiFocus() {
 }
 // 「忙碌」动画里她看哪边：animations.busy.look = [[起, 止, 'left'|'right'], …]（出片后逐帧标的）。看正前方时两边都不亮
 function multiLook() {
-  if (!multi || multi.asking || pose !== 'busy' || !sheet?.img) return
-  const look = anim('busy')?.look || []
+  if (!multi || multi.asking || (pose !== 'busy' && pose !== 'swamped') || !sheet?.img) return
+  const look = anim(pose)?.look || []
   const hit = look.find(([a, b]) => sheet.frame >= a && sheet.frame <= b)
   const side = hit ? hit[2] : null
   if (side === multi.side) return

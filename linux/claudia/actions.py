@@ -2,7 +2,7 @@
 
 GROUPS = [
     ('日常', ['idle', 'hum', 'stretch', 'yawn', 'sleeping', 'clawd']),
-    ('工作', ['listening', 'thinking', 'reading', 'searching', 'writing', 'running', 'delegating', 'compact', 'busy', 'swamped_left', 'swamped_right', 'asking', 'sorry']),
+    ('工作', ['listening', 'thinking', 'reading', 'searching', 'writing', 'running', 'delegating', 'compact', 'busy', 'swamped', 'asking', 'sorry']),
     ('心情', ['happy', 'proud', 'surprised', 'oops', 'annoyed', 'puffed', 'redhot', 'sulk', 'coaxed', 'forgiven']),
     ('互动', ['pat', 'pout', 'bye', 'bonk', 'stagger', 'fallen', 'faceplant', 'dizzy']),
     ('问候', ['greet_morning', 'greet_noon', 'greet_afternoon', 'greet_evening', 'greet_night']),
@@ -35,8 +35,7 @@ NAMES = {
     'delegating': '派活',
     'compact': '整理记忆',
     'busy': '忙碌',
-    'swamped_left': '忙不过来（左）',
-    'swamped_right': '忙不过来（右）',
+    'swamped': '忙不过来',
     'update': '拆礼物',
     'happy': '开心',
     'proud': '得意',
@@ -181,4 +180,4 @@ NAMES = {
 }
 
 # 不进菜单的姿态：只在关掉动画时给「忙碌」当后备的左右两张静态图（2026-11-24 忙碌换成一整段动画）
-HIDDEN = {'busy_left', 'busy_right'}
+HIDDEN = {'busy_left', 'busy_right', 'swamped_left', 'swamped_right'}
