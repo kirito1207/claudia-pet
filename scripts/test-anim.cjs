@@ -140,7 +140,10 @@ function manifest() {
     assert.equal(await page.evaluate(() => sheet.img.width), 3584, 'normal-size idle should decode the scaled sheet')
     await page.waitForFunction(() => !$('fx').querySelector('svg') && fxFps === 0 && !fxClock && !fxRaf, null, { timeout: 4000 })
 
-    await page.evaluate(() => { $('fx').innerHTML = '<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></svg>' })
+    // 换姿势后 0.22 秒程序会补画一次特效层（待机没有特效 = 清空）。塞测试用的 SVG 之前先等它画完，
+    // 不然补画会把 SVG 清掉，帧率掉回 0（Windows 上时好时坏，失败位置在两处之间跳，2026-11-25）；顺带清掉闲置降帧
+    await page.waitForTimeout(300)
+    await page.evaluate(() => { noteRest(pose); $('fx').innerHTML = '<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></svg>' })
     await page.waitForFunction(() => fxFps === 60)
     await page.evaluate(() => setPageHidden(true))
     assert.equal(await page.evaluate(() => fxFps), 0, 'hidden effects should pause')
@@ -498,9 +501,9 @@ function manifest() {
     await page.waitForFunction(() => !fading, null, { timeout: 3000 })
     await page.evaluate(() => { show('thinking', true); show('writing', true); show('hum', true) })
     await waitSheet()
-    await page.waitForTimeout(260)
-    assert.ok(await page.evaluate(() => pose === 'hum' && sheet?.img && sheet.canvas === sheetFront && sheetFront.width > 1 && !fading),
-      'a superseded switch interfered with the final canvas')
+    // 等到交叉淡入真的结束（原来固定等 260 毫秒，Windows 上解码慢时淡出还没收完就查，偶尔失败，2026-11-25）
+    await page.waitForFunction(() => pose === 'hum' && sheet?.img && sheet.canvas === sheetFront && sheetFront.width > 1 && !fading, null, { timeout: 3000 })
+      .catch(() => { throw new Error('a superseded switch interfered with the final canvas') })
     await page.evaluate(() => { clearTimeout(revertTimer); show('idle', true) }); await waitSheet()
     await page.evaluate(() => { messages.length = 0; startWalk('walk_crab', -1) }); await page.waitForFunction(() => messages.some(m => m.walk))
     await page.evaluate(() => { messages.length = 0; walkEnded('blocked') })   // 左边没地方：螃蟹步不往右，换成漂浮踏步往右
