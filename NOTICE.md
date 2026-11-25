@@ -35,7 +35,7 @@ claudia-pet 作为独立项目维护，基于 [CrossPet](https://github.com/loki
 
 本项目原样使用这些精灵图文件（没有重新编码），只在播放时缩放、对齐，按每个姿态选取播放的帧段。文件清单和用途见 [characters/claude/anim/SOURCE.md](characters/claude/anim/SOURCE.md)。
 
-作者不再出新动作后，本项目自己生成的动画也放在 `characters/claude/anim/`。「看书-翻页」「得意-叉腰」「小侦探-放大镜」使用 ByteDance Seedance 2.0 生成，「查资料-扫读翻页」「有事问你-举手」「派活-小帮手跑圈」「忙碌-左右看」「忙不过来-抱书摞」「道歉-鞠躬挠头」「累了-叹气垂书」经 LibTV 生成（「派活」里的方块小布偶是 Clawd 的样子，Clawd 形象的权利见下表）。生成时使用动作包里待机动画的第 1 帧作为首帧、尾帧，出片后抠像并转成同一规格的精灵图。它们基于作者的帧，同样按 CC BY-NC-SA 4.0 发布，署名 hunmer 和 claudia-pet。做法和清单见 SOURCE.md 末尾。
+作者不再出新动作后，本项目自己生成的动画也放在 `characters/claude/anim/`。「看书-翻页」「得意-叉腰」「小侦探-放大镜」使用 ByteDance Seedance 2.0 生成，「查资料-扫读翻页」「有事问你-举手」「派活-小帮手跑圈」「忙碌-左右看」「忙不过来-抱书摞」「道歉-鞠躬挠头」「累了-叹气垂书」「抱Clawd-书飘蹭蹭」经 LibTV 生成（「派活」「抱Clawd」里的方块小布偶是 Clawd 的样子，Clawd 形象的权利见下表）。生成时使用动作包里待机动画的第 1 帧作为首帧、尾帧，出片后抠像并转成同一规格的精灵图。它们基于作者的帧，同样按 CC BY-NC-SA 4.0 发布，署名 hunmer 和 claudia-pet。做法和清单见 SOURCE.md 末尾。
 
 2026-11-25 起每张精灵图旁边另有一个由它逐帧转出的同名 `.webm`（VP9 + 透明通道），网页优先播视频；来源和许可跟对应的精灵图相同，见 SOURCE.md「视频版」。
 

@@ -340,6 +340,7 @@
     "busy": { "sheets": ["忙碌-左右看"], "fps": 15, "frames": 97, "from": 16, "to": 81, "cycle": [51, 81], "look": [[19, 39, "left"], [42, 56, "right"], [59, 70, "left"], [73, 87, "right"]], "exit": { "from": 97, "to": 96, "continue": true } },
     "swamped": { "sheets": ["忙不过来-抱书摞"], "fps": 24, "frames": 164, "to": 110, "cycle": [73, 110], "look": [[72, 86, "left"], [87, 106, "right"], [107, 153, "left"]], "exit": { "from": 164, "to": 163, "continue": true } },
     "delegating": { "sheets": ["派活-小帮手跑圈"], "fps": 15, "frames": 171, "to": 129, "cycle": [88, 129], "exit": { "from": 130, "continue": true } },
+    "clawd": { "sheets": ["抱Clawd-书飘蹭蹭"], "fps": 24, "frames": 187, "full": true },
     "tired": { "sheets": ["累了-叹气垂书"], "fps": 15, "frames": 100, "full": true, "idle": "claude" },
     "sorry": { "sheets": ["道歉-鞠躬挠头"], "fps": 24, "frames": 163, "to": 77, "cycle": [44, 77], "exit": { "from": 163, "to": 162, "continue": true } },
     "asking": { "sheets": ["有事问你-举手"], "fps": 15, "frames": 120, "to": 59, "cycle": [40, 59], "exit": { "from": 60, "to": 119, "continue": true } },

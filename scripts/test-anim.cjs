@@ -32,7 +32,7 @@ function manifest() {
   for (const [p, a] of Object.entries(m.characters.claude.animations))
     for (const n of a.sheets) assert.ok(m.characters.claude.sheets[n], `${p} 用的 ${n}.webp 不在 anim 里`)
   // 被动画替换的姿态（2026-11-18 起连待机也算）一律不留静态立绘
-  const replaced = ['idle', 'thinking', 'writing', 'running', 'compact', 'sleeping', 'happy', 'surprised', 'pat', 'bye', 'hum', 'stretch', 'yawn', 'sorry', 'tired',
+  const replaced = ['idle', 'thinking', 'writing', 'running', 'compact', 'sleeping', 'happy', 'surprised', 'pat', 'bye', 'hum', 'stretch', 'yawn', 'sorry', 'tired', 'clawd',
     'fest_spring', 'fest_lantern', 'fest_dragonboat', 'fest_midautumn', 'fest_halloween', 'fest_christmas']
   for (const p of replaced) assert.ok(m.characters.claude.animations[p], `${p} 要有动画`)
   // 2026-11-18 用户定：有动画的姿态，静态立绘全部移出项目（待机 idle.webp、眨眼帧也不留，程序看待机动画识别角色）
