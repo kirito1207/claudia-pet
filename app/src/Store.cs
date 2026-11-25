@@ -282,6 +282,19 @@ namespace Claudia
             return sheets;
         }
 
+        /// <summary>characters/&lt;id&gt;/anim/ 里和精灵图同名的 .webm（2026-11-25 试验视频播放）：有的话网页改播视频，没有就照旧播精灵图</summary>
+        static Dictionary<string, object> Videos(string dir)
+        {
+            var videos = new Dictionary<string, object>();
+            var anim = Path.Combine(dir, SpritePath.AnimDir);
+            if (!Directory.Exists(anim)) return videos;
+            var id = Path.GetFileName(dir);
+            foreach (var f in Directory.GetFiles(anim, "*.webm").OrderBy(f => Path.GetFileName(f), StringComparer.Ordinal))
+                videos[Path.GetFileNameWithoutExtension(f)] =
+                    $"https://{DataHost}/characters/{Uri.EscapeDataString(id)}/{SpritePath.AnimDir}/{Uri.EscapeDataString(Path.GetFileName(f))}";
+            return videos;
+        }
+
         /// <summary>character.json 的 animations.idle 用到的精灵图里，至少有一张真的在 anim\ 里</summary>
         static bool HasIdleSheet(Dictionary<string, object> info, Dictionary<string, object> sheets) =>
             info.TryGetValue("animations", out var a) && a is Dictionary<string, object> anims &&
@@ -309,6 +322,7 @@ namespace Claudia
                 if (Names.TryGetValue(id, out var custom) && custom is string s && s.Trim() != "") info["name"] = s.Trim();
                 info["poses"] = poses; info["blink"] = blink; info["blinkBase"] = blinkBase;
                 info["sheets"] = sheets;
+                info["videos"] = Videos(dir);
                 chars[id] = info;
                 selected[id] = dir;
             }

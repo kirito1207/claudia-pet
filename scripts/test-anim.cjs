@@ -133,11 +133,31 @@ function manifest() {
       sheetStep(sheet); frames.push(sheet.frame)
       return frames
     }), [0, 15, 59, 40, 50, 119, null, 51], 'asking (15 fps, 120 frames since 2026-11-25) must raise the hand, loop the wave 40-59, and on leaving play on from the current frame to the end')
+    // 视频试验（2026-11-25）：anim 里有同名 .webm 时改播视频，帧号规则不变——播到循环段末尾跳回开头，离开时接着播到收尾最后一帧
+    const askingVideo = url(path.join(dir, 'anim', '有事问你-举手.webm'))
+    if (fs.existsSync(path.join(dir, 'anim', '有事问你-举手.webm'))) {
+      await page.evaluate(u => { setPageHidden(false); char().videos = { '有事问你-举手': u }; setPose('idle', true); setPose('asking', true) }, askingVideo)
+      await page.waitForFunction(() => pose === 'asking' && sheet?.video && sheet.img && sheetFront === sheet.canvas, null, { timeout: 10000 })
+      const loop = await page.evaluate(() => new Promise(done => {
+        const seen = { max: 0, wrapped: false, last: 0 }, t0 = performance.now()
+        const tick = () => {
+          const f = sheet.frame
+          seen.max = Math.max(seen.max, f); if (seen.last >= 57 && f <= 42) seen.wrapped = true; seen.last = f
+          if (seen.wrapped || performance.now() - t0 > 9000) return done(seen)
+          requestAnimationFrame(tick)
+        }
+        tick()
+      }))
+      assert.ok(loop.wrapped && loop.max <= 60, `asking video must loop 40-59 (${JSON.stringify(loop)})`)
+      await page.evaluate(() => show('thinking', true))
+      await page.waitForFunction(() => sheet?.video && sheet.frame === 119 && sheet.canvas.paused, null, { timeout: 9000 })
+      await page.evaluate(() => { cancelExit(); delete char().videos; setPose('idle', true) })
+    }
     await page.evaluate(() => { setPageHidden(false); setPose('idle', true) })
     await page.evaluate(() => { pose = null; setPose('idle', true) }); await waitSheet()
     let s = await state()
     assert.equal(s.url, '待机呼吸休闲.webp'); assert.ok(s.on && s.front); assert.equal(s.bodyClass, '')
-    assert.equal(await page.evaluate(() => sheet.img.width), 3584, 'normal-size idle should decode the scaled sheet')
+    assert.equal(await page.evaluate(() => sheet.img.width), 5120, 'idle decodes the full sheet (the .scaled copies were removed with the switch to video, 2026-11-25)')
     await page.waitForFunction(() => !$('fx').querySelector('svg') && fxFps === 0 && !fxClock && !fxRaf, null, { timeout: 4000 })
 
     // 换姿势后 0.22 秒程序会补画一次特效层（待机没有特效 = 清空）。塞测试用的 SVG 之前先等它画完，

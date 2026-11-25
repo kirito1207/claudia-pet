@@ -47,12 +47,13 @@ html.moving #cards .scard { animation: none !important; }
 /* 还没有图片的 <img>：WebKitGTK（Linux 版）会给它画一圈灰色占位框，刚打开时看得到（2026-11-17）；WebView2 不画，加上也没影响 */
 #body img:not([src]), #body img[src=""] { visibility: hidden; }
 #body img#blink { transition: none; }
-html.flipping #body img, html.flipping #body canvas.sheet { transition: none; }   /* 补帧翻页：硬切，不交叉淡入（淡入时前后两帧叠在一起像重影）；从动画换过来时动画画布也直接消失 */
+html.flipping #body img, html.flipping #body .sheet { transition: none; }   /* 补帧翻页：硬切，不交叉淡入（淡入时前后两帧叠在一起像重影）；从动画换过来时动画画布也直接消失 */
 /* 动画动作（claude-pet 动作包的精灵图，逐帧画到 canvas 上）：两块画布轮流交叉淡入；播放时静态立绘淡出 */
-#body canvas.sheet { position: absolute; pointer-events: none; opacity: 0; transition: opacity .18s ease; }
-#body canvas.sheet.on { opacity: 1; }
+#body .sheet { position: absolute; pointer-events: none; opacity: 0; transition: opacity .18s ease; }
+#body video.sheet { object-fit: fill; }   /* 视频动画（2026-11-25 试验）：和精灵图画布同一套淡入淡出、同一个位置 */
+#body .sheet.on { opacity: 1; }
 html.sheet-on #body img { opacity: 0 !important; }
-html.moving #body canvas.sheet { transition: none !important; }
+html.moving #body .sheet { transition: none !important; }
 #fx { position: absolute; inset: 0; transition: opacity .3s; pointer-events: none; }
 /* 闲着久了：身边的特效淡出（见「特效降帧」） */
 #fx.rest { opacity: 0; transition: opacity 1.2s; }
@@ -200,7 +201,7 @@ html.no-name #caption { display: none; }
   <div id="bubble" class="hide"></div>
   <div id="stage">
     <div id="aura"></div><div id="shadow"></div>
-    <div id="impact"><div id="body"><img id="a" class="on"><img id="b"><img id="blink"><canvas class="sheet" id="sheetA"></canvas><canvas class="sheet" id="sheetB"></canvas></div></div>
+    <div id="impact"><div id="body"><img id="a" class="on"><img id="b"><img id="blink"><canvas class="sheet" id="sheetA"></canvas><canvas class="sheet" id="sheetB"></canvas><video class="sheet" id="videoA" muted playsinline preload="auto"></video><video class="sheet" id="videoB" muted playsinline preload="auto"></video></div></div>
     <div id="fx"></div>
     <div id="cards"><div id="more"></div></div>
     <div id="poof"><i style="--dx:-60px;--dy:-30px"></i><i style="--dx:55px;--dy:-35px"></i><i style="--dx:-45px;--dy:40px"></i><i style="--dx:50px;--dy:35px"></i><i style="--dx:0;--dy:-60px"></i></div>
@@ -430,21 +431,23 @@ function flipNext() {
 // animOn 只给测试和以后的开关用，外壳不再发 animatedSprites
 const SHEET = { cols: 8, w: 640, h: 360, frames: 120, fps: 12, charH: 281, feetY: 321, centerX: 325 }
 const REDUCED_MOTION = matchMedia('(prefers-reduced-motion: reduce)')
-const sheetCanvases = [$('sheetA'), $('sheetB')]
+const sheetCanvases = [$('sheetA'), $('sheetB')], sheetVideos = [$('videoA'), $('videoB')]
 let animOn = true, sheet = null, sheetFront = null, sheetReleaseTimer = null
 let sheetLayoutVersion = 0
 new ResizeObserver(() => {
   ++sheetLayoutVersion
-  if (!pageHidden) { upgradeScaledSheet(); sheetDraw() }
+  if (!pageHidden) sheetDraw()
 }).observe($('body'))
 addEventListener('resize', () => {
-  if (!pageHidden && sheet?.img && sheet.dpr !== devicePixelRatio) { upgradeScaledSheet(); sheetDraw() }
+  if (!pageHidden && sheet?.img && sheet.dpr !== devicePixelRatio) sheetDraw()
 })
 function anim(p) {
   const c = char(), a = c?.animations?.[p]
   if (!a || !animOn) return null
   const urls = (a.sheets || []).map(n => c.sheets?.[n]).filter(Boolean)
-  return urls.length ? { ...a, urls } : null
+  // 走视频时用视频里的帧号（来回播的动画转码时把倒放那段也编进去了，帧号跟精灵图不一样，见 character.json 的 animations[].video）
+  const video = a.video && (a.sheets || []).some(n => c.videos?.[n]) ? a.video : null
+  return urls.length ? { ...a, ...video, urls } : null
 }
 function transientMs(p) {
   const a = anim(p), base = TRANSIENT[p]
@@ -1100,6 +1103,7 @@ function updateAnimationTimers() {
     auraTimer = null
   } else if (auraTimer === null) auraTimer = setInterval(() => auraPulse(), 1000 / SHEET.fps)
   if (playSheetFrames) startSheetClock(sheet, sheetTick)
+  videoSync()
 }
 DARK.addEventListener('change', updateAnimationTimers)
 updateAnimationTimers()
@@ -1109,7 +1113,7 @@ function setPageHidden(h) {
   if (pageHidden) { stopWalk(); clickSequence.cancel() }
   motionMood.setHidden(pageHidden)
   applyFxRate()
-  if (wasHidden && !pageHidden) { upgradeScaledSheet(); sheetDraw() }
+  if (wasHidden && !pageHidden) sheetDraw()
   updateAnimationTimers()
   refreshBodyAnimations()
   scheduleHitRects()
@@ -1450,7 +1454,7 @@ function setMotionActive(on) {
     impactAnimation?.cancel()
     // Finish an in-progress crossfade so dragging never carries two overlapping silhouettes.
     active.classList.add('on'); spare.classList.remove('on')
-    for (const c of sheetCanvases) if (c !== sheetFront) c.classList.remove('on')
+    for (const c of [...sheetCanvases, ...sheetVideos]) if (c !== sheetFront) c.classList.remove('on')
   }
 }
 // 撞边、落地的 Q 弹和点击用同一条曲线（squashScale，照 dsh-pet），只是压多深按撞击速度算（照 dsh-pet 的 landingSquash：
@@ -1815,7 +1819,8 @@ setInterval(() => {
 })()
 const motionMood = new MotionMood(resolveMotionMood)
 // 点击 Q 弹（照 dsh-pet 的 squashScale：贴地往下压扁到 55%，再 easeOutBack 回弹、过冲约 4%，共 0.22 秒）。
-// 一点就压，不等点击动画读出来（等的话要慢 0.3～0.7 秒，2026-11-25 用户：点击 Q 弹有延迟）
+// 等点击动画的第一帧出来再压（照 dsh-pet）：一点就压的话，弹起来后还露几帧旧动画才换（2026-11-25 用户）。
+// 换成视频后新动画出得快；0.35 秒还没出来就直接压，不让点击没反应
 const SQ_SQUASH = .55, SQ_DURATION_MS = 220
 function squashScale(u, squash = SQ_SQUASH) {
   if (u < .45) { const p = u / .45; return 1 - (1 - squash) * p * p }
@@ -1825,10 +1830,13 @@ function squashScale(u, squash = SQ_SQUASH) {
 }
 const clickSequence = new ClickSequence(done => {
   impactAnimation?.cancel()
-  const animation = squashAnimate(SQ_SQUASH)
-  scheduleHitRects()
-  animation.onfinish = done
-  return () => { animation.onfinish = null; animation.cancel() }
+  let animation = null
+  const stopWaiting = whenSheetShown(() => {
+    animation = squashAnimate(SQ_SQUASH)
+    scheduleHitRects()
+    animation.onfinish = done
+  }, 350)
+  return () => { stopWaiting(); if (animation) { animation.onfinish = null; animation.cancel() } }
 }, active => { document.documentElement.classList.toggle('clicking', active); if (!active) queueMicrotask(() => motionMood.attempt()) })
 // Browser frame loop mirrors dsh-pet's desktop renderer; the host is only a bounds broker.
 const petMotion = new PetMotion(DshPhysics, message => {

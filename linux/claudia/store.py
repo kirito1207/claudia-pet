@@ -354,6 +354,14 @@ def _sheets(d):
     return {f.stem: _url(d.name, ANIM_DIR, f.name) for f in sorted(anim.glob("*.webp"), key=lambda f: f.name)}
 
 
+def _videos(d):
+    """anim/ 里和精灵图同名的 .webm（2026-11-25 试验视频播放）：有的话网页改播视频，没有就照旧播精灵图"""
+    anim = d / ANIM_DIR
+    if not anim.is_dir():
+        return {}
+    return {f.stem: _url(d.name, ANIM_DIR, f.name) for f in sorted(anim.glob("*.webm"), key=lambda f: f.name)}
+
+
 def manifest():
     global _character_dirs
     chars, selected = {}, {}
@@ -378,7 +386,7 @@ def manifest():
         custom = names().get(d.name)
         if isinstance(custom, str) and custom.strip():
             info["name"] = custom.strip()
-        info.update(poses=poses, blink=blink, blinkBase=blink_base, sheets=sheets)
+        info.update(poses=poses, blink=blink, blinkBase=blink_base, sheets=sheets, videos=_videos(d))
         chars[d.name] = info
         selected[d.name] = d
     _character_dirs = selected
@@ -396,11 +404,11 @@ def resolve_sprite(path):
         if not seg or seg in (".", "..") or "/" in seg or "\\" in seg or "\0" in seg:
             return None
     ext = os.path.splitext(name)[1].lower()
-    if ext not in (".webp", ".png"):
+    if ext not in (".webp", ".png") and not (anim and ext == ".webm"):   # .webm 只在 anim/ 里（2026-11-25 试验视频播放）
         return None
     root = character_dir(character).parent.resolve()
     full = (root / character / ANIM_DIR / name) if anim else (root / character / name)
     full = full.resolve()
     if root not in full.parents:
         return None
-    return full, ("image/webp" if ext == ".webp" else "image/png")
+    return full, {".webp": "image/webp", ".webm": "video/webm"}.get(ext, "image/png")

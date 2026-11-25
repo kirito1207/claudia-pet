@@ -22,12 +22,12 @@ namespace Claudia
             var name = Uri.UnescapeDataString(parts[parts.Length - 1]);
             if (!SafeSegment(character) || !SafeSegment(name)) return false;
             var ext = Path.GetExtension(name).ToLowerInvariant();
-            if (ext != ".webp" && ext != ".png") return false;
+            if (ext != ".webp" && ext != ".png" && !(anim && ext == ".webm")) return false;   // .webm 只在 anim\ 里（2026-11-25 试验视频播放）
             var root = Path.GetFullPath(charactersRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
             var full = anim ? Path.GetFullPath(Path.Combine(root, character, AnimDir, name)) : Path.GetFullPath(Path.Combine(root, character, name));
             if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase)) return false;
             file = full;
-            mime = ext == ".webp" ? "image/webp" : "image/png";
+            mime = ext == ".webp" ? "image/webp" : ext == ".webm" ? "video/webm" : "image/png";
             return true;
         }
 
