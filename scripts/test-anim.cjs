@@ -32,7 +32,7 @@ function manifest() {
   for (const [p, a] of Object.entries(m.characters.claude.animations))
     for (const n of a.sheets) assert.ok(m.characters.claude.sheets[n], `${p} 用的 ${n}.webp 不在 anim 里`)
   // 被动画替换的姿态（2026-11-18 起连待机也算）一律不留静态立绘
-  const replaced = ['idle', 'thinking', 'writing', 'running', 'compact', 'sleeping', 'happy', 'surprised', 'pat', 'bye', 'hum', 'stretch', 'yawn', 'sorry',
+  const replaced = ['idle', 'thinking', 'writing', 'running', 'compact', 'sleeping', 'happy', 'surprised', 'pat', 'bye', 'hum', 'stretch', 'yawn', 'sorry', 'tired',
     'fest_spring', 'fest_lantern', 'fest_dragonboat', 'fest_midautumn', 'fest_halloween', 'fest_christmas']
   for (const p of replaced) assert.ok(m.characters.claude.animations[p], `${p} 要有动画`)
   // 2026-11-18 用户定：有动画的姿态，静态立绘全部移出项目（待机 idle.webp、眨眼帧也不留，程序看待机动画识别角色）
@@ -98,6 +98,18 @@ function manifest() {
       sheet.frame = 77; sheetStep(sheet); r.push(sheet.frame)
       sheet.frame = 60; show('thinking', true); r.push(pose, sheet.frame, sheet.to)
       cancelExit(); return r }), [24, 0, '44,77', 44, 'sorry', 60, 162], 'sorry must bow, hold the bow 44-77 at 24 fps, and on leaving play on through the head scratch to frame 162')
+    // 累了（2026-11-25 用户定）：不再在额度低时常驻；闲置随机动作里，5 小时 / 本周剩 ≤15% 时 1/3 抽到，平时是普通一员
+    assert.deepEqual(await page.evaluate(() => {
+      const saved = quota[charId], rand = Math.random, r = []
+      quota[charId] = { low: true, bars: [{ label: '5小时', left: .5 }, { label: '本周', left: .12 }] }
+      r.push(restPose(), idleAnimations().includes('tired'))
+      Math.random = () => .2; r.push(tiredFirst(['hum', 'tired']))
+      Math.random = () => .5; const rest = ['hum', 'tired']; r.push(tiredFirst(rest), rest.join())
+      quota[charId] = { low: false, bars: [{ label: '5小时', left: .4 }, { label: '花费', left: .05 }] }
+      Math.random = () => .2; const normal = ['hum', 'tired']; r.push(tiredFirst(normal), normal.join())
+      Math.random = rand; quota[charId] = saved
+      return r }), ['idle', true, true, false, 'hum', false, 'hum,tired'], 'tired is an idle action: one in three when 5h or weekly quota is at or below 15%, an ordinary pick otherwise, and never a resting pose')
+    assert.equal(await page.evaluate(() => transientMs('tired') >= 6000 && anim('tired').frames), 100, 'tired plays its 100 frames (15 fps) once')
     await page.evaluate(() => setPose('delegating', true))
     await page.waitForFunction(() => pose === 'delegating' && sheet?.img && sheet.to === 129)
     assert.deepEqual(await page.evaluate(() => {
@@ -110,17 +122,17 @@ function manifest() {
       return frames
     }), [0, 15, 129, 88, 100, 170, null, 15], 'delegating (15 fps, 171 frames) must loop the composited run forward and on leaving play on through the close')
     await page.evaluate(() => setPose('asking', true))
-    await page.waitForFunction(() => pose === 'asking' && sheet?.img && sheet.to === 47)
+    await page.waitForFunction(() => pose === 'asking' && sheet?.img && sheet.to === 59)
     assert.deepEqual(await page.evaluate(() => {
-      const frames = [sheet.frame]
-      sheet.frame = 46
+      const frames = [sheet.frame, sheet.fps]
+      sheet.frame = 58
       sheetStep(sheet); frames.push(sheet.frame)
       sheetStep(sheet); frames.push(sheet.frame)
-      sheet.frame = 40
+      sheet.frame = 50
       show('thinking', true); frames.push(sheet.frame, sheet.to, sheet.cycle)
       sheetStep(sheet); frames.push(sheet.frame)
       return frames
-    }), [0, 47, 33, 40, 95, null, 41], 'asking must raise the hand, loop the wave forward, and on leaving play on from the current frame to the end')
+    }), [0, 15, 59, 40, 50, 119, null, 51], 'asking (15 fps, 120 frames since 2026-11-25) must raise the hand, loop the wave 40-59, and on leaving play on from the current frame to the end')
     await page.evaluate(() => { setPageHidden(false); setPose('idle', true) })
     await page.evaluate(() => { pose = null; setPose('idle', true) }); await waitSheet()
     let s = await state()

@@ -714,7 +714,7 @@ function renderQuota() {
 // 不然一条要跑好几分钟的命令中途她演了个招呼，之后一直没有新事件，就会站着不动
 function restPose() {
   if (aiActivity()) { const p = charState[charId].pose; return p === 'listening' ? 'thinking' : p }
-  return quota[charId]?.low ? 'tired' : 'idle'
+  return 'idle'   // 额度低不再常驻「累了」（2026-11-25 用户定）：累了改成闲置随机动作，见 tiredFirst
 }
 // 这个角色有没有某个姿态的专属立绘
 const hasPose = p => !!char()?.poses?.[p]
@@ -1383,12 +1383,10 @@ function setQuota(id, q, at) {
 setInterval(() => { if (quotaRaw[charId]) applyQuota(charId) }, 60_000)
 function applyQuota(id) {
   const q = QuotaBars.fresh(quotaRaw[id], Date.now() / 1000, quotaAt[id])
-  const wasLow = quota[id]?.low
   quota[id] = q
   if (id !== charId) return
   renderQuota()
-  if (q?.low && pose === 'idle') { setPose('tired'); if (!wasLow) say(pick(linesOf('tired') || [''])) }
-  if (!q?.low && pose === 'tired') setPose('idle')
+  if (pose === 'tired' && !anim('tired')) setPose('idle')   // 旧版额度低时停在静态「累了」：换上动画后不再常驻
   const tier = quotaTier(q)
   if (tier && quotaTierSeen && tier !== quotaTierSeen && anim(tier) && !aiActivity() && !multi && !tumble && farewellLine === null && RESTING.has(pose)) show(tier, true)
   if (tier) quotaTierSeen = tier
@@ -1747,6 +1745,8 @@ function idleTick() {
     farewell: farewellLine !== null, clicking: clickSequence.busy || motionMood.pending || !!tumble })
   if (!available.length) return
   if (quiet > SLEEP_AFTER) { setPose('sleeping'); say(pick(linesOf('sleeping') || [''])); return }
+  if (tiredFirst(available)) { show('tired', true); say(pick(linesOf('tiredLow') || linesOf('tired') || [''])); return }   // 额度低时说额度的台词，平时抽到只说累
+  if (!available.length) return
   // 先在组里平均抽一组，再在组里按 weight 抽一个：动画小动作很多，不能把哼歌、伸懒腰这些挤掉；当天的节气动作权重高
   const groups = [...new Set(available.map(p => groupOf[p] || p))], g = pick(groups)
   const inGroup = available.filter(p => (groupOf[p] || p) === g)
@@ -1755,6 +1755,15 @@ function idleTick() {
   if (anim(action)?.walk) { if (startWalk(action)) return; }
   if (!TRANSIENT[action]) TRANSIENT[action] = 4000
   show(action, true)
+}
+// 累了（2026-11-25 用户定）：只在闲置随机动作里。5 小时或本周额度剩 15% 以下时，每次抽动作有 1/3 是「累了」（其余 2/3 从别的动作里抽）；
+// 平时就是「Claude 梗」组里的普通一员。工作中的姿态不受影响（随机动作本来只在闲着时抽）
+function quotaLow15() { return (quota[charId]?.bars || []).some(b => (b.label === '5小时' || b.label === '本周') && b.left <= .15) }
+function tiredFirst(available) {
+  if (!available.includes('tired') || !quotaLow15()) return false
+  if (Math.random() < 1 / 3) return true
+  available.splice(available.indexOf('tired'), 1)
+  return false
 }
 function idleAnimations(d = new Date()) {
   const out = Object.entries(char()?.animations || {}).filter(([p, a]) => a.idle && idleSettings.actions.includes(a.idle) && whenOk(a.when, d) && anim(p)).map(([p]) => p)
