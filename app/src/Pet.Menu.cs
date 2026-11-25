@@ -159,7 +159,7 @@ namespace Claudia
             // 姿态名只来自文件名，这里再挡一次引号/反斜杠，免得拼进脚本出问题
             if (pose.IndexOfAny(new[] { '\'', '"', '\\', '\n', '\r' }) >= 0) return;
             // 动画动作按片长自己回到待机，不再 6 秒后被切掉
-            Js("(function(p){ if (typeof show !== 'function') return; show(p, true);" +
+            Js("(function(p){ if (typeof show !== 'function') return; if (typeof showNow === 'function') showNow(p); else show(p, true);" +
                " clearTimeout(window.__claudiaMenuTimer);" +
                " if (typeof anim === 'function' && anim(p) && anim(p).walk && typeof startWalk === 'function' && startWalk(p)) return;" +
                " if (typeof anim === 'function' && anim(p) && transientMs(p)) return;" +

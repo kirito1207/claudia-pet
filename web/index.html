@@ -785,6 +785,12 @@ function leaveVia(next, target = null) {
   return true
 }
 function cancelExit() { if (!exiting) return; exiting = null; clearTimeout(exitTimer) }
+// 你点她、从右键菜单换动作：马上换，不等当前动作把收尾演完（2026-11-25 用户定：忙碌这种循环动作点了还在转圈，像没反应）。
+// Claude 那边的状态变化（干完活、转去思考……）照旧走 show，把收尾演完再换
+function showNow(p) {
+  cancelExit(); exitedFrom = pose
+  show(p, true)
+}
 
 // ---- Windows 外壳接口 ----
 function init(m) {
@@ -1421,7 +1427,7 @@ function pickClickPose() {
 }
 function replay(p) {
   if (pose === p) pose = null   // 姿态没变时 setPose 什么都不做：先清掉，让它重新挑一段、从头播
-  show(p, true)
+  showNow(p)
 }
 
 // Only the character deforms; name and quota keep their normal shape.
@@ -1446,19 +1452,24 @@ function setMotionActive(on) {
     for (const c of sheetCanvases) if (c !== sheetFront) c.classList.remove('on')
   }
 }
+// 撞边、落地的 Q 弹和点击用同一条曲线（squashScale，照 dsh-pet），只是压多深按撞击速度算（照 dsh-pet 的 landingSquash：
+// 慢的压到 80%，1500 像素/秒以上压到和点击一样的 55%）。落地压竖直方向，撞左右墙压水平方向（2026-11-25 用户：撞边和点击的 Q 弹不一样）
+function landingSquash(speed) {
+  const t = Math.min(Math.max((Math.abs(speed) - 300) / (1500 - 300), 0), 1)
+  return Math.min(.8, 1 - t * (1 - SQ_SQUASH))
+}
+function squashAnimate(depth, axis = 'Y') {
+  const frames = Array.from({ length: 23 }, (_, i) => ({ transform: `scale${axis}(${squashScale(i / 22, depth).toFixed(4)})`, offset: i / 22 }))
+  return $('impact').animate(frames, { duration: SQ_DURATION_MS, easing: 'linear' })
+}
 function physicsImpact(vx, vy, amount) {
   if (clickSequence.busy || !amount || matchMedia('(prefers-reduced-motion: reduce)').matches) return
-  const depth = Math.min(1, Math.max(vx, vy) / 1400) * amount
-  if (depth < .015) return
+  const speed = Math.max(vx, vy)
+  if (speed < 120) return   // 轻轻碰一下不压
+  // amount 是设置里的「弹性」（默认 0.12、最大 0.25）：默认时就是 dsh-pet 的深度，调大压得更深
+  const k = Math.min(2, amount / .12), depth = Math.max(.45, 1 - (1 - landingSquash(speed)) * k)
   impactAnimation?.cancel()
-  const vertical = vy >= vx
-  const x = vertical ? 1 + depth * .5 : 1 - depth
-  const y = vertical ? 1 - depth : 1 + depth * .5
-  impactAnimation = $('impact').animate([
-    { transform: 'scale(1)' }, { transform: `scale(${x},${y})`, offset: .25 },
-    { transform: `scale(${1 + (1-x)*.25},${1 + (1-y)*.25})`, offset: .65 },
-    { transform: 'scale(1)' }
-  ], { duration: 240, easing: 'ease-out' })
+  impactAnimation = squashAnimate(depth, vy >= vx ? 'Y' : 'X')
   scheduleHitRects()
 }
 // ---- 甩她 / 红温 ----
@@ -1802,14 +1813,18 @@ setInterval(() => {
   }, 3000 + Math.random() * 3500)
 })()
 const motionMood = new MotionMood(resolveMotionMood)
+// 点击 Q 弹（照 dsh-pet 的 squashScale：贴地往下压扁到 55%，再 easeOutBack 回弹、过冲约 4%，共 0.22 秒）。
+// 一点就压，不等点击动画读出来（等的话要慢 0.3～0.7 秒，2026-11-25 用户：点击 Q 弹有延迟）
+const SQ_SQUASH = .55, SQ_DURATION_MS = 220
+function squashScale(u, squash = SQ_SQUASH) {
+  if (u < .45) { const p = u / .45; return 1 - (1 - squash) * p * p }
+  const p = (u - .45) / .55, c1 = 1.70158, c3 = c1 + 1
+  const f = 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2)
+  return Math.min(1.12, squash + (1 - squash) * Math.max(f, 0))
+}
 const clickSequence = new ClickSequence(done => {
   impactAnimation?.cancel()
-  const animation = $('impact').animate([
-    { transform: 'scale(1)' },
-    { transform: 'scale(1.045,.9)', offset: .35 },
-    { transform: 'scale(.99,1.025)', offset: .75 },
-    { transform: 'scale(1)' }
-  ], { duration: 220, easing: 'ease-out' })
+  const animation = squashAnimate(SQ_SQUASH)
   scheduleHitRects()
   animation.onfinish = done
   return () => { animation.onfinish = null; animation.cancel() }

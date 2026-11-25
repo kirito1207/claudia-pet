@@ -244,6 +244,15 @@ function manifest() {
     const clickPicks = await page.evaluate(() => { const n = { pat: 0, pout: 0 }; for (let i = 0; i < 2000; i++) n[pickClickPose()]++; return n })
     assert.ok(clickPicks.pout > 300 && clickPicks.pout < 520 && clickPicks.pat > 1480, `click pool ${JSON.stringify(clickPicks)}`)
     // 每点一下都从头重播（照 dsh-pet）：演到一半再点，换一段（或同一段）从第一帧开始，台词也重来
+    // 撞边、落地用同一条曲线，深度按速度：慢的压到 0.8，1500 像素/秒以上压到 0.55（默认弹性 0.12）
+    assert.deepEqual(await page.evaluate(() => [200, 900, 1500, 3000].map(v => +landingSquash(v).toFixed(3))), [.8, .775, .55, .55], 'landing squash depth follows dsh-pet')
+    // 点她、右键菜单换动作：马上换，不等忙碌把这一圈和收尾演完；Claude 那边的变化照旧演完收尾
+    assert.deepEqual(await page.evaluate(() => {
+      setPose('idle', true); setPose('busy', true); sheet.frame = 60
+      showNow('happy'); const r = [pose, !!exiting]
+      setPose('idle', true); return r }), ['happy', false], 'a click or menu pick must switch right away instead of playing the busy loop out')
+    // 点击 Q 弹照 dsh-pet 的 squashScale：从 1 压到 0.55，再回弹（过冲约 4%）回到 1
+    assert.deepEqual(await page.evaluate(() => [0, .45, .8, 1].map(u => +squashScale(u).toFixed(3))), [1, .55, 1.043, 1], 'click squash follows the dsh-pet curve')
     await page.evaluate(() => { clickBounce = false; pose = null; setPose('idle', true); performClick('pat') }); await waitSheet()
     await page.waitForTimeout(1500)
     const before = await page.evaluate(() => ({ frame: sheet.frame, pose }))

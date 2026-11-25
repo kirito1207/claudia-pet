@@ -1216,7 +1216,7 @@ class Pet:
     def play_action(self, pose):
         if any(c in pose for c in "'\"\\\n\r"):
             return
-        self.js("(function(p){ if (typeof show !== 'function') return; show(p, true);"
+        self.js("(function(p){ if (typeof show !== 'function') return; if (typeof showNow === 'function') showNow(p); else show(p, true);"
                 " clearTimeout(window.__claudiaMenuTimer);"
                 " if (typeof anim === 'function' && anim(p) && anim(p).walk && typeof startWalk === 'function' && startWalk(p)) return;"
                 " if (typeof anim === 'function' && anim(p) && transientMs(p)) return;"
