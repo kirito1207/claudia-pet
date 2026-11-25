@@ -1401,7 +1401,8 @@ function applyQuota(id) {
 // x、y：外壳交来的点击位置（网页坐标）；Claudia 用不到，保留参数是为了和外壳的调用方式一致
 function handleClick(kind, x, y) {
   lastActive = Date.now()
-  clickSequence.play(() => performClick(kind, x, y), clickBounce && !matchMedia('(prefers-reduced-motion: reduce)').matches)
+  // Q 弹不看系统的「减少动画」（2026-11-25：Linux 的 cage / VNC 桌面默认关动画，WebKit 就报减少动画，Q 弹整个没了）；要关用设置里的点击 Q 弹开关
+  clickSequence.play(() => performClick(kind, x, y), clickBounce)
 }
 function performClick(kind, x, y) {
   lastActive = Date.now()
@@ -1463,7 +1464,7 @@ function squashAnimate(depth, axis = 'Y') {
   return $('impact').animate(frames, { duration: SQ_DURATION_MS, easing: 'linear' })
 }
 function physicsImpact(vx, vy, amount) {
-  if (clickSequence.busy || !amount || matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  if (clickSequence.busy || !amount) return   // 和点击 Q 弹一样不看系统的「减少动画」；弹性设成 0 就不压
   const speed = Math.max(vx, vy)
   if (speed < 120) return   // 轻轻碰一下不压
   // amount 是设置里的「弹性」（默认 0.12、最大 0.25）：默认时就是 dsh-pet 的深度，调大压得更深
