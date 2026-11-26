@@ -41,6 +41,8 @@ namespace Claudia
                 ["integrations"] = ClaudeIntegrations(),
                 ["runMode"] = Store.Standalone ? "standalone" : "claude",
                 ["pets"] = PetList(), ["maxPets"] = Store.MaxExtraPets + 1,
+                ["deskLayer"] = DeskLayer,
+                ["clickThrough"] = Store.IsMain ? (object)ClickThrough : null,   // 只有第一只有（关的入口在托盘），别的几只设置页不显示这一项
             };
         }
 
@@ -78,6 +80,8 @@ namespace Claudia
                         case "runMode":   // 所有几只共用（Store.SetStandalone），别的那几只一秒内跟上
                             if (value is string rm && (rm == "claude" || rm == "standalone")) { Store.SetStandalone(rm == "standalone"); CheckRunMode(); }
                             break;
+                        case "deskLayer": SetDeskLayer(value); break;
+                        case "clickThrough": if (Store.IsMain && value is bool) SetClickThrough(on); break;
                         case "aura":
                             if (value is string m && (m == "auto" || m == "on" || m == "off")) { Store.Settings["auraMode"] = m; Store.SaveSettings(); Js($"setAuraMode({Q(m)})"); }
                             break;

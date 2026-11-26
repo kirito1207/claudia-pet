@@ -68,12 +68,15 @@ namespace Claudia
             Host = new DirectHost(Store.AppName, (int)Math.Round(BaseWidth * Scale), (int)Math.Round(BaseHeight * Scale));
             web = Host.Web;
             Host.MessageHook = HotKeyHook;   // 快捷键只有第一只注册（RegisterHideHotKey），别的几只收不到 WM_HOTKEY
+            Host.RawMessage += AppBarMessage;   // 全屏打开 / 关闭的通知（Pet.Fullscreen）
             Host.HandleCreated += (_, __) =>
             {
                 hwnd = Host.Handle;
                 ResizeHost(Scale);
                 RestorePosition();
                 RegisterHideHotKey();
+                RegisterAppBar();   // 全屏打开 / 关闭时系统来通知（Pet.Fullscreen）
+                Host.ForcePassThrough = ClickThrough;
             };
             // 拖动 / 单击 / 右键：网页收到鼠标后交给外壳（pointer 消息，见 Pet.Mouse.cs 的 HandlePointer）；
             // 鼠标只在桌宠本体、气泡、名牌、额度上才接（hitRects，见 UpdateHitRects），窗口其余地方穿过去，点击直接落到后面的窗口

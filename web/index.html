@@ -85,6 +85,7 @@ html.frozen *, html.frozen *::before, html.frozen *::after { animation-play-stat
 @keyframes puff { 0% { opacity: .95; transform: translate(0,0) scale(.3); } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.3); } }
 .m-dash  { animation: dash 2.2s ease-in-out forwards; }
 .m-leave { animation: leave 1s ease-in forwards; }
+#stage.leaving { animation: leave 1s ease-in forwards; }   /* 退出时整层一起走开：光晕、脚下影子跟着人走，不留在原地（2026-11-25 用户反馈） */
 @keyframes leave { 0% { transform: none; } 100% { transform: translateX(28%) rotate(4deg); opacity: 0; } }
 @keyframes dash { 0%, 55% { transform: none; } 100% { transform: translateX(28%) rotate(4deg); opacity: 0; } }
 /* 名牌和额度不垫白底：透明背景，字带一圈白色描边，落在 Claude 窗口浅色、深色背景上都看得清 */
@@ -680,7 +681,7 @@ function farewell(line, ms = 2000) {
   cancelExit(); exitedFrom = pose
   show('bye', true)
   $('body').className = 'm-bob'   // 先挥着手轻轻晃，别一上来就走
-  setTimeout(() => { $('body').className = 'm-leave' }, Math.max(0, ms - 1100))
+  setTimeout(() => { $('body').className = ''; $('stage').classList.add('leaving') }, Math.max(0, ms - 1100))
   farewellLine = line || pick(linesOf('bye') || ['']) || ''
   say(farewellLine)
 }

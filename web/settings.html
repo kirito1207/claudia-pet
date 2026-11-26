@@ -114,7 +114,11 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
     <div class="ctl"><button data-add-pet="claude">放在 Claude 窗口里</button><button data-add-pet="desktop">放在桌面上</button></div></div>
 </div>
 <div class="card" data-tab="pets">
-  <div class="item"><div class="label">说明<small>每一只都是独立的：名字、大小、闲着做什么互不影响，各自右键打开的是自己的设置。<br>待在桌面上的那只始终在最上面，全屏看视频时也会盖在上面，不想看到可以按隐藏快捷键。<br>托盘图标、系统通知、隐藏快捷键只归第 1 只管；「跟着 Claude」运行时，Claude 关掉后全部一起退出。</small></div></div>
+  <div class="item hidden" data-only="deskLayer"><div class="label">待在桌面上时<small>默认在最上面；她这块屏上有东西全屏（看视频全屏、PPT 放映、游戏、浏览器按 F11）时让开，退出后回来，最大化的窗口不算。选「始终最上面」全屏时也不让（独占全屏的游戏多半还是会挡住她）；选「不置顶」就和普通窗口一样，谁都能盖住她。只管这一只</small></div>
+    <div class="ctl"><div class="seg" id="deskLayer"><button data-v="top">始终最上面</button><button data-v="yield">全屏时让开</button><button data-v="normal">不置顶</button></div></div></div>
+</div>
+<div class="card" data-tab="pets">
+  <div class="item"><div class="label">说明<small>每一只都是独立的：名字、大小、闲着做什么互不影响，各自右键打开的是自己的设置。<br>不想看到她时可以按隐藏快捷键。<br>托盘图标、系统通知、隐藏快捷键只归第 1 只管；「跟着 Claude」运行时，Claude 关掉后全部一起退出。</small></div></div>
 </div>
 
 <div class="card" data-tab="quota">
@@ -157,6 +161,7 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
 <div class="card" data-tab="general">
   <div class="item hidden" data-only="hotkeys"><div class="label">隐藏 / 显示的快捷键<small id="hotkeyNote">按一下藏起来，再按一下出来；也可以双击托盘图标叫她出来</small></div>
     <div class="ctl"><select id="hideHotkey" aria-label="隐藏快捷键"></select></div></div>
+  <div class="item hidden" data-only="clickThrough"><div class="label">鼠标穿透<small>开着时点不到她，点击直接落到后面的窗口；右键菜单也打不开，要关请从托盘图标的菜单里关</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="clickThrough" aria-label="鼠标穿透"><span></span></label></div></div>
   <div class="item"><div class="label">文件夹<small>角色立绘、设置和日志都在这里</small></div>
     <div class="ctl"><button data-action="openCharacters">角色</button><button data-action="openData">数据和日志</button></div></div>
 </div>
@@ -216,6 +221,7 @@ function setState(s) {
   for (const b of $('aura').children) b.classList.toggle('on', b.dataset.v === s.aura)
   for (const b of $('quotaStyle').children) b.classList.toggle('on', b.dataset.v === (s.quotaStyle || 'text'))
   for (const b of $('runMode').children) b.classList.toggle('on', b.dataset.v === (s.runMode || 'claude'))
+  for (const b of $('deskLayer').children) b.classList.toggle('on', b.dataset.v === (s.deskLayer || 'yield'))
   $('runNote').textContent = s.runMode === 'standalone'
     ? '双击程序就出来，不需要 Claude；Claude 关了也不走，从菜单退出才走。选了「待在 Claude 窗口里」而 Claude 没开时，先待在桌面上。干活状态、额度和通知仍要接入 Claude Code 才有'
     : 'Claude 打开时出来，Claude 关了就一起退出；Claude 没开时自己打开，30 秒后退出'
@@ -302,6 +308,7 @@ for (const el of document.querySelectorAll('input[data-key]')) el.onchange = () 
 for (const b of $('aura').children) b.onclick = () => post({ cmd: 'set', key: 'aura', value: b.dataset.v })
 for (const b of $('quotaStyle').children) b.onclick = () => post({ cmd: 'set', key: 'quotaStyle', value: b.dataset.v })
 for (const b of $('runMode').children) b.onclick = () => post({ cmd: 'set', key: 'runMode', value: b.dataset.v })
+for (const b of $('deskLayer').children) b.onclick = () => post({ cmd: 'set', key: 'deskLayer', value: b.dataset.v })
 for (const b of document.querySelectorAll('[data-action]')) b.onclick = () => post({ cmd: 'action', name: b.dataset.action })
 // 锁链图标：锁着 = 两节扣在一起；解开 = 断开
 const LINK_ON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6.5 9.5l3-3M7 4.5l1-1a2.5 2.5 0 013.5 3.5l-1 1M9 11.5l-1 1a2.5 2.5 0 01-3.5-3.5l1-1"/></svg>'

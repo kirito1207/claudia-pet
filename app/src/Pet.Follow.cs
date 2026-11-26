@@ -57,6 +57,9 @@ namespace Claudia
             // 后台线程只调 Windows 的窗口函数，摆位置用 SWP_ASYNCWINDOWPOS（不等界面线程处理完）；平时不跑，只在切换窗口后跑 0.5 秒
             foregroundHook = FollowNative.OnForeground(() =>
             {
+                // 桌面模式：前台换了就重摆层级（被别的置顶窗口挤下去时钉回来、不置顶时让到新前台窗口后面、刚进独占全屏时让开）。
+                // 回调在界面线程上（WINEVENT_OUTOFCONTEXT）；新窗口有时激活后才把自己提上来，0.3 秒后再摆一次
+                if (desktopMode) { UpdateDeskLayer(); After(300, UpdateDeskLayer); }
                 guardUntil = Environment.TickCount + 500;
                 if (System.Threading.Interlocked.Exchange(ref guarding, 1) == 1) return;   // 已经在查了，延长时间就行
                 new System.Threading.Thread(GuardLayer) { IsBackground = true, Name = "layer-guard" }.Start();
@@ -224,7 +227,9 @@ namespace Claudia
         // 这样能拖到另一块屏幕上，松手后就在那块屏幕里飞和落地。位置按屏幕上的绝对像素记（settings 的 desk）。
         // 置顶会被别的置顶窗口挤掉（dsh-pet 的 topmost-watchdog.js 记过这个现场），所以每 5 秒重新钉一次：不挪、不抢焦点
         volatile bool desktopMode;
-        DateTime topmostAt = DateTime.MinValue;
+        DateTime deskLayerAt = DateTime.MinValue;
+        int deskLayerChecks;
+        string lastCoveredBy;
 
         /// <summary>她能活动的范围：窗口模式是 Claude 窗口，桌面模式是显示器工作区</summary>
         bool AreaRect(out Native.RECT r) => desktopMode ? FollowNative.WorkArea(hwnd, dragging, out r) : ClaudeRect(out r);
@@ -271,7 +276,22 @@ namespace Claudia
                 ClampToArea(a, w, h, ref x, ref y);
                 if (x != pr.Left || y != pr.Top) Native.MoveTo(hwnd, x, y);
             }
-            KeepOnTop();
+            // 层级由全屏通知和前台切换来摆（Pet.Fullscreen）；另外每秒看一眼该不该让开：网页里点视频全屏、F11 时前台窗口没换，
+            // 系统任务栏不在（MyDockFinder 之类）时全屏通知也不一定来。只量一下前台窗口，变了才动层级
+            if ((DateTime.UtcNow - deskLayerAt).TotalSeconds >= 1)
+            {
+                deskLayerAt = DateTime.UtcNow;
+                if (ShouldYield() != yielding || !appBarOn && ++deskLayerChecks % 5 == 0) UpdateDeskLayer();   // 全屏通知登记失败：每 5 秒再钉一次置顶
+                else if (!yielding && !concealed && DeskLayer != "normal" && (Native.GetWindowLong(hwnd, Native.GWL_EXSTYLE) & 0x8 /* WS_EX_TOPMOST */) == 0)
+                {
+                    // 该在最上面却不是置顶了（11-26 用户：退出 PPT 放映后她被盖住）：记下当时前台是谁，再钉回去
+                    Store.Log($"该置顶却没置顶（前台 {FullscreenNative.Describe(FullscreenNative.GetForegroundWindow())}），重新置顶");
+                    UpdateDeskLayer();
+                }
+                // 排查（11-26 退出放映后被盖住）：该在最上面时，有别人的窗口压在她上面就记一笔，换了窗口才再记
+                var over = !yielding && !concealed && DeskLayer != "normal" ? FullscreenNative.CoveredBy(hwnd) : null;
+                if (over != lastCoveredBy) { lastCoveredBy = over; if (over != null) Store.Log("她被盖住了：" + over); }
+            }
         }
 
         /// <summary>启动时 / 回到默认位置 / 刚改成桌面模式：摆到上次的位置；没记过就放主屏幕右下角，站在任务栏上面</summary>
@@ -294,17 +314,7 @@ namespace Claudia
             ClampToArea(a, w, h, ref x, ref y);
             Native.MoveTo(hwnd, x, y);
             shownInClaude = true;
-            topmostAt = DateTime.MinValue;
-            KeepOnTop();
-        }
-
-        void KeepOnTop()
-        {
-            if (concealed || hwnd == IntPtr.Zero) return;
-            var now = DateTime.UtcNow;
-            if ((now - topmostAt).TotalSeconds < 5) return;
-            topmostAt = now;
-            Native.SetWindowPos(hwnd, Native.HWND_TOPMOST, 0, 0, 0, 0, Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+            UpdateDeskLayer();
         }
 
         /// <summary>拖完松手、走完路、改完大小：夹回工作区里，记下位置</summary>

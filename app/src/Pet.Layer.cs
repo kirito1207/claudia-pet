@@ -32,15 +32,16 @@ namespace Claudia
             if (Host == null || concealed == c) return;
             concealed = c;
             if (c) { openMenu?.Close(); Host.SetVisible(false); if (hwnd != IntPtr.Zero) Native.DropFromTop(hwnd); }
-            else { Host.SetVisible(true); topmostAt = DateTime.MinValue; }   // 桌面模式：出来后马上重新置顶
+            else Host.SetVisible(true);
             // 藏着时鼠标穿过整个窗口：不透明度 0 也照样接鼠标（Windows 看的是每个像素自己的透明度，见 ConcealStyle），
             // DirectHost 平时又按鼠标位置切穿透，所以交给它一直穿着
-            Host.ForcePassThrough = c;
+            Host.ForcePassThrough = c || ClickThrough;   // 开着鼠标穿透时露出来也照样穿（Pet.Fullscreen）
+            if (!c) UpdateDeskLayer();   // 桌面模式：出来后马上按层级设置摆好
             UpdatePageHidden();
         }
         void UpdatePageHidden() => Js($"setPageHidden({(concealed || sessionLocked || !shownInClaude ? "true" : "false")})");
 
-        // 跟着 Claude 时层级由 PlaceAbove 排、不能置顶；桌面模式的置顶见 KeepOnTop
+        // 跟着 Claude 时层级由 PlaceAbove 排、不能置顶；桌面模式的层级见 Pet.Fullscreen 的 UpdateDeskLayer
         void ApplyLayer()
         {
             if (desktopMode || hwnd == IntPtr.Zero) return;

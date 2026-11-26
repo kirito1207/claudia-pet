@@ -28,7 +28,7 @@ namespace Claudia
             if (desktopMode == desktop || hwnd == IntPtr.Zero) return;
             StopWalk(null); StopMotion(false);
             desktopMode = desktop;
-            shownInClaude = false; lastClaude = null; topmostAt = DateTime.MinValue;
+            shownInClaude = false; lastClaude = null;
             if (!desktop)
             {
                 Native.SetWindowPos(hwnd, Native.HWND_NOTOPMOST, 0, 0, 0, 0, Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);

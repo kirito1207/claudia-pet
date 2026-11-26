@@ -44,6 +44,8 @@ namespace Claudia
             menu.Items.Add(Item("设置…", () => OpenSettings()));
             menu.Items.Add(Item("回到默认位置", Recenter));
             menu.Items.Add(Item(Store.IsMain && HotkeyLabel != null ? $"暂时隐藏（{HotkeyLabel}）" : "暂时隐藏", () => SetUserHidden(true)));
+            // 鼠标穿透只给第一只：开了以后点不到她、右键不出菜单，只能从托盘图标（只有第一只有）关
+            if (Store.IsMain) menu.Items.Add(Item("鼠标穿透（点击落到后面的窗口）", () => SetClickThrough(!ClickThrough), ClickThrough));
             Sep();
             if (Store.IsMain) menu.Items.Add(Item("退出 " + Store.AppName, UserQuit));
             else

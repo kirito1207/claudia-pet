@@ -19,7 +19,7 @@ namespace Claudia
     /// 普通 WebView2 子窗口自己跟着显示器缩放走，画面也不经界面线程。
     /// 鼠标：分层窗口（WS_EX_LAYERED，整体不透明度 255）+ 按鼠标位置切 WS_EX_TRANSPARENT——鼠标在能点的那几块上才接，别处穿到后面的窗口。
     /// 网页直接收鼠标，setPointerBridge(true) 后把按下、拖动、单击、右键交给外壳（见 index.html 和 Pet.Mouse.cs）。
-    /// 窗口位置、大小一律是物理像素。置顶不在这里管：跟着 Claude 时由 Pet.Follow 的 PlaceAbove 排层级，桌面模式由 KeepOnTop 置顶
+    /// 窗口位置、大小一律是物理像素。置顶不在这里管：跟着 Claude 时由 Pet.Follow 的 PlaceAbove 排层级，桌面模式由 Pet.Fullscreen 的 UpdateDeskLayer 按三档摆
     /// </summary>
     sealed class DirectHost : Forms.Form
     {
@@ -31,6 +31,8 @@ namespace Claudia
 
         /// <summary>窗口收到的消息先给它看（第一只的全局快捷键 WM_HOTKEY）：返回 true = 处理掉了</summary>
         public Func<int, IntPtr, bool> MessageHook { get; set; }
+        /// <summary>每条窗口消息都通知一下（msg、wParam、lParam），不拦截</summary>
+        public event Action<int, IntPtr, IntPtr> RawMessage;
 
         /// <summary>一直让鼠标穿过（藏起来时）：不管鼠标在哪都不接</summary>
         public bool ForcePassThrough
@@ -71,6 +73,7 @@ namespace Claudia
         protected override void OnPaintBackground(Forms.PaintEventArgs e) { }   // 没有重定向画布，画了也看不见
         protected override void WndProc(ref Forms.Message m)
         {
+            RawMessage?.Invoke(m.Msg, m.WParam, m.LParam);   // 只通知、不拦（AppBar 的全屏通知要 lParam，见 Pet.Fullscreen）
             if (MessageHook != null && MessageHook(m.Msg, m.WParam)) { m.Result = IntPtr.Zero; return; }
             base.WndProc(ref m);
             // 换到缩放不同的屏幕、改了系统缩放：外壳按新缩放重设物理像素大小（Pet.Start 里接）。

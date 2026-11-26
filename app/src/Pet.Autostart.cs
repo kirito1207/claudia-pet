@@ -29,6 +29,7 @@ namespace Claudia
         public void Quit()
         {
             StopMotion();
+            UnregisterAppBar();
             if (tray != null) { tray.Visible = false; tray.Dispose(); }   // 多开的几只没有托盘图标
             Application.Current.Shutdown();
         }
