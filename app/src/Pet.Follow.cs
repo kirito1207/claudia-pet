@@ -234,7 +234,7 @@ namespace Claudia
         /// <summary>她能活动的范围：窗口模式是 Claude 窗口，桌面模式是显示器工作区</summary>
         bool AreaRect(out Native.RECT r) => desktopMode ? FollowNative.WorkArea(hwnd, dragging, out r) : ClaudeRect(out r);
 
-        // 窗口比人物大（头顶留着气泡，左右给动作留空：派活的小布偶会跑到人物两边，2026-11-24 窗口从 260 加宽到 330）。
+        // 窗口比人物大（头顶留着气泡，左右给动作留空：派活的小布偶会跑到人物两边，2026-11-24 窗口从 260 加宽到 330，11-26 再加到 380）。
         // 碰边、走到边、夹回看得见的地方都按人物本体算，不按窗口边，不然人离屏幕边还空着一截就被弹回来（同 Linux 版 body_margins）。
         // 本体 = 网页报来的能点到的区域里最大的那块；拖动、飞行时用开始那一刻的，免得边界跟着气泡变来变去
         (int l, int t, int r)? motionMargins;

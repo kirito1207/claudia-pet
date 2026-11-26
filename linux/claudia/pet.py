@@ -22,7 +22,7 @@ from . import actions, claude, store, system, web, xshape, xwin  # noqa: E402
 from .claude_window import ClaudeWindowWatch  # noqa: E402
 from .notices import TaskNoticePolicy, legacy_notice, pending_notices  # noqa: E402
 
-BASE_W, BASE_H = 330, 362   # 330：派活的小布偶会跑到人物两边，260 时两边各被窗口切掉一半（2026-11-24）
+BASE_W, BASE_H = 380, 362   # 380：派活里左边的小人跑到最远时 330 还会被切掉（2026-11-26）；之前 260 → 330 是为了派活的小布偶（2026-11-24）
 STAGGER_X = 190
 HOME_OFF_RIGHT = 40
 DEFAULT_OFF_BOTTOM = 100   # 待在 Claude 窗口里：默认离 Claude 窗口右下角多远（同 Windows 版）
@@ -315,6 +315,11 @@ class Pet:
             if self.js_errors < 20:
                 self.js_errors += 1
                 store.log("网页脚本出错: " + str(m["jsError"]))
+            return
+        if "videoError" in m:   # 网页重读 / 改播待机，见 sheet-player.js 的 videoTrouble
+            self.video_errors = getattr(self, "video_errors", 0) + 1
+            if self.video_errors <= 30:
+                store.log("视频出错: " + str(m["videoError"]))
             return
         if "imageError" in m and self.image_errors < 5:
             self.image_errors += 1
@@ -1316,6 +1321,7 @@ class Pet:
             return
         self.js("(function(p){ if (typeof show !== 'function') return; if (typeof showNow === 'function') showNow(p); else show(p, true);"
                 " clearTimeout(window.__claudiaMenuTimer);"
+                " if (typeof playThrough === 'function' && playThrough(p)) return;"   # 派活这类循环动作：整段播一遍再回待机（menu: full）
                 " if (typeof anim === 'function' && anim(p) && anim(p).walk && typeof startWalk === 'function' && startWalk(p)) return;"
                 " if (typeof anim === 'function' && anim(p) && transientMs(p)) return;"
                 " window.__claudiaMenuTimer = setTimeout(function(){ if (pose === p) show('idle', true); }, 6000); })('" + pose + "')")

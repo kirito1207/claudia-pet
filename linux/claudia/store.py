@@ -412,3 +412,10 @@ def resolve_sprite(path):
     if root not in full.parents:
         return None
     return full, {".webp": "image/webp", ".webm": "video/webm"}.get(ext, "image/png")
+
+
+def reap(proc):
+    """子进程退出后把它收掉（后台线程等它），不然一直挂着一个 <defunct> 僵尸进程（2026-11-26：notify-send、picom -b 都留过）"""
+    import threading
+    threading.Thread(target=proc.wait, daemon=True, name="reap").start()
+    return proc

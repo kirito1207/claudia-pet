@@ -4,7 +4,7 @@ const {pathToFileURL}=require('url');
 (async()=>{
   const browser=await chromium.launch({channel:'msedge',headless:true});
   try {
-    const page=await browser.newPage({viewport:{width:330,height:362}}), errors=[];
+    const page=await browser.newPage({viewport:{width:380,height:362}}), errors=[];
     page.on('pageerror',e=>errors.push(e.message));
     await page.goto(pathToFileURL(path.resolve(__dirname,'../web/index.html')).href);
     const dir=path.resolve(__dirname,'../characters/claude');

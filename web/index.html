@@ -651,6 +651,9 @@ function scheduleHitRects() {
   hitFrame = requestAnimationFrame(() => {
     hitFrame = 0
     if (pageHidden) return
+    // 往外滑走的时候（退出的 leaving、「再见」动作的 m-dash）不报新位置：外壳按点击区域算人物本体、把她夹在工作区里，
+    // 滑到边上会被当成出界拉回来，靠边退出时一卡一卡的（2026-11-26 用户反馈）。滑走时也不需要点到她；类名去掉后照常报
+    if ($('stage').classList.contains('leaving') || $('body').classList.contains('m-dash')) return
     const rects = hitRects(), key = JSON.stringify(rects)
     if (key !== lastHitRects) {
       lastHitRects = key
@@ -743,6 +746,9 @@ function clipLines() {
 function show(p, urgent) {
   if (farewellLine !== null) return   // 正在道别：Claude 的工作事件先不打断
   if (p === 'idle') p = restPose()   // Claude 发来「闲着」时也要看额度：快用完了就是累的样子
+  if (!userShowing && p !== pose && pose === holdPose && Date.now() < holdUntil && !HOLD_BREAKERS.has(p)) {   // 派活的第一圈还没播完（holdFirstCycle）
+    clearTimeout(pending); pending = characterTimeout(() => show(p, true), holdUntil - Date.now()); return
+  }
   const wait = shownAt + DWELL - Date.now()
   clearTimeout(pending)
   if (!urgent && wait > 0) { pending = characterTimeout(() => show(p, true), wait); return }
@@ -753,6 +759,7 @@ function show(p, urgent) {
   clearTimeout(revertTimer)
   if (p !== pose) {
     setPose(p)
+    holdUntil = userShowing ? 0 : Date.now() + holdMs(p); holdPose = p
     const lines = clipLines() || linesOf(p)
     say(lines ? pick(lines) : '')
   }
@@ -769,6 +776,7 @@ function show(p, urgent) {
 let exiting = null, exitTimer = null, exitedFrom = null   // exiting：{ pose, next }；exitedFrom：已经演过收尾的那个姿态
 function leaveVia(next, target = null) {
   const a = anim(pose)
+  if (menuThrough === pose) { menuThrough = null; return false }   // 菜单点播的整段被 Claude 的新状态打断：直接切过去，不演收尾（2026-11-26 用户定）
   if (!a?.exit || exiting || exitedFrom === pose || (target && a.exit.except?.includes(target))) return false
   if (document.documentElement.classList.contains('moving') || tumble || multi || farewellLine !== null) return false
   // exit.continue：不跳到 exit.from，从正在播的那一帧一直正着播到收尾结束（循环段播完这一轮、再接视频里原本的后半段），不跳帧、不倒放。
@@ -778,9 +786,10 @@ function leaveVia(next, target = null) {
   // exit.jump：循环段第 cycle[0] 帧起每一帧在循环末尾最像的那一帧（出片后逐帧比对算好）。停下时先跳过去，只跑完最后一小段再收尾，
   // 不用把整圈跑完（2026-11-23 派活：循环 5.6 秒、两只布偶每圈都不一样，没法按固定圈长换算）
   if (a.exit.jump && a.cycle && from >= a.cycle[0] && from <= a.cycle[1]) from = a.exit.jump[from - a.cycle[0]] ?? from
+  const fadeJump = !!(a.exit.jump && s?.img && from !== s.frame)   // 真的跳了：交叉淡入（sheet-player 的 playSheet）
   exiting = { pose: p, next }
   clearTimeout(revertTimer)
-  playSheet({ ...a, from, to, hold: null, cycle: null, loop: false, keepUrl: true }, framesFor(p)[0])
+  playSheet({ ...a, from, to, hold: null, cycle: null, loop: false, keepUrl: true, fadeJump }, framesFor(p)[0])
   clearTimeout(exitTimer)
   exitTimer = characterTimeout(() => {
     const e = exiting; exiting = null
@@ -792,8 +801,30 @@ function cancelExit() { if (!exiting) return; exiting = null; clearTimeout(exitT
 // 你点她、从右键菜单换动作：马上换，不等当前动作把收尾演完（2026-11-25 用户定：忙碌这种循环动作点了还在转圈，像没反应）。
 // Claude 那边的状态变化（干完活、转去思考……）照旧走 show，把收尾演完再换
 function showNow(p) {
-  cancelExit(); exitedFrom = pose
-  show(p, true)
+  cancelExit(); exitedFrom = pose; menuThrough = null; holdUntil = 0
+  userShowing = true
+  try { show(p, true) } finally { userShowing = false }
+}
+// ---- 派活这类动作的两条规矩（2026-11-26 用户定）----
+// holdFirstCycle：Claude 那边切到它以后，先完整播完一圈循环段（入场 + 一圈），这期间 Claude 的其他状态先等着、播完再换（换的时候照旧演收尾）；
+//   要你处理的（有事问你、哎呀）不等。你点她、右键菜单换动作也不等。
+// menu: 'full'：右键菜单点播时从头一直播到收尾结束再回待机（派活 10 秒），途中 Claude 来了新状态直接切走、不演收尾（leaveVia）
+let holdUntil = 0, holdPose = null, userShowing = false, menuThrough = null
+const HOLD_BREAKERS = new Set(['asking', 'oops'])
+function holdMs(p) { const a = anim(p); return a?.holdFirstCycle && a.cycle ? Math.round((a.cycle[1] + 1) / (a.fps || SHEET.fps) * 1000) + 300 : 0 }
+function playThrough(p) {
+  const a = anim(p)
+  if (a?.menu !== 'full' || pose !== p) return false
+  holdUntil = 0; menuThrough = p
+  const to = (a.frames ?? SHEET.frames) - 1
+  playSheet({ ...a, from: 0, to, cycle: null, loop: false, keepUrl: true }, framesFor(p)[0])
+  clearTimeout(revertTimer)
+  revertTimer = characterTimeout(() => {
+    if (pose !== p || menuThrough !== p) return
+    menuThrough = null; exitedFrom = p
+    show('idle', true)
+  }, Math.round((to + 1) / (a.fps || SHEET.fps) * 1000) + 150)
+  return true
 }
 
 // ---- Windows 外壳接口 ----

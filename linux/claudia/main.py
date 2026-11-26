@@ -148,10 +148,10 @@ def ensure_compositor():
         return
     try:
         # --no-use-damage：每次整屏重画。只画「变了的区域」在 Xvnc（TigerVNC）上会漏画，出现黑方块、偶尔整屏发黑
-        subprocess.Popen([exe, "--config", "/dev/null", "--backend", "xrender", "--no-use-damage", "--no-vsync",
-                          "--log-level", "warn", "--log-file", str(store.DATA / "picom.log"), "-b"],
-                         stdin=subprocess.DEVNULL,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
+        store.reap(subprocess.Popen([exe, "--config", "/dev/null", "--backend", "xrender", "--no-use-damage", "--no-vsync",
+                                     "--log-level", "warn", "--log-file", str(store.DATA / "picom.log"), "-b"],
+                                    stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True))
     except OSError as e:
         store.log("启动 picom 失败: " + str(e))
         return

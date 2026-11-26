@@ -163,6 +163,7 @@ namespace Claudia
             // 动画动作按片长自己回到待机，不再 6 秒后被切掉
             Js("(function(p){ if (typeof show !== 'function') return; if (typeof showNow === 'function') showNow(p); else show(p, true);" +
                " clearTimeout(window.__claudiaMenuTimer);" +
+               " if (typeof playThrough === 'function' && playThrough(p)) return;" +   // 派活这类循环动作：整段播一遍再回待机（character.json 的 menu: full）
                " if (typeof anim === 'function' && anim(p) && anim(p).walk && typeof startWalk === 'function' && startWalk(p)) return;" +
                " if (typeof anim === 'function' && anim(p) && transientMs(p)) return;" +
                " window.__claudiaMenuTimer = setTimeout(function(){ if (pose === p) show('idle', true); }, 6000); })('" + pose + "')");

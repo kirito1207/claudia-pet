@@ -342,8 +342,9 @@ USER_QUIT_FLAG = store.DATA / "user-quit"
 def launch(args):
     """起一个独立的进程（新会话、不继承输入输出）：插件和 MCP 都是 Claude 的子进程，Claude 关掉时不能把她一起带走"""
     try:
-        p = subprocess.Popen([store.launcher(), *args], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True, cwd=str(Path.home()))
+        # MCP 服务一直开着：桌宠退出后要收掉，不然留一个僵尸进程
+        p = store.reap(subprocess.Popen([store.launcher(), *args], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                        stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True, cwd=str(Path.home())))
         return f"已打开（独立进程 {p.pid}）"
     except OSError as e:
         return "打开失败：" + str(e)

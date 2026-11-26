@@ -27,7 +27,7 @@ async function write($: EngineInterface, file: string, data: unknown): Promise<v
   await $.fs.write(`${d}${sep}${file}`, typeof data === 'string' ? data : JSON.stringify(data))
 }
 
-type State = { pose: string; event: string; tool: string; ts: number }
+type State = { pose: string; event: string; tool: string; ts: number; after?: string; afterTs?: number }
 async function setState($: EngineInterface, state: State): Promise<void> {
   try {
     await write($, 'seen-plugin', String(Math.floor(Date.now() / 1000)))   // 心跳：设置页显示「上次收到消息」
@@ -115,8 +115,20 @@ const BIG_JOB_TOOLS = 8   // 一轮里用了这么多次工具，完成时「得
 export const register: Register = on => {
   let tools = 0
   const now = () => Date.now() / 1000
+  // 子代理和主对话同时干活（2026-11-26 用户定）：派活以后主对话照常换动作（桌宠那边先播满派活的一圈）；
+  // 主对话这一轮结束、子代理还在跑，就重新派活；子代理全结束、主对话也闲着，回待机（桌宠先演派活的收尾）。
+  // 子代理的每一步只在主对话闲着时才写派活，不然主对话读文件、子代理又写派活，她会来回切。
+  // 子代理 2 分钟没动静（没收到它的结束事件）就当它结束了
+  const subagents = new Map<string, number>()   // agentId → 最后一次动静（秒）
+  let mainBusy = false
+  const liveSubagents = () => {
+    const t = now()
+    for (const [id, ts] of subagents) if (t - ts > 120) subagents.delete(id)
+    return subagents.size
+  }
 
   on('session.start', async ($, e, next) => {
+    mainBusy = false; subagents.clear()
     void ensurePet($).catch(() => {})
     await setState($, { pose: 'idle', event: 'SessionStart', tool: '', ts: now() })
     // 这次会话 Claude Code 一个认得的额度都没报（换成别的模型 / 别家接口时就是这样）：写一份空额度把旧数字清掉，
@@ -131,6 +143,7 @@ export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     void ensurePet($).catch(() => {})
     tools = 0
+    mainBusy = true
     await setState($, { pose: 'listening', event: 'UserPromptSubmit', tool: '', ts: now() })
     return next(e)
   })
@@ -139,7 +152,8 @@ export const register: Register = on => {
     // 子代理自己的工具调用：主对话还在等它，她继续派活，不跟着它的每一步换成看书、干活（换来换去会闪），
     // 也不算进「一轮用了多少次工具」。子代理在后台跑时主对话的 Agent 调用马上就返回，靠这里把派活续上（2026-11-24）
     if (e.agentId) {
-      await setState($, { pose: 'delegating', event: 'PreToolUse', tool: e.tool, ts: now() })
+      subagents.set(String(e.agentId), now())
+      if (!mainBusy) await setState($, { pose: 'delegating', event: 'PreToolUse', tool: e.tool, ts: now() })
       return next(e)
     }
     tools += 1
@@ -152,11 +166,19 @@ export const register: Register = on => {
   })
 
   on('turn.complete', async ($, e, next) => {
-    if (e.agentId) return next(e)   // 子代理做完：不庆祝、不发「完成」通知，主对话接着干
+    if (e.agentId) {   // 子代理做完：不庆祝、不发「完成」通知，主对话接着干；最后一个做完、主对话也闲着，回待机
+      subagents.delete(String(e.agentId))
+      if (!mainBusy && liveSubagents() === 0) await setState($, { pose: 'idle', event: 'SubagentsDone', tool: '', ts: now() })
+      return next(e)
+    }
     const r = await next(e)
     const pose = e.reason === 'answer' ? (tools >= BIG_JOB_TOOLS ? 'proud' : 'happy') : e.reason === 'aborted' ? 'surprised' : 'oops'
     tools = 0
-    await setState($, { pose, event: 'Stop', tool: '', ts: now() })
+    mainBusy = false
+    if (liveSubagents() > 0) {   // 主对话这一轮完了、子代理还在跑：先演完成（after），再重新派活
+      const ts = now()
+      await setState($, { pose: 'delegating', event: 'Stop', tool: '', ts, after: pose, afterTs: ts })
+    } else await setState($, { pose, event: 'Stop', tool: '', ts: now() })
     if (e.reason === 'answer') await notify($, 'complete')
     else if (e.reason !== 'aborted') await notify($, 'error')
     return r

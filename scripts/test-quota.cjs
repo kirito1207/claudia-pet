@@ -75,7 +75,7 @@ console.log('PASS: quota fresh (reset passed, low recompute, stale note, used-pe
     info.sheets = {};
     for (const file of fs.readdirSync(path.join(root, 'characters/claude/anim')).filter(f => f.endsWith('.webp')))
       info.sheets[file.replace('.webp', '')] = pathToFileURL(path.join(root, 'characters/claude/anim', file)).href;
-    await page.setViewportSize({ width: 330, height: 362 });
+    await page.setViewportSize({ width: 380, height: 362 });
     await page.evaluate(info => { init({ characters: { claude: info } }); setCharacter('claude', true); }, info);
     await page.waitForTimeout(400);
 

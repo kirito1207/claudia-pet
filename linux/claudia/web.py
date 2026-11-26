@@ -16,6 +16,12 @@ from gi.repository import Gdk, Gio, GLib, Gtk, WebKit2  # noqa: E402
 
 from . import store  # noqa: E402
 
+try:   # WebKit2 4.1 用的是 libsoup 3：给自定义协议的回复加响应头要它的 MessageHeaders
+    gi.require_version("Soup", "3.0")
+    from gi.repository import Soup as _soup  # noqa: E402
+except (ValueError, ImportError):
+    _soup = None
+
 _SHIM = """
 (function () {
   if (window.chrome && window.chrome.webview) return;
@@ -33,6 +39,21 @@ _context = None
 
 def _reply(request, data, mime):
     stream = Gio.MemoryInputStream.new_from_bytes(GLib.Bytes.new(data))
+    # 网页在 claudia://app、素材在 claudia://data，不同源：<img> 不管，fetch 要响应里带 Access-Control-Allow-Origin，
+    # 不然读不出来（动画视频先 fetch 成 blob 再播，2026-11-26 发现 Linux 上视频全都退回精灵图，就是这里）。
+    # 加响应头要 WebKitGTK 2.36+ 的 URISchemeResponse；老版本照旧，视频退回精灵图
+    if hasattr(WebKit2, "URISchemeResponse") and _soup is not None:
+        try:
+            resp = WebKit2.URISchemeResponse.new(stream, len(data))
+            resp.set_content_type(mime)
+            headers = _soup.MessageHeaders.new(_soup.MessageHeadersType.RESPONSE)
+            headers.append("Access-Control-Allow-Origin", "*")
+            resp.set_http_headers(headers)
+            request.finish_with_response(resp)
+            return
+        except Exception as e:
+            store.log("带响应头回复失败，改用普通回复: " + repr(e))
+            stream = Gio.MemoryInputStream.new_from_bytes(GLib.Bytes.new(data))
     request.finish(stream, len(data), mime)
 
 

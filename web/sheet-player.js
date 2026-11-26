@@ -92,6 +92,23 @@ function playSheet(a, still, key = null) {
   // 原来每次都重新读、重新解码（约 0.3 秒，画面停在半路）再交叉淡入，走路收尾、睡醒、收起零食、点击重播时看着是卡一下、叠个重影再换掉（2026-11-07 用户反馈向左跑收尾生硬）
   const prev = sheet
   if (prev?.img && prev.asset === asset && prev.key === key && sheetFront === prev.canvas && !prev.cancelLoad) {
+    // 收尾时跳到循环里最像的那一帧（exit.jump）：换到另一块画布上画、两块交叉淡入，不硬切——
+    // 派活的小人一直在跑，最像的帧也和当前帧差相邻两帧的三倍，硬切会闪一下（2026-11-26）。两块画布共用这份解好的图，不重新解码
+    if (a.fadeJump) {
+      const img = prev.img
+      prev.img = null   // 交给新的这份；淡出的那块只留最后画出来的画面
+      fadeOut(prev)
+      sheet = s; s.img = img
+      clearTimeout(sheetReleaseTimer)
+      sheetDraw()
+      s.canvas.classList.add('on'); prev.canvas.classList.remove('on')
+      sheetFront = s.canvas
+      updateAnimationTimers()
+      sheetShown()
+      if (still) setTimeout(() => { if (sheet === s) showImage(still, true) }, 450)
+      setTimeout(() => { if (fading === prev) { endFade(); prev.canvas.width = 1; prev.canvas.height = 1 } }, 220)
+      return
+    }
     stopSheetClock(prev); prev.cancelLoad?.()
     Object.assign(s, { canvas: prev.canvas, img: prev.img, layoutVersion: prev.layoutVersion, dpr: prev.dpr })
     prev.img = null   // 交给新的这份，别在 disposeSheet 里关掉
@@ -287,7 +304,7 @@ function playVideo(a, s, url, still) {
   const prev = sheet
   s.video = true; s.asset = url
   // 还是正在播的这段视频：直接跳到新的起点接着播（离场动作、点击重播）
-  if (prev?.video && prev.img && prev.asset === url && prev.key === s.key && sheetFront === prev.canvas && !prev.cancelLoad) {
+  if (prev?.video && prev.img && prev.asset === url && prev.key === s.key && sheetFront === prev.canvas && !prev.cancelLoad && !a.fadeJump) {   // fadeJump：换另一个 <video> 交叉淡入，见 playSheet
     Object.assign(s, { canvas: prev.canvas, img: prev.img, layoutVersion: prev.layoutVersion, dpr: prev.dpr })
     prev.img = null
     sheet = s
@@ -306,6 +323,7 @@ function playVideo(a, s, url, still) {
   updateAnimationTimers()
   clearTimeout(sheetReleaseTimer)
   const v = s.canvas
+  watchVideoErrors(v)
   const show = () => {
     if (sheet !== s) return
     s.cancelLoad = null
@@ -321,15 +339,9 @@ function playVideo(a, s, url, still) {
     if (still) setTimeout(() => { if (sheet === s) showImage(still, true) }, 450)
     if (outgoing) setTimeout(() => { if (fading === outgoing) endFade() }, 220)
   }
-  // 读不出来：这一段改回精灵图，以后也不再试（不让人消失）
-  const failed = () => {
-    if (sheet !== s) return
-    window.chrome?.webview?.postMessage({ imageError: url })
-    const n = a.sheets?.find(x => char()?.videos?.[x] === url)
-    if (n) delete char().videos[n]
-    s.cancelLoad = null; sheet = null
-    playSheet(a, still, s.key)
-  }
+  // 读不出来：重读这段视频再试（videoTrouble），不退回精灵图（2026-11-26 用户定：以后只用视频、精灵图要删）
+  const failed = () => { if (sheet === s) videoTrouble(s, 'load ' + (v.error ? 'error ' + v.error.code : 'failed')) }
+  s.replay = { a, still }   // 出错重来时用
   s.cancelLoad = loadVideo(url, blob => {
     if (sheet !== s) return
     let done = false
@@ -342,12 +354,60 @@ function playVideo(a, s, url, still) {
       v.currentTime = videoTime(s, s.from)
       setTimeout(ready, 400)   // 个别情况跳到同一个位置不发 seeked：兜底
     }
-    v.onerror = failed
     if (v.src !== blob) { v.src = blob; v.addEventListener('loadeddata', seek) }
     else if (v.readyState >= 2) seek()
     else v.addEventListener('loadeddata', seek)
   }, failed)
 }
+// ---- 视频出错、卡住（2026-11-26）----
+// 出错事件挂在 <video> 元素上、按「现在谁在用这个元素」处理：原来挂在某一次播放上，同一段视频接着用（收尾、点击重播）以后
+// 再出错就没人管，画面上留着一个解不出画面的空视频——人不见了、只剩光晕，点她换个动作才回来（Linux 上见过）。
+// 处理：重读这段视频、从出错的那一帧接着播；连着两次还不行，改播待机视频；都在日志里记一笔（外壳收 videoError）。
+// 看门狗：正在显示、该往前播的视频 1.5 秒没动，也按出错处理（解码卡住时不一定报错）
+function watchVideoErrors(v) {   // 第一次用这个 <video> 时挂上（本文件比 index.html 里的 sheetVideos 先加载，不能在顶层挂）
+  if (v.troubleWatched) return
+  v.troubleWatched = true
+  v.addEventListener('error', () => {
+    const s = sheet?.video && sheet.canvas === v ? sheet : null
+    if (s) videoTrouble(s, 'error ' + (v.error?.code ?? '?'))
+  })
+}
+function videoTrouble(s, why) {
+  if (sheet !== s || !s.video || s.recovering) return
+  const tries = (s.tries || 0) + 1
+  window.chrome?.webview?.postMessage({ videoError: `${decodeURIComponent(s.asset.split('/').pop())} ${why}（第 ${tries} 次）` })
+  const r = s.replay
+  const idle = anim('idle')
+  if (tries > 2 || !r) {
+    // 两次都不行：这一段先不播，改播待机视频（待机自己出错就停在原地，不再循环重来）
+    if (idle && !idle.urls.includes(s.url)) { s.cancelLoad?.(); sheet = null; playSheet(idle, null); if (sheet) sheet.tries = 0 }
+    else s.recovering = true   // 待机自己也不行：停在这一帧，不再让看门狗一遍遍重来、刷日志
+    return
+  }
+  // 等 0.4 秒再重读：马上重读时解码器多半还没缓过来，Linux 上实测三次都在一秒内接连失败。等的时候画面停在原处
+  s.recovering = true
+  s.canvas.pause()
+  setTimeout(() => {
+    if (sheet !== s) return   // 这期间换了别的动作
+    const frame = s.frame
+    videoBlobs.delete(s.asset)   // 重新读一遍文件，不用可能坏掉的那份
+    s.cancelLoad?.(); stopSheetClock(s)
+    s.img = null   // 旧的这个先留在台上，新的读好了淡入时再换下
+    sheet = null
+    playSheet({ ...r.a, from: Math.max(r.a.from ?? 0, Math.min(frame, s.to)), keepUrl: true }, r.still, s.key)
+    if (sheet) sheet.tries = tries
+  }, 400)
+}
+setInterval(() => {
+  const s = sheet
+  if (!s?.video || !s.img || s.cancelLoad || s.recovering || pageHidden || s.canvas !== sheetFront) { if (s) s.stuckSince = 0; return }
+  const v = s.canvas
+  if (v.error) return videoTrouble(s, 'error ' + v.error.code)
+  if (!videoCanAdvance(s) || v.ended) { s.stuckSince = 0; return }
+  if (v.currentTime !== s.lastTime) { s.lastTime = v.currentTime; s.stuckSince = 0; return }
+  if (!s.stuckSince) s.stuckSince = Date.now()
+  else if (Date.now() - s.stuckSince > 1500) { s.stuckSince = 0; videoTrouble(s, `stall @${v.currentTime.toFixed(2)}s rs${v.readyState}`) }
+}, 500)
 // 点击反应的视频先读进内存（待机播起来以后、每个角色一次）：第一次点她也不用临时读文件
 let videoPrefetched = null
 function prefetchVideos() {

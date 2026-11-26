@@ -28,7 +28,7 @@ console.log('PASS: frames config (files, grouping, timings vs tumble steps)');
   const browser = await chromium.launch({ channel: 'msedge', headless: true });
   try {
     for (const reduced of [false, true]) {
-      const page = await browser.newPage({ viewport: { width: 330, height: 362 }, reducedMotion: reduced ? 'reduce' : 'no-preference' });
+      const page = await browser.newPage({ viewport: { width: 380, height: 362 }, reducedMotion: reduced ? 'reduce' : 'no-preference' });
       const errors = [];
       page.on('pageerror', e => errors.push(e.message));
       await page.goto(pathToFileURL(path.resolve(__dirname, '../web/index.html')).href);

@@ -18,7 +18,7 @@ namespace Claudia
             if (Host == null || !ready || hitRects == null) return;
             var width = Host.Width;   // 物理像素
             if (hitRects == appliedHitRects && width == appliedHitWidth) return;
-            var zoom = width / pageW;   // 画布像素 → 窗口里的物理像素（画布可能因为文字大小比 330 宽）
+            var zoom = width / pageW;   // 画布像素 → 窗口里的物理像素（画布可能因为文字大小比 380 宽）
             Host.SetHitRects(HitRectsToWindow(hitRects, zoom));
             appliedHitRects = hitRects; appliedHitWidth = width;
         }

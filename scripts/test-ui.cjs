@@ -71,7 +71,7 @@ const root = path.resolve(__dirname, '..');
     info.sheets = {};
     for (const file of fs.readdirSync(path.join(root, 'characters/claude/anim')).filter(f => f.endsWith('.webp')))
       info.sheets[file.replace('.webp', '')] = pathToFileURL(path.join(root, 'characters/claude/anim', file)).href;
-    await page.setViewportSize({ width: 330, height: 362 });
+    await page.setViewportSize({ width: 380, height: 362 });
     await page.evaluate(info => {
       init({ characters: { claude: info } }); setCharacter('claude', true);
       setQuota('claude', { text: '5小时 剩余 60% ｜ 本周 剩余 70%', bars: [{ label: '5小时', left: .6 }, { label: '本周', left: .7 }] });

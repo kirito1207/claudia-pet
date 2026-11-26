@@ -3,7 +3,7 @@
 // - k = 文字 ÷ 人物：气泡、名牌、额度按 k 放大；字比人大时画布（网页的 CSS 尺寸）跟着变大给字腾地方，外壳照着设窗口
 // - 画布只由这两个设置值决定，不看当前有没有气泡：窗口只在调设置时变，平时不动
 ;(function (root) {
-  const BASE = { w: 330, h: 362, foot: 62 }   // 原来固定的画布：人物上方 59 给气泡，下方 62 给名牌和额度；宽 330（2026-11-24 从 260 加宽：派活的小布偶跑到人物两边）
+  const BASE = { w: 380, h: 362, foot: 62 }   // 原来固定的画布：人物上方 59 给气泡，下方 62 给名牌和额度；宽 380（2026-11-24 从 260 加宽到 330、11-26 再加到 380：派活的帮手跑到人物两边）
   const clamp = v => { const n = Number(v); return Number.isFinite(n) ? Math.min(1.6, Math.max(0.6, n)) : 1 }
 
   function effectiveText(size, textSize, linked) {

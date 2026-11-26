@@ -37,7 +37,7 @@ def notify(title, body, warn=False):
     except Exception as e:
         store.log("系统通知失败: " + str(e))
         try:
-            subprocess.Popen(["notify-send", "-a", store.APP_NAME, title, body], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            store.reap(subprocess.Popen(["notify-send", "-a", store.APP_NAME, title, body], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
             return True
         except OSError:
             return False

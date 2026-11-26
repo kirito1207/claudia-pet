@@ -111,16 +111,32 @@ function manifest() {
       return r }), ['idle', true, true, false, 'hum', false, 'hum,tired'], 'tired is an idle action: one in three when 5h or weekly quota is at or below 15%, an ordinary pick otherwise, and never a resting pose')
     assert.equal(await page.evaluate(() => transientMs('tired') >= 6000 && anim('tired').frames), 100, 'tired plays its 100 frames (15 fps) once')
     await page.evaluate(() => setPose('delegating', true))
-    await page.waitForFunction(() => pose === 'delegating' && sheet?.img && sheet.to === 129)
+    await page.waitForFunction(() => pose === 'delegating' && sheet?.img && sheet.to === 187)
     assert.deepEqual(await page.evaluate(() => {
       const frames = [sheet.frame, sheet.fps]
-      sheet.frame = 128
+      sheet.frame = 186
       sheetStep(sheet); frames.push(sheet.frame)
       sheetStep(sheet); frames.push(sheet.frame)
       sheet.frame = 100
       show('thinking', true); frames.push(sheet.frame, sheet.to, sheet.cycle, sheet.fps)
+      cancelExit()
       return frames
-    }), [0, 15, 129, 88, 100, 170, null, 15], 'delegating (15 fps, 171 frames) must loop the composited run forward and on leaving play on through the close')
+    }), [0, 24, 187, 58, 179, 239, null, 24], 'delegating (24 fps, 240 frames since 2026-11-26) must summon the helpers, loop 58-187, and on leaving jump to the closest frame near the loop end (exit.jump) and play the close to 239')
+    assert.deepEqual(await page.evaluate(() => {
+      cancelExit(); exitedFrom = null; clearTimeout(pending); setPose('idle', true); holdUntil = 0; shownAt = 0
+      show('delegating', true)
+      const r = [pose, holdUntil - Date.now() > 7000]
+      show('thinking', true); r.push(pose, !!exiting)
+      show('asking', true); r.push(!!exiting && exiting.pose === 'delegating')
+      cancelExit(); clearTimeout(pending); holdUntil = 0
+      return r
+    }), ['delegating', true, 'delegating', false, true], 'delegating from Claude holds through its first loop (other states wait), but asking cuts in at once through the closing segment')
+    assert.deepEqual(await page.evaluate(() => {
+      showNow('delegating')
+      const r = [playThrough('delegating'), sheet.cycle, sheet.to, menuThrough, holdUntil]
+      show('thinking', true); r.push(pose, !!exiting)
+      return r
+    }), [true, null, 239, 'delegating', 0, 'thinking', false], 'delegating from the menu plays the whole clip once, and a Claude state meanwhile switches straight over without the close')
     await page.evaluate(() => setPose('asking', true))
     await page.waitForFunction(() => pose === 'asking' && sheet?.img && sheet.to === 59)
     assert.deepEqual(await page.evaluate(() => {
@@ -149,6 +165,12 @@ function manifest() {
         tick()
       }))
       assert.ok(loop.wrapped && loop.max <= 60, `asking video must loop 40-59 (${JSON.stringify(loop)})`)
+      // 播到一半出错（Linux 上见过）：重读这段视频接着播，不退回精灵图（2026-11-26）
+      await page.evaluate(() => { window.__before = sheet; sheet.canvas.dispatchEvent(new Event('error')) })
+      await page.waitForFunction(() => sheet && sheet !== window.__before, null, { timeout: 3000 })   // 等 0.4 秒再重读
+      assert.deepEqual(await page.evaluate(() => [!!sheet?.video, sheet?.tries, pose]),
+        [true, 1, 'asking'], 'a video error re-reads the clip and keeps playing it, without falling back to the sprite sheet')
+      await page.waitForFunction(() => sheet?.video && sheet.img && sheetFront === sheet.canvas, null, { timeout: 10000 })
       await page.evaluate(() => show('thinking', true))
       await page.waitForFunction(() => sheet?.video && sheet.frame === 119 && sheet.canvas.paused, null, { timeout: 9000 })
       await page.evaluate(() => { cancelExit(); delete char().videos; setPose('idle', true) })

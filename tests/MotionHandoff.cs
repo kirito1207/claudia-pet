@@ -23,14 +23,14 @@ namespace Claudia
             Store.Settings = new Dictionary<string, object>(); // Test process only; no user files touched.
 
             // Hit rectangles arrive in canvas pixels and must reach the window in physical pixels (window width / canvas width).
-            var input = new Pet(null) { Host = new DirectHost("test", 330, 362), ready = true };   // 330 = default canvas width (Pet.BaseWidth)
+            var input = new Pet(null) { Host = new DirectHost("test", 380, 362), ready = true };   // 380 = default canvas width (Pet.BaseWidth)
             input.hitRects = new object[] { new object[] { 10, 15, 50, 30 } };
             input.UpdateHitRects();
             var applied = input.Host.HitRects;
             Check(applied.Count == 1 && applied[0] == new Rectangle(10, 15, 50, 30), "Reported hit rectangle was not applied");
             input.UpdateHitRects();
             Check(ReferenceEquals(input.Host.HitRects, applied), "Unchanged hit geometry was rebuilt");
-            input.Host.Width = 660;
+            input.Host.Width = 760;   // twice the 380 canvas
             input.UpdateHitRects();
             Check(input.Host.HitRects.Count == 1 && input.Host.HitRects[0] == new Rectangle(20, 30, 100, 60), "Cached hit rectangle was not rescaled");
             input.Host.Dispose();
