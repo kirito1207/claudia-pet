@@ -18,7 +18,7 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
-from . import actions, claude, store, system, web, xshape  # noqa: E402
+from . import actions, claude, store, system, web, xshape, xwin  # noqa: E402
 from .claude_window import ClaudeWindowWatch  # noqa: E402
 from .notices import TaskNoticePolicy, legacy_notice, pending_notices  # noqa: E402
 
@@ -78,6 +78,8 @@ class Pet:
         self.claude_window_seen = False   # 这次运行里 GNOME 扩展找到过 Claude 窗口没有（找到过又没了 = 收进托盘）
         self.follow_since = time.monotonic()
         self.top_at = 0.0
+        self.state_cleaned_at = 0.0
+        self.yielding = False   # 桌面模式「全屏时让开」：她这块屏上前台窗口全屏，先藏起来（见 update_yield）
         # 拖动 / 飞行
         self.pressed = self.dragging = self.flying = False
         self.down = (0, 0)
@@ -268,8 +270,9 @@ class Pet:
         return False
 
     def on_screen(self):
-        """现在该不该看得见：画好了、没被藏起来（快捷键 / 菜单），在 Claude 窗口里时 Claude 也看得见、她没被别的窗口盖住"""
-        return self.revealed and not self.concealed and self.shown
+        """现在该不该看得见：画好了、没被藏起来（快捷键 / 菜单），在 Claude 窗口里时 Claude 也看得见、她没被别的窗口盖住，
+        桌面模式下没在给全屏窗口让路"""
+        return self.revealed and not self.concealed and self.shown and not self.yielding
 
     def apply_visibility(self):
         vis = self.on_screen()
@@ -353,6 +356,25 @@ class Pet:
             for notice in pending_notices(self.stamps):
                 self.task_notice(*notice)
 
+    def clean_stale_state(self):
+        """插件每个会话写一个 claude-session-<sid>.json、一个 claude-notify-<sid>.json，自己从不删。这两种只认最近 10 分钟 / 2 分钟的，
+        超过一天的由第一只删掉（启动时一次、之后每小时一次）。Windows 版见 Pet.Web.cs 的 CleanStaleState"""
+        now = time.time()
+        if not store.is_main() or now - self.state_cleaned_at < 3600:
+            return
+        self.state_cleaned_at = now
+        n = 0
+        for pattern in ("claude-session-*.json", "claude-notify-*.json"):
+            for f in store.STATE.glob(pattern):
+                try:
+                    if now - f.stat().st_mtime > 86400:
+                        f.unlink()
+                        n += 1
+                except OSError:
+                    pass
+        if n:
+            store.log(f"清掉 {n} 个一天前的会话状态文件")
+
     def poll_session_states(self, cid, cutoff):
         changed = []
         for f in store.STATE.glob("claude-session-*.json"):
@@ -394,6 +416,8 @@ class Pet:
                 self.quit()
                 return
         self.follow_place()
+        self.update_yield()
+        self.clean_stale_state()
 
     def claude_found(self):
         st = self.claude_watch.state if self.claude_watch else None
@@ -438,6 +462,7 @@ class Pet:
             self.push_settings()
         self.check_area()
         self.follow_place()
+        self.update_yield()
 
     def switch_area(self, desktop):
         """真正换地方（不改设置）：改了「待在哪」、扩展出现 / 消失、独立运行时 Claude 开了 / 关了"""
@@ -661,6 +686,74 @@ class Pet:
         if gw is not None:
             gw.raise_()
 
+    # ---- 桌面上的层级、全屏时让开、鼠标穿透（2026-11-26，Windows 版见 Pet.Fullscreen.cs） ----
+    # Linux 只有两档：她是不归窗口管理器管的窗口（override-redirect），没法像普通窗口那样被别人盖住，所以没有「不置顶」。
+    #   top    始终在最上面（每 5 秒抬一次，keep_on_top）
+    #   yield  默认：她这块屏上的前台窗口全屏（浏览器 F11 / 视频全屏、放映、游戏）就藏起来，退出全屏再出来
+    # 全屏看前台窗口的 _NET_WM_STATE_FULLSCREEN（xwin）；GNOME 扩展在时用扩展报的 focusFullscreen（Wayland 原生窗口 X11 看不到）。
+    # 每秒查一次（tick），扩展报新状态时也查
+    DESK_LAYERS = ("top", "yield")
+
+    def desk_layer(self):
+        v = store.settings.get("deskLayer")
+        return v if v in self.DESK_LAYERS else "yield"   # Windows 的「不置顶」这里没有，按默认
+
+    def click_through(self):
+        return store.is_main() and store.settings.get("clickThrough") is True
+
+    def fullscreen_rect(self):
+        st = self.claude_watch.state if self.claude_watch and self.claude_watch.available else None
+        if st is not None and "focusFullscreen" in st:
+            r = st.get("focusFullscreen")
+            try:
+                x, y, w, h = (float(v) for v in r)
+                return x, y, x + w, y + h
+            except (TypeError, ValueError):
+                return None
+        return xwin.fullscreen_front()
+
+    def should_yield(self):
+        if not self.desktop_mode or self.desk_layer() != "yield" or self.dragging or self.flying:
+            return False
+        r = self.fullscreen_rect()
+        if r is None:
+            return False
+        display = Gdk.Display.get_default()
+        mine = display.get_monitor_at_point(self.x + self.w // 2, self.y + self.h // 2)
+        theirs = display.get_monitor_at_point(int((r[0] + r[2]) / 2), int((r[1] + r[3]) / 2))
+        return mine == theirs
+
+    def update_yield(self):
+        y = self.should_yield()
+        if y == self.yielding:
+            return
+        self.yielding = y
+        store.log("有全屏窗口：让开" if y else "全屏结束：回到最上面")
+        if y:
+            self.stop_walk(None)
+        self.apply_visibility()
+
+    def set_desk_layer(self, value):
+        if value not in self.DESK_LAYERS:
+            return
+        store.settings["deskLayer"] = value
+        store.save_settings()
+        store.log("桌面上的层级：" + ("始终在最上面" if value == "top" else "全屏时让开"))
+        self.update_yield()
+        self.push_settings()
+
+    def set_click_through(self, on):
+        if not store.is_main():
+            return
+        store.settings["clickThrough"] = bool(on)
+        store.save_settings()
+        store.log("鼠标穿透：" + ("开" if on else "关"))
+        self.applied_hit = None
+        self.apply_input_shape(force_empty=not self.on_screen())
+        self.push_settings()
+        if self.tray:   # 托盘菜单是事先做好的：勾选状态跟着变（从设置页改的时候）
+            GLib.idle_add(lambda: (self.tray.refresh(), False)[1])
+
     def save_position(self):
         if not self.desktop_mode:
             self.save_follow_offsets()
@@ -708,7 +801,7 @@ class Pet:
         if gw is None or not hasattr(gw, "get_xid"):
             return
         rects = []
-        if not force_empty and self.on_screen() and self.hit_rects:
+        if not force_empty and not self.click_through() and self.on_screen() and self.hit_rects:
             z = self.zoom()
             for r in self.hit_rects:
                 if isinstance(r, list) and len(r) == 4:
@@ -1147,6 +1240,11 @@ class Pet:
         item("回到默认位置", self.recenter)
         label = self.hotkey_label() if store.is_main() else None
         item(f"暂时隐藏（{label}）" if label else "暂时隐藏", lambda: self.set_user_hidden(True))
+        if store.is_main():   # 鼠标穿透只给第一只：开了以后点不到她，只能从托盘关
+            ct = Gtk.CheckMenuItem(label="鼠标穿透（点击落到后面的窗口）")
+            ct.set_active(self.click_through())
+            ct.connect("toggled", lambda i: self._safe(lambda: self.set_click_through(i.get_active())))
+            menu.append(ct)
         menu.append(Gtk.SeparatorMenuItem())
         if store.is_main():
             item("退出 " + store.APP_NAME, self.user_quit)
@@ -1310,6 +1408,8 @@ class Pet:
             "integrations": claude.integrations(bool(self.claude_watch and self.claude_watch.available)),
             "runMode": "standalone" if store.standalone() else "claude",
             "pets": self.pet_list(), "maxPets": store.MAX_EXTRA_PETS + 1,
+            "deskLayer": self.desk_layer(), "deskLayers": list(self.DESK_LAYERS),
+            "clickThrough": self.click_through() if store.is_main() else None,   # 只有第一只有（关的入口在托盘）
         }
 
     def handle_settings(self, msg):
@@ -1353,6 +1453,11 @@ class Pet:
                     store.settings["quotaStyle"] = value
                     store.save_settings()
                     self.js(f"setQuotaStyle({store.dumps(value)})")
+            elif key == "deskLayer":
+                self.set_desk_layer(value)
+            elif key == "clickThrough":
+                if isinstance(value, bool):
+                    self.set_click_through(value)
             elif key == "runMode":
                 if value in ("claude", "standalone"):
                     store.set_standalone(value == "standalone")

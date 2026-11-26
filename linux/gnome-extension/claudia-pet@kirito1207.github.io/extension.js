@@ -178,6 +178,9 @@ export default class ClaudiaPetExtension extends Extension {
         const shown = claudes.filter(w => !w.minimized);
         const main = shown.length ? pick(shown) : all.length ? pick(all) : null;
         const state = {protocol: PROTOCOL, found: !!main};
+        // 前台窗口全屏时报它的范围（桌面模式「全屏时让开」用；Wayland 原生窗口桌宠那边用 X11 看不到）
+        const fw = global.display.focus_window;
+        state.focusFullscreen = fw && fw.is_fullscreen() && !fw.minimized && !this._isPet(fw) ? rectOf(fw.get_frame_rect()) : null;
         if (main) {
             const onWorkspace = main.located_on_workspace(ws);
             state.rect = rectOf(main.get_frame_rect());

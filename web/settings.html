@@ -114,7 +114,7 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
     <div class="ctl"><button data-add-pet="claude">放在 Claude 窗口里</button><button data-add-pet="desktop">放在桌面上</button></div></div>
 </div>
 <div class="card" data-tab="pets">
-  <div class="item hidden" data-only="deskLayer"><div class="label">待在桌面上时<small>默认在最上面；她这块屏上有东西全屏（看视频全屏、PPT 放映、游戏、浏览器按 F11）时让开，退出后回来，最大化的窗口不算。选「始终最上面」全屏时也不让（独占全屏的游戏多半还是会挡住她）；选「不置顶」就和普通窗口一样，谁都能盖住她。只管这一只</small></div>
+  <div class="item hidden" data-only="deskLayer"><div class="label">待在桌面上时<small>默认在最上面；她这块屏上有东西全屏（看视频全屏、PPT 放映、游戏、浏览器按 F11）时让开，退出后回来，最大化的窗口不算。选「始终最上面」全屏时也不让（独占全屏的游戏多半还是会挡住她）；选「不置顶」（只有 Windows 有）就和普通窗口一样，谁都能盖住她。只管这一只</small></div>
     <div class="ctl"><div class="seg" id="deskLayer"><button data-v="top">始终最上面</button><button data-v="yield">全屏时让开</button><button data-v="normal">不置顶</button></div></div></div>
 </div>
 <div class="card" data-tab="pets">
@@ -221,7 +221,10 @@ function setState(s) {
   for (const b of $('aura').children) b.classList.toggle('on', b.dataset.v === s.aura)
   for (const b of $('quotaStyle').children) b.classList.toggle('on', b.dataset.v === (s.quotaStyle || 'text'))
   for (const b of $('runMode').children) b.classList.toggle('on', b.dataset.v === (s.runMode || 'claude'))
-  for (const b of $('deskLayer').children) b.classList.toggle('on', b.dataset.v === (s.deskLayer || 'yield'))
+  for (const b of $('deskLayer').children) {
+    b.classList.toggle('on', b.dataset.v === (s.deskLayer || 'yield'))
+    b.classList.toggle('hidden', !!s.deskLayers && !s.deskLayers.includes(b.dataset.v))   // Linux 没有「不置顶」
+  }
   $('runNote').textContent = s.runMode === 'standalone'
     ? '双击程序就出来，不需要 Claude；Claude 关了也不走，从菜单退出才走。选了「待在 Claude 窗口里」而 Claude 没开时，先待在桌面上。干活状态、额度和通知仍要接入 Claude Code 才有'
     : 'Claude 打开时出来，Claude 关了就一起退出；Claude 没开时自己打开，30 秒后退出'

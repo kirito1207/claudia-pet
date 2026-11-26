@@ -64,8 +64,28 @@ namespace Claudia
                 else Js($"setQuota({Q(id)}, {json}, {new DateTimeOffset(fi.LastWriteTimeUtc).ToUnixTimeSeconds()})");   // 带上修改时间：网页据此标「多久前的数据」
             }
             if (!Paused) PollSessionStates(id);
+            CleanStaleState();
             PollTaskNotices();
             ApplyLayer();
+        }
+
+        // 插件每个会话写一个 claude-session-<sid>.json、一个 claude-notify-<sid>.json，自己从不删：会话多了 state 目录一直攒小文件。
+        // 这两种只认最近 10 分钟 / 2 分钟的，超过一天的由第一只删掉（启动时一次、之后每小时一次；几只一起删会抢）
+        DateTime stateCleanedAt = DateTime.MinValue;
+        void CleanStaleState()
+        {
+            if (!Store.IsMain || (DateTime.UtcNow - stateCleanedAt).TotalHours < 1) return;
+            stateCleanedAt = DateTime.UtcNow;
+            int n = 0;
+            try
+            {
+                var cutoff = DateTime.UtcNow.AddDays(-1);
+                foreach (var pattern in new[] { "claude-session-*.json", "claude-notify-*.json" })
+                    foreach (var file in new DirectoryInfo(Store.State).EnumerateFiles(pattern))
+                        try { if (file.LastWriteTimeUtc < cutoff) { file.Delete(); n++; } } catch { }
+            }
+            catch (Exception e) { Store.Log("清理旧会话状态出错: " + e.Message); }
+            if (n > 0) Store.Log($"清掉 {n} 个一天前的会话状态文件");
         }
 
         void PollSessionStates(string id)
