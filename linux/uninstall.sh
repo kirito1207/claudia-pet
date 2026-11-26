@@ -21,12 +21,14 @@ if [ -x "$EXE" ]; then
   python3 -I -c "import sys; sys.path.insert(0, '$DST/linux'); from claudia import system; system.set_hotkey('off')" 2>/dev/null || true
 fi
 sleep 1
-pkill -f "^python3 -I $DST/linux/claudia/main.py" 2>/dev/null || true
+pkill -f " -I $DST/linux/claudia/main.py" 2>/dev/null || true
 
 rm -f "$APPS/claudia-pet.desktop"
 [ -L "$BIN/claudia-pet" ] && rm -f "$BIN/claudia-pet"
 rm -rf "$DST"
 echo "已删除 $DST"
+RUNTIME="${XDG_DATA_HOME:-$HOME/.local/share}/claudia-pet-runtime"
+if [ -d "$RUNTIME" ]; then rm -rf "$RUNTIME"; echo "已删除界面库运行环境 $RUNTIME"; fi
 if [ "$KEEP" = 0 ]; then
   rm -rf "$HOME/.claudia"
   echo "已删除 ~/.claudia"

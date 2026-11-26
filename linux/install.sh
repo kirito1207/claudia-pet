@@ -27,14 +27,29 @@ for a in "$@"; do
   esac
 done
 
-# ---- 依赖：Python 3 的 GTK 3 和 WebKitGTK 4.1 绑定（Ubuntu 桌面版自带）；托盘要另装一个小包 ----
-if ! python3 -I -c 'import gi; gi.require_version("Gtk", "3.0"); gi.require_version("WebKit2", "4.1"); from gi.repository import Gtk, WebKit2' 2>/dev/null; then
+# ---- 依赖 ----
+# 界面用 Qt（PySide6 + Qt WebEngine，和 Windows 版一样是 Chromium 内核；2026-11-27 从 WebKitGTK 换过来）。
+# PySide6 用 pip 装进单独的运行环境（约 670 MB，只第一次装时下载，重装程序不再下载）；GLib、D-Bus、通知仍用系统的 python3-gi。
+RUNTIME="${XDG_DATA_HOME:-$HOME/.local/share}/claudia-pet-runtime"
+missing=""
+LDCONFIG=$(command -v ldconfig || echo /sbin/ldconfig)   # 普通用户的 PATH 里常常没有 /sbin
+python3 -I -c 'import gi; from gi.repository import GLib, Gio' 2>/dev/null || missing="$missing python3-gi"
+python3 -c 'import venv, ensurepip' 2>/dev/null || missing="$missing python3-venv"
+for lib in libxcb-cursor.so.0:libxcb-cursor0 libxcb-icccm.so.4:libxcb-icccm4 libxcb-keysyms.so.1:libxcb-keysyms1 \
+           libxkbcommon-x11.so.0:libxkbcommon-x11-0 libnss3.so:libnss3; do
+  "$LDCONFIG" -p 2>/dev/null | grep -q "${lib%%:*}" || missing="$missing ${lib#*:}"
+done
+if [ -n "$missing" ]; then
   echo "缺少运行库，请先装：" >&2
-  echo "  sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 libnotify-bin gir1.2-notify-0.7" >&2
+  echo "  sudo apt install$missing libnotify-bin gir1.2-notify-0.7" >&2
   exit 1
 fi
-if ! python3 -I -c 'import gi; gi.require_version("AyatanaAppIndicator3", "0.1"); from gi.repository import AyatanaAppIndicator3' 2>/dev/null; then
-  echo "提示：没有托盘图标。想要的话装：sudo apt install gir1.2-ayatanaappindicator3-0.1"
+if ! "$RUNTIME/bin/python3" -I -c 'import PySide6.QtWebEngineWidgets, gi' 2>/dev/null; then
+  echo "第一次安装：下载界面库 PySide6（约 670 MB 解压后），装到 $RUNTIME ……"
+  rm -rf "$RUNTIME"
+  python3 -m venv --system-site-packages "$RUNTIME"
+  "$RUNTIME/bin/pip" install --disable-pip-version-check -q "PySide6>=6.6,<7" || { echo "PySide6 没装上（网络？）。" >&2; rm -rf "$RUNTIME"; exit 1; }
+  "$RUNTIME/bin/python3" -I -c 'import PySide6.QtWebEngineWidgets, gi' || { echo "PySide6 装好了却用不了。" >&2; exit 1; }
 fi
 
 # ---- 复制 ----

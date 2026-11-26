@@ -1,9 +1,11 @@
-"""桌宠本体（对应 Windows 版 app/src/Pet*.cs）：透明、不抢焦点的 GTK 窗口承载 web/index.html。
+"""桌宠本体（对应 Windows 版 app/src/Pet*.cs）：透明、不抢焦点的 Qt 窗口承载 web/index.html。
 
 和 Windows 版的分工一样：网页负责画、动作、物理公式（pet-motion.js / dsh-physics.js）；外壳只管
 窗口摆在哪、鼠标、读 Claude Code 插件写的状态文件、菜单、设置、通知、多开。
 
-窗口坐标一律按 GDK 的逻辑像素（XWayland 下就是屏幕像素），网页里的物理也按这一套算。
+窗口坐标一律按 X 服务器的屏幕像素（XWayland 下也是；Qt 的高分屏缩放在 main.py 里关掉了，Qt 的坐标和它一致），网页里的物理也按这一套算。
+2026-11-27 界面层从 GTK + WebKitGTK 换成 Qt（PySide6）+ Qt WebEngine：Qt 在 Linux 上跑在 GLib 的事件循环上，
+定时器（GLib.timeout_add）、D-Bus（GNOME 扩展、锁屏）照旧。
 「待在 Claude 窗口里」：Wayland 下桌宠看不到 Claude 的窗口，靠 GNOME Shell 扩展报来位置（claude_window.py）。
 扩展没装 / 没启用时一律待在桌面上。
 """
@@ -12,11 +14,10 @@ import os
 import time
 from pathlib import Path
 
-import gi
-
-gi.require_version("Gtk", "3.0")
-gi.require_version("Gdk", "3.0")
-from gi.repository import Gdk, GLib, Gtk  # noqa: E402
+from gi.repository import GLib  # noqa: E402
+from PySide6.QtCore import QPoint, Qt  # noqa: E402
+from PySide6.QtGui import QAction, QCursor, QGuiApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QWidget  # noqa: E402
 
 from . import actions, claude, store, system, web, xshape, xwin  # noqa: E402
 from .claude_window import ClaudeWindowWatch  # noqa: E402
@@ -47,6 +48,42 @@ def _clamp(v, lo, hi):
 
 def _ms():
     return GLib.get_monotonic_time() / 1000.0
+
+
+def _screen_at(x, y):
+    """(x, y) 所在的显示器；不在任何显示器上就用主显示器"""
+    return QGuiApplication.screenAt(QPoint(int(x), int(y))) or QGuiApplication.primaryScreen()
+
+
+def _workarea(screen):
+    g = screen.availableGeometry()
+    return g.x(), g.y(), g.width(), g.height()
+
+
+class _HitLayer(QWidget):
+    """盖在网页上的透明接鼠标层：拖动 / 单击 / 右键由外壳处理，网页只负责画。
+    窗口只在桌宠本体、气泡、名牌、额度上收鼠标（X11 输入外形，见 apply_input_shape），别处点击直接落到后面的窗口"""
+
+    def __init__(self, pet, parent):
+        super().__init__(parent)
+        self.pet = pet
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setMouseTracking(False)
+
+    def mousePressEvent(self, e):
+        g = e.globalPosition()
+        self.pet.on_press(e.button(), g.x(), g.y())
+
+    def mouseMoveEvent(self, e):
+        g = e.globalPosition()
+        self.pet.on_motion(g.x(), g.y())
+
+    def mouseReleaseEvent(self, e):
+        p = e.position()
+        self.pet.on_release(e.button(), p.x(), p.y())
+
+    def contextMenuEvent(self, e):
+        e.accept()   # 右键菜单在松开时自己弹（on_release）
 
 
 class Pet:
@@ -119,57 +156,40 @@ class Pet:
                   f"{'待在桌面上' if self.desktop_mode else '待在 Claude 窗口里'}"
                   f"（GNOME 扩展{'在' if self.claude_watch.available else '不在'}）")
 
-        # 不归窗口管理器管的窗口（X11 override-redirect）：GNOME 会把普通窗口推回屏幕里（头顶的透明区伸不出屏幕顶，
-        # 碰边判定就不对），挪窗口也要先经过它、拖起来慢半拍。这种窗口自己定位置、挪了马上生效，天然在最上层、不进任务栏
-        w = self.window = Gtk.Window(type=Gtk.WindowType.POPUP)
-        w.set_title(store.APP_NAME)
-        w.set_wmclass(store.APP_NAME, store.APP_NAME)
-        w.set_decorated(False)
-        w.set_app_paintable(True)
-        visual = w.get_screen().get_rgba_visual()
-        if visual is not None:
-            w.set_visual(visual)
-        else:
-            store.log("没有透明窗口（合成器没开？），背景会是黑的")
-        w.set_accept_focus(False)
-        w.set_resizable(False)
-        w.get_style_context().add_class("claudia-pet")
-        w.connect("delete-event", lambda *_: True)
+        # 不归窗口管理器管的窗口（X11 override-redirect，Qt 的 X11BypassWindowManagerHint）：GNOME 会把普通窗口推回屏幕里
+        # （头顶的透明区伸不出屏幕顶，碰边判定就不对），挪窗口也要先经过它、拖起来慢半拍。这种窗口自己定位置、挪了马上生效，
+        # 天然在最上层、不进任务栏
+        w = self.window = QWidget()
+        w.setWindowTitle(store.APP_NAME)
+        w.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.X11BypassWindowManagerHint
+                         | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool | Qt.WindowType.WindowDoesNotAcceptFocus)
+        w.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        w.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        w.setAttribute(Qt.WidgetAttribute.WA_X11DoNotAcceptFocus)
         self.w, self.h = round(BASE_W * self.scale()), round(BASE_H * self.scale())
-        w.set_size_request(self.w, self.h)
-        w.resize(self.w, self.h)
+        w.setFixedSize(self.w, self.h)
 
-        overlay = Gtk.Overlay()
         self.view = web.create(self.on_web_message, transparent=True)
+        self.view.setParent(w)
         self.view.set_zoom_level(self.scale())
-        overlay.add(self.view)
-        # 透明的接鼠标层：拖动 / 单击 / 右键由外壳处理，网页只负责画；窗口只在桌宠本体、气泡、名牌、额度上收鼠标（见 update_hit_rects）
-        hit = self.hit = Gtk.EventBox()
-        hit.set_visible_window(False)
-        hit.set_above_child(True)
-        hit.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK | Gdk.EventMask.POINTER_MOTION_MASK)
-        hit.connect("button-press-event", self.on_press)
-        hit.connect("motion-notify-event", self.on_motion)
-        hit.connect("button-release-event", self.on_release)
-        hit.connect("grab-broken-event", self.on_grab_broken)
-        overlay.add_overlay(hit)
-        w.add(overlay)
-        w.connect("realize", self.on_realize)
-        self.view.connect("load-changed", self.on_load)
-        self.view.connect("web-process-terminated", self.on_web_crash)
+        self.hit = _HitLayer(self, w)
+        self.layout_children()
+        self.view.on_started = self.on_load_started
+        self.view.on_loaded = self.on_load
+        self.view.on_crash = self.on_web_crash
 
         # 先「隐形」打开：窗口就在该在的位置，但外形（SHAPE）是空的，屏幕上看不见；人物画好了再恢复外形。
         # 网页画出人物之前，窗口里是空的，直接显示会看到名牌先出来、图片的占位框（2026-11-17 用户说打开时看到方框闪）。
-        # 不挪到屏幕外再挪回来：挪回来的头几帧 WebKit 还没重画，同样会闪。藏起来也是把外形设成空（不靠不透明度：
+        # 不挪到屏幕外再挪回来：挪回来的头几帧网页还没重画，同样会闪。藏起来也是把外形设成空（不靠不透明度：
         # 不归窗口管理器管的窗口，GNOME 不一定认它的不透明度）
         self.revealed = False
         self.place_home(initial=True)
+        w.winId()   # 先建好 X 窗口，映射到屏幕之前就设好外形：一出现就是隐形的
+        self.on_realize()
         w.move(self.x, self.y)
-        w.show_all()
+        w.show()
         self.apply_input_shape(force_empty=True)
-        gw = w.get_window()
-        if gw is not None and hasattr(gw, "get_xid"):
-            store.log(f"窗口 0x{gw.get_xid():x}")
+        store.log(f"窗口 0x{self.xid():x}")
         self.view.load_uri(store.page_url("index.html"))
 
         if store.is_main():
@@ -194,17 +214,24 @@ class Pet:
     def js(self, code):
         web.run_js(self.view, code)
 
-    def on_load(self, view, event):
-        from gi.repository import WebKit2
+    def layout_children(self):
+        """网页和接鼠标层都铺满窗口（窗口改大小后再调一次）"""
+        self.view.setGeometry(0, 0, self.w, self.h)
+        self.hit.setGeometry(0, 0, self.w, self.h)
+        self.hit.raise_()
+
+    def on_load_started(self):
         if os.environ.get("CLAUDIA_DEBUG"):
-            store.log(f"load {event.value_nick} {view.get_uri()}")
-        if event == WebKit2.LoadEvent.STARTED:
-            self.stop_motion()
-            self.ready = False
-            self.hit_rects = None
-            return
-        if event != WebKit2.LoadEvent.FINISHED:
-            return
+            store.log("load started")
+        self.stop_motion()
+        self.ready = False
+        self.hit_rects = None
+
+    def on_load(self, ok=True):
+        if os.environ.get("CLAUDIA_DEBUG"):
+            store.log(f"load finished ok={ok}")
+        if not ok:
+            store.log("网页没加载成功")
         self.load_characters()
         self.js(f"init({self.manifest_json}); setCharacter({store.dumps(self.current)}, true); "
                 f"setAuraMode({store.dumps(self.aura_mode())}); setShowName({'true' if self.show_name() else 'false'}); "
@@ -225,7 +252,7 @@ class Pet:
         self.poll()
         GLib.timeout_add(3000, self.reveal)
 
-    def on_web_crash(self, _view, reason):
+    def on_web_crash(self, reason):
         store.log(f"网页进程退出：{reason}")
         now = time.monotonic()
         self.crashes = [t for t in self.crashes if now - t < 600]
@@ -255,8 +282,7 @@ class Pet:
         return False
 
     def xid(self):
-        gw = self.window.get_window() if self.window else None
-        return gw.get_xid() if gw is not None and hasattr(gw, "get_xid") else 0
+        return int(self.window.winId()) if self.window is not None else 0
 
     def on_realize(self, *_):
         xshape.set_visible(self.xid(), False)   # 映射到屏幕之前就设好：一出现就是隐形的
@@ -601,16 +627,12 @@ class Pet:
 
     def work_area(self, at_pointer=False):
         """桌宠能活动的范围：所在显示器的工作区（不含顶栏、任务栏）；拖着她的时候按鼠标所在的显示器算"""
-        display = Gdk.Display.get_default()
         if at_pointer:
-            _s, px, py = display.get_default_seat().get_pointer().get_position()[:3]
-            mon = display.get_monitor_at_point(px, py)
+            px, py = self.pointer()
+            x, y, w, h = _workarea(_screen_at(px, py))
         else:
-            mon = display.get_monitor_at_point(self.x + self.w // 2, self.y + self.h // 2)
-        if mon is None:
-            mon = display.get_primary_monitor() or display.get_monitor(0)
-        r = mon.get_workarea()
-        return r.x, r.y, r.x + r.width, r.y + r.height
+            x, y, w, h = _workarea(_screen_at(self.x + self.w // 2, self.y + self.h // 2))
+        return x, y, x + w, y + h
 
     def area_rect(self):
         """她能活动的范围：桌面上是显示器工作区，Claude 窗口里是 Claude 窗口"""
@@ -647,18 +669,15 @@ class Pet:
     def place_on_desktop(self, initial=False):
         """启动时 / 回到默认位置：摆到上次的位置；没记过就放主屏幕右下角，站在任务栏上面"""
         d = store.settings.get("desk")
-        display = Gdk.Display.get_default()
         if isinstance(d, dict) and "x" in d and "y" in d:
             x, y = int(d["x"]), int(d["y"])
-            mon = display.get_monitor_at_point(x + self.w // 2, y + self.h // 2)
+            ax, ay, aw, ah = _workarea(_screen_at(x + self.w // 2, y + self.h // 2))
         else:
-            mon = display.get_primary_monitor() or display.get_monitor(0)
-            wa = mon.get_workarea()
-            x, y = wa.x + wa.width - self.w - self.home_off_right(), wa.y + wa.height - self.h
-        wa = (mon or display.get_monitor(0)).get_workarea()
+            ax, ay, aw, ah = _workarea(QGuiApplication.primaryScreen())
+            x, y = ax + aw - self.w - self.home_off_right(), ay + ah - self.h
         ml, mt, mr = self.body_margins()
-        x = _clamp(x, wa.x - ml, wa.x + wa.width - self.w + mr)
-        y = _clamp(y, wa.y - mt, wa.y + wa.height - self.h)
+        x = _clamp(x, ax - ml, ax + aw - self.w + mr)
+        y = _clamp(y, ay - mt, ay + ah - self.h)
         if initial:
             self.x, self.y = x, y
             self.shown = True
@@ -683,17 +702,20 @@ class Pet:
     def keep_on_top(self):
         if not self.on_screen() or self.window is None:
             return
-        now = time.monotonic()
-        if now - self.top_at < 5:
+        if self.menu is not None and self.menu.isVisible():
+            return   # 右键菜单开着：别把她抬到菜单上面
+        # 不定时抬：前台窗口换了才抬一次（别的窗口被激活时可能压到她上面），刚露出来、刚摆到桌面上时抬一次（top_at 清零）。
+        # 原来每 5 秒抬一次（2026-11-27 改，同 Windows 版 11-26 去掉每 5 秒的 KeepOnTop）；desktop_place 每秒调这里，只量一下前台窗口
+        active = xwin.active_window()
+        if self.top_at and active == getattr(self, "last_active", None):
             return
-        self.top_at = now
-        gw = self.window.get_window()
-        if gw is not None:
-            gw.raise_()
+        self.last_active = active
+        self.top_at = 1
+        self.window.raise_()
 
     # ---- 桌面上的层级、全屏时让开、鼠标穿透（2026-11-26，Windows 版见 Pet.Fullscreen.cs） ----
     # Linux 只有两档：她是不归窗口管理器管的窗口（override-redirect），没法像普通窗口那样被别人盖住，所以没有「不置顶」。
-    #   top    始终在最上面（每 5 秒抬一次，keep_on_top）
+    #   top    始终在最上面（前台窗口换了就抬一次，keep_on_top）
     #   yield  默认：她这块屏上的前台窗口全屏（浏览器 F11 / 视频全屏、放映、游戏）就藏起来，退出全屏再出来
     # 全屏看前台窗口的 _NET_WM_STATE_FULLSCREEN（xwin）；GNOME 扩展在时用扩展报的 focusFullscreen（Wayland 原生窗口 X11 看不到）。
     # 每秒查一次（tick），扩展报新状态时也查
@@ -723,10 +745,9 @@ class Pet:
         r = self.fullscreen_rect()
         if r is None:
             return False
-        display = Gdk.Display.get_default()
-        mine = display.get_monitor_at_point(self.x + self.w // 2, self.y + self.h // 2)
-        theirs = display.get_monitor_at_point(int((r[0] + r[2]) / 2), int((r[1] + r[3]) / 2))
-        return mine == theirs
+        mine = _screen_at(self.x + self.w // 2, self.y + self.h // 2)
+        theirs = _screen_at((r[0] + r[2]) / 2, (r[1] + r[3]) / 2)
+        return mine is theirs
 
     def update_yield(self):
         y = self.should_yield()
@@ -802,8 +823,7 @@ class Pet:
         self.apply_input_shape()
 
     def apply_input_shape(self, force_empty=False):
-        gw = self.window.get_window() if self.window else None
-        if gw is None or not hasattr(gw, "get_xid"):
+        if self.window is None:
             return
         rects = []
         if not force_empty and not self.click_through() and self.on_screen() and self.hit_rects:
@@ -814,45 +834,37 @@ class Pet:
                         rects.append((math.floor(r[0] * z), math.floor(r[1] * z), math.ceil(r[2] * z) + 1, math.ceil(r[3] * z) + 1))
                     except (TypeError, ValueError):
                         pass
-        xshape.set_input(gw.get_xid(), rects)
+        xshape.set_input(self.xid(), rects)
 
     # ================= 鼠标：单击摸头、拖动、右键菜单 =================
     @staticmethod
     def pointer():
-        _s, x, y = Gdk.Display.get_default().get_default_seat().get_pointer().get_position()[:3]
-        return x, y
+        """鼠标在屏幕上的位置（X 服务器的屏幕像素，和窗口坐标一致）"""
+        p = xwin.pointer()
+        if p is not None:
+            return p[0], p[1]
+        c = QCursor.pos()
+        return c.x(), c.y()
 
-    def on_press(self, _w, e):
-        if e.type != Gdk.EventType.BUTTON_PRESS:
-            return True
-        if e.button == 1:
+    def on_press(self, button, gx, gy):
+        if button == Qt.MouseButton.LeftButton:
             self.stop_motion()
-            self.down = (e.x_root, e.y_root)
+            self.down = (gx, gy)
             self.pressed = True
-        return True
 
-    def on_motion(self, _w, e):
+    def on_motion(self, gx, gy):
         if not self.pressed or self.dragging:
-            return True
-        if abs(e.x_root - self.down[0]) + abs(e.y_root - self.down[1]) <= 4:
-            return True
+            return
+        if abs(gx - self.down[0]) + abs(gy - self.down[1]) <= 4:
+            return
         self.begin_drag(*self.down)
-        return True
 
-    def on_grab_broken(self, *_):
-        """拖着的时候鼠标被别的东西抢走了（弹出菜单、系统快捷键）：当作松手"""
-        if self.dragging:
-            self.end_drag()
-        self.pressed = False
-        self.update_hit_rects()
-        return False
-
-    def on_release(self, _w, e):
-        if e.button == 3:
-            self.popup_menu(e)
-            return True
-        if e.button != 1:
-            return True
+    def on_release(self, button, lx, ly):
+        if button == Qt.MouseButton.RightButton:
+            self.popup_menu()
+            return
+        if button != Qt.MouseButton.LeftButton:
+            return
         was_dragging = self.dragging
         if self.dragging:
             self.end_drag()
@@ -861,8 +873,7 @@ class Pet:
         self.update_hit_rects()
         if click:
             z = self.zoom()
-            self.js(f"handleClick('pat', {round(e.x / z, 1)}, {round(e.y / z, 1)})")
-        return True
+            self.js(f"handleClick('pat', {round(lx / z, 1)}, {round(ly / z, 1)})")
 
     # ---- 拖动和飞行：网页的帧循环算位置（pet-motion.js），这里只交鼠标轨迹、按回来的位置挪窗口 ----
     def physics_value(self, key):
@@ -904,12 +915,10 @@ class Pet:
 
     def button_held(self):
         """左键现在还按着没有（问 X 服务器，不等松开的消息）"""
-        gw = self.window.get_window() if self.window else None
-        if gw is None:
-            return True
-        seat = Gdk.Display.get_default().get_default_seat()
-        mask = gw.get_device_position(seat.get_pointer())[3]
-        return bool(mask & Gdk.ModifierType.BUTTON1_MASK)
+        p = xwin.pointer()
+        if p is None:
+            return bool(QGuiApplication.mouseButtons() & Qt.MouseButton.LeftButton)
+        return p[2]
 
     def pump_pointer(self):
         if not self.dragging:
@@ -1113,8 +1122,8 @@ class Pet:
         old = (self.x, self.y, self.x + self.w, self.y + self.h)
         w, h = max(1, round(self.page_w * scale)), max(1, round(self.page_h * scale))
         self.w, self.h = w, h
-        self.window.set_size_request(w, h)
-        self.window.resize(w, h)
+        self.window.setFixedSize(w, h)
+        self.layout_children()
         self.view.set_zoom_level(scale)
         self.shown_scale = scale
         foot = self.page_foot * w / self.page_w
@@ -1221,43 +1230,42 @@ class Pet:
     # ================= 菜单 =================
     def close_menu(self):
         if self.menu is not None:
-            self.menu.popdown()
+            self.menu.close()
 
-    def build_menu(self):
-        menu = Gtk.Menu()
+    def build_menu(self, menu=None):
+        """右键菜单；托盘那份传进自己的 menu（托盘的菜单对象一直是同一个，打开前清空重填）"""
+        menu = menu or QMenu()
 
         def item(text, fn, parent=menu):
-            i = Gtk.MenuItem(label=text)
-            i.connect("activate", lambda *_: self._safe(fn))
-            parent.append(i)
-            return i
+            a = QAction(text, parent)
+            a.triggered.connect(lambda *_: self._safe(fn))
+            parent.addAction(a)
+            return a
 
         item("摸摸头", lambda: self.js("handleClick('pat')"))
         item("戳一下", lambda: self.js("handleClick('poke')"))
         sub = self.build_action_menu()
         if sub is not None:
-            top = Gtk.MenuItem(label="动作")
-            top.set_submenu(sub)
-            menu.append(top)
-        menu.append(Gtk.SeparatorMenuItem())
+            sub.setTitle("动作")
+            menu.addMenu(sub)
+        menu.addSeparator()
         item("多开和位置…", lambda: self.open_settings("pets"))
         item("设置…", lambda: self.open_settings())
         item("回到默认位置", self.recenter)
         label = self.hotkey_label() if store.is_main() else None
         item(f"暂时隐藏（{label}）" if label else "暂时隐藏", lambda: self.set_user_hidden(True))
         if store.is_main():   # 鼠标穿透只给第一只：开了以后点不到她，只能从托盘关
-            ct = Gtk.CheckMenuItem(label="鼠标穿透（点击落到后面的窗口）")
-            ct.set_active(self.click_through())
-            ct.connect("toggled", lambda i: self._safe(lambda: self.set_click_through(i.get_active())))
-            menu.append(ct)
-        menu.append(Gtk.SeparatorMenuItem())
+            ct = QAction("鼠标穿透（点击落到后面的窗口）", menu)
+            ct.setCheckable(True)
+            ct.setChecked(self.click_through())
+            ct.toggled.connect(lambda on: self._safe(lambda: self.set_click_through(on)))
+            menu.addAction(ct)
+        menu.addSeparator()
         if store.is_main():
             item("退出 " + store.APP_NAME, self.user_quit)
         else:
             item("送走这一只", self.dismiss_pet)
             item("送走所有新加的", self.dismiss_extras)
-        menu.get_style_context().add_class("claudia-menu")
-        menu.show_all()
         return menu
 
     @staticmethod
@@ -1286,16 +1294,16 @@ class Pet:
                     have.add(k)
         if not have:
             return None
-        root = Gtk.Menu()
+        root = QMenu()
         used = set()
 
         def add(parent, pose, label):
-            i = Gtk.MenuItem(label=label)
-            i.connect("activate", lambda *_: self.play_action(pose))
-            parent.append(i)
+            a = QAction(label, parent)
+            a.triggered.connect(lambda *_, p=pose: self.play_action(p))
+            parent.addAction(a)
 
         for group, poses in actions.GROUPS:
-            sub = Gtk.Menu()
+            sub = QMenu(group, root)
             n = 0
             for p in poses:
                 if p in have:
@@ -1303,17 +1311,13 @@ class Pet:
                     add(sub, p, actions.NAMES.get(p, p))
                     n += 1
             if n:
-                g = Gtk.MenuItem(label=group)
-                g.set_submenu(sub)
-                root.append(g)
+                root.addMenu(sub)
         others = sorted(p for p in have if p not in used and p not in actions.HIDDEN)
         if others:
-            sub = Gtk.Menu()
+            sub = QMenu("其他", root)
             for p in others:
                 add(sub, p, p)
-            g = Gtk.MenuItem(label="其他")
-            g.set_submenu(sub)
-            root.append(g)
+            root.addMenu(sub)
         return root
 
     def play_action(self, pose):
@@ -1326,11 +1330,11 @@ class Pet:
                 " if (typeof anim === 'function' && anim(p) && transientMs(p)) return;"
                 " window.__claudiaMenuTimer = setTimeout(function(){ if (pose === p) show('idle', true); }, 6000); })('" + pose + "')")
 
-    def popup_menu(self, event):
+    def popup_menu(self):
         self.close_menu()
         self.menu = self.build_menu()
-        self.menu.attach_to_widget(self.hit, None)
-        self.menu.popup_at_pointer(event)
+        self.menu.popup(QCursor.pos())
+        self.menu.raise_()   # 桌宠自己是置顶的 override-redirect 窗口：菜单要压在她上面，不然顶上几项被她挡住
 
     # ================= 退出 =================
     def user_quit(self):
@@ -1355,7 +1359,7 @@ class Pet:
         self.stop_motion()
         if self.tray:
             self.tray.remove()
-        Gtk.main_quit()
+        QApplication.quit()
 
     # ================= 设置 =================
     def show_name(self):
@@ -1522,11 +1526,7 @@ class Pet:
             store.log(f"接入 {target} 失败: {e!r}")
         store.log(f"接入 {target} {'install' if install else 'uninstall'}：{message}".replace("\n", " "))
         parent = self.settings_window.window if self.settings_window else None
-        dlg = Gtk.MessageDialog(transient_for=parent, modal=True, message_type=Gtk.MessageType.INFO,
-                                buttons=Gtk.ButtonsType.OK, text=store.APP_NAME + " · 接入 Claude")
-        dlg.format_secondary_text(message)
-        dlg.run()
-        dlg.destroy()
+        QMessageBox.information(parent, store.APP_NAME + " · 接入 Claude", message)
 
     def open_settings(self, tab=None):
         from .settings_window import SettingsWindow

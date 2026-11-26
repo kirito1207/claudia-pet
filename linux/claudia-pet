@@ -1,4 +1,8 @@
 #!/bin/sh
-# claudia-pet Linux 版启动脚本：装好后 ~/.local/bin/claudia-pet 指向这里
+# claudia-pet Linux 版启动脚本：装好后 ~/.local/bin/claudia-pet 指向这里。
+# 界面用 Qt（PySide6）：install.sh 把它装在单独的运行环境里（带上系统的 python3-gi），重装程序不用重新下载。
 HERE=$(dirname "$(readlink -f "$0")")
-exec python3 -I "$HERE/claudia/main.py" "$@"
+RUNTIME="${XDG_DATA_HOME:-$HOME/.local/share}/claudia-pet-runtime"
+PY=python3
+[ -x "$RUNTIME/bin/python3" ] && PY="$RUNTIME/bin/python3"
+exec "$PY" -I "$HERE/claudia/main.py" "$@"

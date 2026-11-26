@@ -1,11 +1,21 @@
 """设置窗口（右键「设置…」）：加载 web/settings.html。
-页面 postMessage 发 {cmd, ...}，Pet.handle_settings 改完设置后用 push 把最新状态推回页面。"""
-import gi
+页面 postMessage 发 {cmd, ...}，Pet.handle_settings 改完设置后用 push 把最新状态推回页面。
+2026-11-27 从 GTK 换成 Qt（和桌宠同一套 Qt WebEngine）。"""
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QGuiApplication, QIcon
+from PySide6.QtWidgets import QVBoxLayout, QWidget
 
-gi.require_version("Gtk", "3.0")
-from gi.repository import Gdk, Gtk, WebKit2  # noqa: E402
+from . import store, web
 
-from . import store, web  # noqa: E402
+
+class _Window(QWidget):
+    def __init__(self, on_close):
+        super().__init__()
+        self._on_close = on_close
+
+    def closeEvent(self, e):
+        self._on_close()
+        super().closeEvent(e)
 
 
 class SettingsWindow:
@@ -13,23 +23,21 @@ class SettingsWindow:
         self.pet = pet
         self.loaded = False
         self.pending_tab = None
-        w = self.window = Gtk.Window(title=store.APP_NAME + " 设置")
-        w.set_wmclass(store.APP_NAME, store.APP_NAME)
+        w = self.window = _Window(self.on_destroy)
+        w.setWindowTitle(store.APP_NAME + " 设置")
+        w.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         icon = store.INSTALL / "icon" / "AppIcon.png"
         if icon.exists():
-            try:
-                w.set_icon_from_file(str(icon))
-            except Exception:
-                pass
-        mon = Gdk.Display.get_default().get_primary_monitor() or Gdk.Display.get_default().get_monitor(0)
-        height = min(780, mon.get_workarea().height - 40)
-        w.set_default_size(560, height)
-        w.set_size_request(420, 300)
-        w.set_position(Gtk.WindowPosition.CENTER)
+            w.setWindowIcon(QIcon(str(icon)))
+        area = QGuiApplication.primaryScreen().availableGeometry()
+        w.resize(560, min(780, area.height() - 40))
+        w.setMinimumSize(420, 300)
+        w.move(area.x() + (area.width() - w.width()) // 2, area.y() + (area.height() - w.height()) // 2)
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
         self.view = web.create(self.on_message)
-        w.add(self.view)
-        w.connect("destroy", self.on_destroy)
-        self.view.connect("load-changed", self.on_load)
+        lay.addWidget(self.view)
+        self.view.on_loaded = self.on_load
         self.view.load_uri(store.page_url("settings.html"))
 
     def on_message(self, msg):
@@ -38,21 +46,20 @@ class SettingsWindow:
         except Exception as e:
             store.log("设置出错: " + repr(e))
 
-    def on_load(self, _v, event):
-        if event != WebKit2.LoadEvent.FINISHED:
-            return
+    def on_load(self, ok=True):
         self.loaded = True
         self.push()
         if self.pending_tab:
             t, self.pending_tab = self.pending_tab, None
             self.show_tab(t)
 
-    def on_destroy(self, *_):
+    def on_destroy(self):
         self.pet.settings_window = None
 
     def show(self):
-        self.window.show_all()
-        self.window.present()
+        self.window.show()
+        self.window.raise_()
+        self.window.activateWindow()
 
     def show_tab(self, tab):
         if not self.loaded:

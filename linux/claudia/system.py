@@ -2,7 +2,7 @@
 
 Windows 版用的是托盘气泡、RegisterHotKey、命名事件；Linux（GNOME / Wayland）上分别换成：
 - 通知：libnotify
-- 托盘：AppIndicator（Ubuntu 自带的 ubuntu-appindicators 扩展显示），没装 gir1.2-ayatanaappindicator3-0.1 就没有托盘
+- 托盘：Qt 的 QSystemTrayIcon（GNOME 上要有 AppIndicator 扩展才显示，Ubuntu 自带；KDE 等原生支持）
 - 快捷键：Wayland 下普通程序抢不到全局按键，改成在 GNOME「自定义快捷键」里加一条，按下时执行 claudia-pet --toggle
 - 叫出来 / 藏起来 / 退出：~/.claudia/run/<编号>.sock，一行一句话
 """
@@ -11,9 +11,7 @@ import socket
 import subprocess
 
 import gi
-
-gi.require_version("Gtk", "3.0")
-from gi.repository import Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Gio, GLib  # noqa: E402
 
 from . import store  # noqa: E402
 
@@ -45,46 +43,49 @@ def notify(title, body, warn=False):
 
 # ---------------- 托盘 ----------------
 def make_tray(build_menu, on_activate):
-    """build_menu() 返回一个 Gtk.Menu；AppIndicator 的菜单不能在打开时现做，所以由调用方在需要时 refresh"""
-    ind = None
-    for ns in ("AyatanaAppIndicator3", "AppIndicator3"):
-        try:
-            gi.require_version(ns, "0.1")
-            mod = __import__("gi.repository." + ns, fromlist=[ns])
-            icon = store.INSTALL / "icon" / "AppIcon.png"
-            ind = mod.Indicator.new(store.APP_NAME, str(icon) if icon.exists() else "face-smile",
-                                    mod.IndicatorCategory.APPLICATION_STATUS)
-            ind.set_status(mod.IndicatorStatus.ACTIVE)
-            ind.set_title(store.APP_NAME)
-            break
-        except (ValueError, ImportError, AttributeError):
-            continue
-    if ind is None:
-        store.log("没有托盘：系统里没装 gir1.2-ayatanaappindicator3-0.1")
+    """build_menu(menu) 把右键菜单的内容填进 menu。托盘的菜单对象一直是同一个，每次打开前清空重填（勾选状态、动作列表都是最新的）；
+    refresh() 也能主动重填。中键点 / 单击托盘图标 = 叫她出来"""
+    from PySide6.QtGui import QAction, QIcon
+    from PySide6.QtWidgets import QMenu, QSystemTrayIcon
+    if not QSystemTrayIcon.isSystemTrayAvailable():
+        store.log("没有托盘：桌面没有托盘区（GNOME 要装 AppIndicator 扩展）")
         return None
+    icon_path = store.INSTALL / "icon" / "AppIcon.png"
+    icon = QIcon(str(icon_path)) if icon_path.exists() else QIcon.fromTheme("face-smile")
+    tray_icon = QSystemTrayIcon(icon)
+    tray_icon.setToolTip(store.APP_NAME)
+    menu = QMenu()
+
+    def fill():
+        menu.clear()
+        show = QAction("叫她出来", menu)
+        show.triggered.connect(lambda *_: on_activate())
+        menu.addAction(show)
+        menu.addSeparator()
+        try:
+            build_menu(menu)
+        except Exception as e:
+            store.log("托盘菜单出错: " + repr(e))
+
+    menu.aboutToShow.connect(fill)
+    tray_icon.setContextMenu(menu)
+    tray_icon.activated.connect(lambda reason: on_activate() if reason in (QSystemTrayIcon.ActivationReason.Trigger,
+                                                                            QSystemTrayIcon.ActivationReason.MiddleClick) else None)
 
     class Tray:
         def refresh(self):
-            menu = build_menu()
-            show = Gtk.MenuItem(label="叫她出来")
-            show.connect("activate", lambda *_: on_activate())
-            menu.prepend(Gtk.SeparatorMenuItem())
-            menu.prepend(show)
-            menu.show_all()
-            ind.set_menu(menu)
-            try:
-                ind.set_secondary_activate_target(show)   # 中键点托盘图标 = 叫她出来
-            except Exception:
-                pass
+            fill()
 
         def remove(self):
             try:
-                ind.set_status(0)
+                tray_icon.hide()
             except Exception:
                 pass
 
+    fill()
+    tray_icon.show()
     t = Tray()
-    t.refresh()
+    t._keep = (tray_icon, menu)   # 留着引用，不然被回收、图标消失
     return t
 
 

@@ -404,6 +404,8 @@ setInterval(() => {
   const v = s.canvas
   if (v.error) return videoTrouble(s, 'error ' + v.error.code)
   if (!videoCanAdvance(s) || v.ended) { s.stuckSince = 0; return }
+  // 该播却停着（刚换上、播放被打断）：先叫它播，不算卡住——原来按「时间不动」一律当卡住重读，刚开始播时常误判（Qt 版实测）
+  if (v.paused) { v.play().catch(() => {}); s.stuckSince = 0; return }
   if (v.currentTime !== s.lastTime) { s.lastTime = v.currentTime; s.stuckSince = 0; return }
   if (!s.stuckSince) s.stuckSince = Date.now()
   else if (Date.now() - s.stuckSince > 1500) { s.stuckSince = 0; videoTrouble(s, `stall @${v.currentTime.toFixed(2)}s rs${v.readyState}`) }

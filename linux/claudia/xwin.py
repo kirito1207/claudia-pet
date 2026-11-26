@@ -111,3 +111,20 @@ def fullscreen_front():
     if not w or not is_fullscreen(w) or is_hidden(w):
         return None
     return rect(w)
+
+
+def pointer():
+    """鼠标在屏幕上的位置和按键状态（直接问 X 服务器）：(x, y, 左键按着没有)。拿不到返回 None。
+    拖动时每帧用它判断左键松没松：鼠标甩出窗口后在外面松开，界面库不一定收得到松开的消息"""
+    if not _init():
+        return None
+    root = _x11.XDefaultRootWindow(_dpy)
+    r, c = ctypes.c_ulong(), ctypes.c_ulong()
+    rx, ry, wx, wy, mask = ctypes.c_int(), ctypes.c_int(), ctypes.c_int(), ctypes.c_int(), ctypes.c_uint()
+    _x11.XQueryPointer.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_ulong),
+                                   ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
+                                   ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint)]
+    if not _x11.XQueryPointer(_dpy, root, ctypes.byref(r), ctypes.byref(c), ctypes.byref(rx), ctypes.byref(ry),
+                              ctypes.byref(wx), ctypes.byref(wy), ctypes.byref(mask)):
+        return None
+    return rx.value, ry.value, bool(mask.value & (1 << 8))   # Button1Mask

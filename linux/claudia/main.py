@@ -20,11 +20,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from claudia import claude, store  # noqa: E402
 
-MENU_CSS = b"""
-window.claudia-pet, window.claudia-pet > * { background-color: transparent; }
-menu.claudia-menu, .claudia-menu menu { border-radius: 10px; padding: 4px 0; }
-menu.claudia-menu menuitem, .claudia-menu menu menuitem { padding: 6px 14px; border-radius: 6px; margin: 0 4px; }
-menu.claudia-menu menuitem:hover, .claudia-menu menu menuitem:hover { background-color: #fde3cf; color: #3b2a20; }
+MENU_QSS = """
+QMenu { background: #fffaf6; border: 1px solid #ead8ca; border-radius: 10px; padding: 4px 0; }
+QMenu::item { padding: 6px 22px 6px 14px; border-radius: 6px; margin: 0 4px; color: #3b2a20; }
+QMenu::item:selected { background-color: #fde3cf; color: #3b2a20; }
+QMenu::separator { height: 1px; background: #ead8ca; margin: 4px 10px; }
+QMenu::indicator { width: 14px; height: 14px; left: 4px; }
 """
 
 
@@ -260,6 +261,10 @@ def main(args):
         return 0
 
     os.environ.setdefault("GDK_BACKEND", "x11")   # Wayland 下普通窗口摆不了位置、置不了顶：走 XWayland
+    os.environ.setdefault("QT_QPA_PLATFORM", "xcb")   # Qt 也一样走 XWayland（X11 外形、override-redirect 都靠它）
+    # 窗口坐标、X11 外形、物理都按 X 服务器的屏幕像素算：关掉 Qt 自己的高分屏缩放，人物大小由「人物大小」设置和网页缩放管
+    os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
+    os.environ.setdefault("QT_SCALE_FACTOR", "1")
     if not wait_for_display():
         store.log(f"打不开图形界面：DISPLAY={os.environ.get('DISPLAY')!r}，XAUTHORITY={os.environ.get('XAUTHORITY')!r}")
         print(store.APP_NAME + "：打不开图形界面", file=sys.stderr)
@@ -278,11 +283,10 @@ def main(args):
         except OSError:
             pass
     import gi
-    gi.require_version("Gtk", "3.0")
-    gi.require_version("Gdk", "3.0")
-    from gi.repository import Gdk, GLib, Gtk
+    from gi.repository import GLib
+    from PySide6.QtWidgets import QApplication
 
-    from claudia import system
+    from claudia import system, web
     from claudia.pet import Pet
 
     store.pet_dir().mkdir(parents=True, exist_ok=True)
@@ -295,7 +299,7 @@ def main(args):
         (store.STATE / "pet.pid").write_text(str(os.getpid()))
         Pet.clear_signal()
     store.log(f"启动 {store.version()}，{os.uname().sysname} {os.uname().release}，"
-              f"会话 {os.environ.get('XDG_SESSION_TYPE', '?')}，GDK {os.environ.get('GDK_BACKEND')}")
+              f"会话 {os.environ.get('XDG_SESSION_TYPE', '?')}，Qt {os.environ.get('QT_QPA_PLATFORM')}")
     fresh = main_pet and not (store.DATA / "settings.json").exists()
     store.load_settings()
     if first_mode and "mode" not in store.settings:
@@ -304,13 +308,12 @@ def main(args):
     if main_pet and not store.has_run_mode():
         choose_run_mode(fresh, claude.BY_CLAUDE_ARG in args)
 
-    if not Gtk.init_check(sys.argv[:1])[0]:
-        store.log(f"GTK 打不开图形界面：DISPLAY={os.environ.get('DISPLAY')!r}")
-        print(store.APP_NAME + "：打不开图形界面", file=sys.stderr)
-        return 1
-    css = Gtk.CssProvider()
-    css.load_from_data(MENU_CSS)
-    Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    web.register_scheme()   # claudia:// 要在 QApplication 之前注册
+    app = QApplication(sys.argv[:1])
+    app.setApplicationName(store.APP_NAME)
+    app.setDesktopFileName(store.APP_NAME)
+    app.setQuitOnLastWindowClosed(False)   # 关掉设置窗口不能把桌宠也带走
+    app.setStyleSheet(MENU_QSS)
 
     pet = Pet()
     pet.start()
@@ -331,7 +334,7 @@ def main(args):
     if main_pet:
         for pid in store.extra_pets():   # 把上次多开的几只也叫出来
             GLib.timeout_add(1500, lambda p=pid: (Pet.launch_pet(p), False)[1])
-    Gtk.main()
+    app.exec()
     srv.close()
     for f in (claude.socket_path(store.pet_id), store.STATE / "pet.pid" if main_pet else None):
         if f:
