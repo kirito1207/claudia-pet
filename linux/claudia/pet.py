@@ -969,7 +969,8 @@ class Pet:
         return r["default"]
 
     def physics_enabled(self):
-        return store.setting_on("physicsEnabled")
+        # 抛掷要的几项不全时（只会是安装不完整）拖动直接跟手、不扔，免得按 0 的重力、力度乱飞
+        return store.setting_on("physicsEnabled") and all(k in PHYSICS_RANGES for k in ("throwPower", "gravity", "restitution", "groundFriction"))
 
     def physics_config(self):
         cfg = {k: self.physics_value(k) for k in ("gravity", "restitution", "groundFriction", "throwPower")}
@@ -1480,7 +1481,10 @@ class Pet:
     def behavior_state(self):
         return {"idleEnabled": store.setting_on("idleEnabled"), "idleFrequency": self.idle_frequency(),
                 "clickBounce": store.setting_on("clickBounce"), "tumbleActions": store.setting_on("tumbleActions"),
-                "squashAmount": self.physics_value("elasticity")}   # Q 弹幅度：点击和落地共用（2026-11-27），网页自己压
+                "squashAmount": self.physics_value("elasticity"),   # Q 弹幅度：点击和落地共用（2026-11-27），网页自己压
+                # 幅度的参考值（默认值 = dsh-pet 的深度）和上限也从 web/physics.json 来：只改表，滑块和实际效果一起变；表读不到时 0 = 不压
+                "squashBase": PHYSICS_RANGES.get("elasticity", {}).get("default", 0),
+                "squashMax": PHYSICS_RANGES.get("elasticity", {}).get("max", 0)}
 
     def set_behavior(self, key, value):
         if key in ("idleEnabled", "clickBounce", "tumbleActions"):

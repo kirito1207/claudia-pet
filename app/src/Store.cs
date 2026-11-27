@@ -87,12 +87,19 @@ namespace Claudia
         public static bool ValidPetId(string id) => id == "main" || (id != null && id.Length >= 1 && id.Length <= 8 && id.All(c => c >= '0' && c <= '9'));
         static string PetsFile => Path.Combine(Data, "pets.json");
         /// <summary>名单：现在有哪几只、按什么顺序（第几只）。旧格式 {ids: [多开的几只]} 前面补上原来的第一只</summary>
-        public static List<string> Roster()
+        public static List<string> Roster() => TryRoster(out var ids) ? ids : new List<string>();
+        /// <summary>读名单，分清「确实是空的」（没有这个文件）和「读不到」（正被写、坏了）：读不到返回 false。
+        /// 负责人只在接手时读一次，读不到不能当成空名单，不然连上来的几只都会被当成已经送走（2026-11-27 Codex 复审）</summary>
+        public static bool TryRoster(out List<string> roster)
         {
-            var d = ReadJson(PetsFile) ?? new Dictionary<string, object>();
+            roster = new List<string>();
+            if (!File.Exists(PetsFile)) return true;
+            var d = ReadJson(PetsFile);
+            if (d == null) return false;
             var ids = d.TryGetValue("pets", out var p) && p is object[] pets ? pets.OfType<string>()
                 : d.TryGetValue("ids", out var v) && v is object[] old ? new[] { "main" }.Concat(old.OfType<string>()) : Enumerable.Empty<string>();
-            return ids.Where(ValidPetId).Distinct().Take(MaxPets).ToList();
+            roster = ids.Where(ValidPetId).Distinct().Take(MaxPets).ToList();
+            return true;
         }
         /// <summary>只有负责人写</summary>
         public static void SaveRoster(IEnumerable<string> ids) =>

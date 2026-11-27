@@ -120,6 +120,12 @@ $errors = @($comp.GetDiagnostics() | Where-Object { $_.Severity -eq [Microsoft.C
 if ($errors.Count) { $errors | Select-Object -First 30 | ForEach-Object { Write-Host ("ERR " + $_.ToString().Replace($root + '\', '')) }; throw "compile failed: $($errors.Count) error(s)" }
 
 Assert-BuildOutput
+# 物理参数表三端共用（web/physics.json）：缺项、范围不对就不打包，免得装出去拖动不扔、Q 弹不压
+$physics = Get-Content -Raw -Encoding UTF8 (Join-Path $root 'web\physics.json') | ConvertFrom-Json
+foreach ($k in 'throwPower', 'gravity', 'restitution', 'groundFriction', 'elasticity') {
+    $p = $physics.$k
+    if ($null -eq $p -or -not ($p.min -le $p.default -and $p.default -le $p.max -and $p.step -gt 0)) { throw "web/physics.json: $k missing or out of range" }
+}
 $staging = Join-Path $outputParent ('.claudia-stage-' + [guid]::NewGuid().ToString('N'))
 $null = [IO.Directory]::CreateDirectory($staging)
 try {

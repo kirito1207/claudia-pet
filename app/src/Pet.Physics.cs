@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Forms = System.Windows.Forms;
@@ -34,9 +35,17 @@ namespace Claudia
                 }
                 catch { Store.Log($"web/physics.json 里 {kv.Key} 这一项不对，跳过"); }
             }
-            if (table.Count == 0) Store.Log("读不到 web/physics.json，物理参数都按 0 算（安装不完整？）");
+            if (!PhysicsReady(table)) Store.Log("web/physics.json 读不到或不全：拖动直接跟手、不扔不弹（安装不完整？）");
             return table;
         }
+        /// <summary>抛掷要的几项都在：不全时（只会是安装不完整）拖动直接跟手、不扔，免得按 0 的重力、力度乱飞</summary>
+        static bool PhysicsReady(Dictionary<string, double[]> table)
+        {
+            foreach (var k in new[] { "throwPower", "gravity", "restitution", "groundFriction" }) if (!table.ContainsKey(k)) return false;
+            return true;
+        }
+        /// <summary>Q 弹幅度在表里的一项（1 = 上限，2 = 默认值）；表里没有就是 0（网页不压）</summary>
+        static double ElasticityRange(int i) => PhysicsRanges.TryGetValue("elasticity", out var r) ? r[i] : 0;
         static Dictionary<string, object> PhysicsRangesForPage()
         {
             var page = new Dictionary<string, object>();
@@ -48,7 +57,7 @@ namespace Claudia
         static bool CeilingBounce => !Store.Settings.TryGetValue("ceilingBounce", out var v) || !(v is bool b) || b;
         static double PhysicsValue(string key)
         {
-            if (!PhysicsRanges.TryGetValue(key, out var r)) return 0;   // 只有参数表读不到时
+            if (!PhysicsRanges.TryGetValue(key, out var r)) return 0;   // 只有参数表读不到时（这时抛掷已经关了，见 PhysicsReady）
             if (Store.Settings.TryGetValue(key, out var v) && (v is int || v is double || v is decimal))
             {
                 var n = Convert.ToDouble(v);
@@ -101,7 +110,7 @@ namespace Claudia
             };
         }
         Dictionary<string, object> MotionPacket() => new Dictionary<string, object> {
-            ["id"] = motionId, ["bounds"] = MotionGeometry(), ["physics"] = PhysicsConfig(), ["enabled"] = PhysicsEnabled,
+            ["id"] = motionId, ["bounds"] = MotionGeometry(), ["physics"] = PhysicsConfig(), ["enabled"] = PhysicsEnabled && PhysicsReady(PhysicsRanges),
         };
         void BeginDrag(double downX, double downY)
         {
@@ -115,6 +124,7 @@ namespace Claudia
             var pointer = Forms.Cursor.Position;
             dragging = true; dragTick0 = Environment.TickCount; sentAny = false;
             StartDragPump();
+            StartDragHook();
             packet["x"] = r.Left; packet["y"] = r.Top;
             packet["downX"] = downX; packet["downY"] = downY;
             packet["px"] = pointer.X; packet["py"] = pointer.Y; packet["time"] = 0;
@@ -158,6 +168,7 @@ namespace Claudia
         /// <summary>把新的轨迹点交给网页：优先系统鼠标历史，取不到时退回当前位置</summary>
         void PumpDragPointer(uint untilTick)
         {
+            Volatile.Write(ref lastPumpTick, Environment.TickCount);
             var cursor = Forms.Cursor.Position;
             var points = FreshMovePoints(cursor, untilTick);
             var js = new StringBuilder();
@@ -195,13 +206,48 @@ namespace Claudia
             }
             dragPump.Start();
         }
-        void StopDragPump() => dragPump?.Stop();
+        void StopDragPump() { dragPump?.Stop(); StopDragHook(); }
         void PumpOnFrame(object sender, EventArgs e)
         {
             if (!dragging) { StopDragPump(); return; }
-            if (!PrimaryButtonDown()) { releasedEarly = true; EndDrag(Environment.TickCount); return; }
+            // 松手按钩子记下的准确时刻算；钩子没挂上（或松手还没传到）才退回「现在」
+            if (!PrimaryButtonDown()) { releasedEarly = true; EndDrag(hookUpSeen ? unchecked((int)hookUpAt) : Environment.TickCount); return; }
             PumpDragPointer((uint)Environment.TickCount);
         }
+
+        // ---- 拖动时的鼠标钩子（见 DragHook.cs）：松手的准确时刻、鼠标一动就交轨迹 ----
+        DragHook dragHook;
+        volatile uint hookUpAt;     // 钩子线程写：松开按键时的系统时间戳
+        volatile bool hookUpSeen;   // 先写 hookUpAt 再写它
+        int pumpQueued;             // 已经请界面线程交一次轨迹、还没交：鼠标再动不再重复请
+        int lastPumpTick;           // 上次交轨迹的时刻：鼠标一秒能动几百下，同一个系统时钟刻度（约 16 毫秒）里只交一次，免得堵住界面线程
+        void StartDragHook()
+        {
+            StopDragHook();
+            hookUpSeen = false; pumpQueued = 0;
+            var id = motionId;
+            dragHook = new DragHook(
+                onMove: () =>
+                {
+                    if (Environment.TickCount == Volatile.Read(ref lastPumpTick)) return;   // 这一刻刚交过：轨迹点都在系统历史里，下次一起交
+                    if (Interlocked.Exchange(ref pumpQueued, 1) != 0) return;
+                    ui.BeginInvoke(DispatcherPriority.Render, new Action(() =>
+                    {
+                        Volatile.Write(ref pumpQueued, 0);
+                        if (dragging && motionId == id && PrimaryButtonDown()) PumpDragPointer((uint)Environment.TickCount);
+                    }));
+                },
+                onUp: time =>
+                {
+                    hookUpAt = time; hookUpSeen = true;
+                    // 最高优先级回界面线程收尾：轨迹只取到松手那一刻，松手后鼠标往回带的那一点不算
+                    ui.BeginInvoke(DispatcherPriority.Send, new Action(() =>
+                    {
+                        if (dragging && motionId == id && !PrimaryButtonDown()) { releasedEarly = true; EndDrag(unchecked((int)time)); }
+                    }));
+                });
+        }
+        void StopDragHook() { dragHook?.Stop(); dragHook = null; }
         void EndDrag(int upTimestamp = 0)
         {
             if (upTimestamp == 0) upTimestamp = Environment.TickCount;

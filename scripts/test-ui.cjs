@@ -74,6 +74,9 @@ const root = path.resolve(__dirname, '..');
     assert.ok(await page.evaluate(() => messages.some(m => m.key === 'idleFrequency' && m.value === 'lively')));
     assert.equal(await page.locator('[data-idle-action]').count(), 0);
     await page.goto(pathToFileURL(path.join(root, 'web/index.html')).href);
+    const squashTable = JSON.parse(fs.readFileSync(path.join(root, 'web/physics.json'), 'utf8')).elasticity   // 外壳随 setBehavior 发的 Q 弹参考值、上限
+    const squashRange = { squashBase: squashTable.default, squashMax: squashTable.max, squashAmount: squashTable.default }
+    await page.evaluate(r => setBehavior(r), squashRange)
     const stepCounts = await page.evaluate(() => [60, 144, 240, 319].map(hz => {
       bodyNext = null;
       let count = 0;

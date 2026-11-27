@@ -241,6 +241,7 @@ class HubServer:
 
     RELAUNCH_MS, RELAUNCH_LIMIT, RELAUNCH_WINDOW_S = 3000, 3, 600
     ADD_WAIT_MS = 30000   # 新加的那只多久没报到就算没成
+    ROSTER_RETRY_MS = 1000   # 名单读不到时多久再读
 
     def __init__(self, api, path=None, self_id=None, sessions=None):
         self.api, self.path = api, path or hub_path()
@@ -259,11 +260,36 @@ class HubServer:
         # 名单：负责人是它唯一的主人，以内存里这份为准，pets.json 只是存下来下次用的。存成功了才换（2026-11-27 Codex 复审：
         # 原来一次操作里读好几次文件，前后读到的不一定是同一份）
         self.pets = []
+        self.roster_known = False   # 读到过名单了。没读到之前不判断谁该走、不改名单
         self.load_roster()
 
     def load_roster(self):
-        """从 pets.json 读名单：当上负责人时一次（上一任走之前已经存好）；测试里改了文件后也用它"""
-        self.pets = store.roster()
+        """从 pets.json 读名单：当上负责人时一次（上一任走之前已经存好）；测试里改了文件后也用它。
+        读不到（上一任刚好在写、文件坏了）不当成空名单：先连着重试几次，还不行就隔一会儿再读，读到之前谁也不叫走、名单也不改"""
+        for _ in range(5):
+            ids = store.try_roster()
+            if ids is not None:
+                self.pets, self.roster_known = ids, True
+                return
+            time.sleep(0.04)
+        store.log("读不到多开名单，先不判断谁该走，过一会儿再读")
+        GLib.timeout_add(self.ROSTER_RETRY_MS, self._retry_roster)
+
+    def _retry_roster(self):
+        if self.closed or self.roster_known:
+            return False
+        ids = store.try_roster()
+        if ids is None:
+            return True   # 接着等
+        self.pets, self.roster_known = ids, True
+        store.log("读到多开名单了")
+        # 读不到时先收下的几只：现在能判断了，不在名单上的叫它走；名单上没在跑的叫回来
+        for pid, link in list(self.clients.items()):
+            if pid not in self.pets:
+                link.send({"type": "cmd", "rid": 0, "action": "dismiss", "value": ""})
+        self.adopt()
+        self.broadcast_roster()
+        return False
 
     def save_roster(self, pets):
         try:
@@ -395,7 +421,7 @@ class HubServer:
                     return
                 if not self._confirm_add(pid, link):
                     return
-            if pid not in self.pets:   # 已经被送走（还没出来时就送走了）：叫它走
+            if self.roster_known and pid not in self.pets:   # 已经被送走（名单还没读到：先收下，读到了再判断）（还没出来时就送走了）：叫它走
                 link.send({"type": "cmd", "rid": 0, "action": "dismiss", "value": ""})
                 return
             old = self.clients.get(pid)
@@ -434,7 +460,9 @@ class HubServer:
                     self.relaunch_later(link.id)
 
     def adopt(self):
-        """刚接手：名单上没在跑的（比如崩溃的上一任）叫回来"""
+        """刚接手：名单上没在跑的（比如崩溃的上一任）叫回来。名单还没读到：读到时再叫"""
+        if not self.roster_known:
+            return
         for pid in self.pets:
             if pid != self.self_id:
                 self.relaunch_later(pid)
@@ -477,6 +505,8 @@ class HubServer:
     def request(self, op, pid=None, action=None, value=None, reply=None, sender=None):
         reply = reply or (lambda ok, error="": self.api.hub_notice(error) if not ok and error else None)
         sender = sender or self.self_id
+        if not self.roster_known and (op in ("add", "leave") or (op == "pet" and action == "dismiss")):
+            return reply(False, "还没读到多开名单，等一下再试")   # 这几样要改名单：没读到就改会把别的几只冲掉
         ids = self.members()
         if op == "add":
             if len(ids) >= store.MAX_PETS:

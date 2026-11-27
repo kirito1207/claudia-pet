@@ -13,6 +13,8 @@ namespace Claudia
             ["idleEnabled"] = SettingOn("idleEnabled"), ["idleFrequency"] = IdleFrequency,
             ["clickBounce"] = SettingOn("clickBounce"), ["tumbleActions"] = SettingOn("tumbleActions"),
             ["squashAmount"] = PhysicsValue("elasticity"),   // Q 弹幅度：点击和落地共用（2026-11-27），网页自己压，不再由这里转交撞击
+            // 幅度的参考值（默认值 = dsh-pet 的深度）和上限也从 web/physics.json 来：只改表，滑块和实际效果一起变；表读不到时 0 = 不压
+            ["squashBase"] = ElasticityRange(2), ["squashMax"] = ElasticityRange(1),
         };
         void SetBehavior(string key, object value)
         {

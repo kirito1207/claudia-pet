@@ -198,6 +198,26 @@ class HubTests(unittest.TestCase):
     def leader(self):
         return self.pets[self.family.owner]
 
+    def test_unreadable_roster_at_takeover_is_not_taken_as_empty(self):
+        self.assertTrue(pump(lambda: set(self.pets["2"].hub.pets and [p["id"] for p in self.pets["2"].hub.pets]) == {"main", "2", "3"}))
+        retry = patch.object(pethub.HubServer, "ROSTER_RETRY_MS", 100)
+        retry.start()
+        self.addCleanup(retry.stop)
+        store.PETS_FILE.write_text("{half written", encoding="utf-8")   # the old leader was mid-write
+        self.family.owner = None
+        self.pets["main"].hub.close()   # crashed
+        self.assertTrue(pump(lambda: self.family.owner == "2" and "3" in self.leader().hub.clients, timeout=6))
+        pump(lambda: False, timeout=0.3)
+        self.assertNotIn(("dismiss", ""), self.pets["3"].applied, "a pet must not be sent away while the roster is unreadable")
+        replies = []
+        self.pets["3"].hub.request("add", value="claude", reply=lambda ok, error="": replies.append((ok, error)))
+        self.assertTrue(pump(lambda: replies))
+        self.assertFalse(replies[0][0], "the roster is not changed before it could be read")
+        store.save_roster(["main", "2", "3"])
+        self.assertTrue(pump(lambda: self.leader().hub.roster_known))
+        self.assertTrue(pump(lambda: ("main", None) in self.pets["2"].launched), "pets not running are called back once it is read")
+        self.assertNotIn(("dismiss", ""), self.pets["3"].applied)
+
     def test_roster_order_is_the_display_number(self):
         two = self.pets["2"]
         self.assertTrue(pump(lambda: len(two.hub.pets) == 3 and all(p["online"] for p in two.hub.pets)))

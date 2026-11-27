@@ -241,7 +241,7 @@ namespace Claudia
     /// <summary>负责人这一头：名单的唯一主人，转发指令、广播名单和信号</summary>
     sealed class PetHubServer : IPetHub
     {
-        public int RelaunchMs = 3000, AddWaitMs = 30000;   // AddWaitMs：新加的那只多久没报到就算没成
+        public int RelaunchMs = 3000, AddWaitMs = 30000, RosterRetryMs = 1000;   // AddWaitMs：新加的那只多久没报到就算没成；RosterRetryMs：名单读不到时多久再读
         const int RelaunchLimit = 3, RelaunchWindowS = 600;
         readonly IPetHubHost host;
         readonly string pipeName, selfId;
@@ -256,7 +256,8 @@ namespace Claudia
         readonly SessionBook sessions;           // 桌宠自己那一份（一个进程只留一份）：新报到的先拿到一份完整的
         /// <summary>名单：负责人是它唯一的主人，以内存里这份为准，pets.json 只是存下来下次用的。存成功了才换（2026-11-27 Codex 复审：
         /// 原来一次操作里读好几次文件，前后读到的不一定是同一份）</summary>
-        List<string> roster;
+        List<string> roster = new List<string>();
+        bool rosterKnown;   // 读到过名单了。没读到之前不判断谁该走、不改名单
         bool broadcasting, again;
         NamedPipeServerStream listening;
         public bool Closed => closed;
@@ -269,8 +270,32 @@ namespace Claudia
             LoadRoster();
         }
 
-        /// <summary>从 pets.json 读名单：当上负责人时一次（上一任走之前已经存好）；测试里改了文件后也用它</summary>
-        public void LoadRoster() => roster = Store.Roster();
+        /// <summary>从 pets.json 读名单：当上负责人时一次（上一任走之前已经存好）；测试里改了文件后也用它。
+        /// 读不到（上一任刚好在写、文件坏了）不当成空名单：先连着重试几次，还不行就隔一会儿再读，读到之前谁也不叫走、名单也不改</summary>
+        public void LoadRoster()
+        {
+            for (var i = 0; i < 5; i++)
+            {
+                if (Store.TryRoster(out var ids)) { roster = ids; rosterKnown = true; return; }
+                Thread.Sleep(40);
+            }
+            Store.Log("读不到多开名单，先不判断谁该走，过一会儿再读");
+            RetryRoster();
+        }
+        void RetryRoster()
+        {
+            host.Later(RosterRetryMs, () =>
+            {
+                if (closed || rosterKnown) return;
+                if (!Store.TryRoster(out var ids)) { RetryRoster(); return; }
+                roster = ids; rosterKnown = true;
+                Store.Log("读到多开名单了");
+                // 读不到时先收下的几只：现在能判断了，不在名单上的叫它走；名单上没在跑的叫回来
+                foreach (var kv in clients.ToList()) if (!roster.Contains(kv.Key)) Cmd(kv.Value, 0, "dismiss", "");
+                Adopt();
+                BroadcastRoster();
+            });
+        }
 
         bool SaveRoster(List<string> next)
         {
@@ -383,7 +408,7 @@ namespace Claudia
         public IEnumerable<string> SessionIds => sessions.Ids;
 
         /// <summary>刚接手：名单上没在跑的（比如崩溃的上一任）叫回来</summary>
-        public void Adopt() { foreach (var id in roster) if (id != selfId) RelaunchLater(id); }
+        public void Adopt() { if (rosterKnown) foreach (var id in roster) if (id != selfId) RelaunchLater(id); }   // 名单还没读到：读到时再叫
 
         void RelaunchLater(string id)
         {
@@ -418,7 +443,7 @@ namespace Claudia
                         if (PetHubNames.S(msg, "join") != adds.Token(id)) { Cmd(link, 0, "dismiss", ""); return; }
                         if (!ConfirmAdd(id, link)) return;
                     }
-                    if (!roster.Contains(id)) { Cmd(link, 0, "dismiss", ""); return; }   // 还没出来时就被送走了：叫它走
+                    if (rosterKnown && !roster.Contains(id)) { Cmd(link, 0, "dismiss", ""); return; }   // 名单还没读到：先收下，读到了再判断   // 还没出来时就被送走了：叫它走
                     if (clients.TryGetValue(id, out var old) && old != link) old.Close();
                     link.Id = id; clients[id] = link;
                     info[id] = PetHubNames.Info(PetHubNames.S(msg, "name"), PetHubNames.S(msg, "mode"));
@@ -476,6 +501,8 @@ namespace Claudia
         void Request(string op, string id, string action, string value, Action<bool, string> reply, string sender)
         {
             reply = reply ?? ((ok, error) => { if (!ok && !string.IsNullOrEmpty(error)) host.HubNotice(error); });
+            if (!rosterKnown && (op == "add" || op == "leave" || (op == "pet" && action == "dismiss")))
+            { reply(false, "还没读到多开名单，等一下再试"); return; }   // 这几样要改名单：没读到就改会把别的几只冲掉
             var ids = Members();
             switch (op)
             {

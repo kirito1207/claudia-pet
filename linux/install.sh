@@ -76,6 +76,14 @@ cleanup() {
 }
 trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
+# 物理参数表三端共用（web/physics.json）：缺项、范围不对就不装，免得装出去拖动不扔、Q 弹不压
+python3 -I - "$SRC/web/physics.json" <<'PY' || { echo "web/physics.json 缺项或范围不对，没有安装" >&2; exit 1; }
+import json, sys
+t = json.load(open(sys.argv[1], encoding="utf-8"))
+for k in ("throwPower", "gravity", "restitution", "groundFriction", "elasticity"):
+    r = t[k]
+    assert r["min"] <= r["default"] <= r["max"] and r["step"] > 0, k
+PY
 mkdir -p "$TMP/linux" "$TMP/icon"
 cp -rp "$SRC/web" "$SRC/characters" "$SRC/plugin" "$TMP/"
 cp -p "$SRC/VERSION" "$SRC/LICENSE" "$SRC/NOTICE.md" "$TMP/"

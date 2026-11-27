@@ -101,7 +101,9 @@ namespace Claudia
         {
             if (hwnd == IntPtr.Zero) return;
             var now = DateTime.UtcNow;
-            if ((now - pidsAt).TotalSeconds >= 1)
+            // 拖着、飞着的时候先不找 Claude 进程：要列一遍所有进程，界面线程会卡一下，拖动时就是忽快忽慢、松手判断晚（2026-11-27）。
+            // 放下后马上补上；Claude 关了要退出的判断最多晚这么一会儿
+            if ((now - pidsAt).TotalSeconds >= 1 && !dragging && !flying)
             {
                 pidsAt = now;
                 claudePids = FollowNative.ClaudeAppPids();
@@ -292,7 +294,8 @@ namespace Claudia
             }
             // 层级由全屏通知和前台切换来摆（Pet.Fullscreen）；另外每秒看一眼该不该让开：网页里点视频全屏、F11 时前台窗口没换，
             // 系统任务栏不在（MyDockFinder 之类）时全屏通知也不一定来。只量一下前台窗口，变了才动层级
-            if ((DateTime.UtcNow - deskLayerAt).TotalSeconds >= 1)
+            // 拖着、飞着时先不查（要从她往上翻一遍窗口，界面线程会顿一下，拖动就忽快忽慢；放下后马上补上，2026-11-27）
+            if ((DateTime.UtcNow - deskLayerAt).TotalSeconds >= 1 && !dragging && !flying)
             {
                 deskLayerAt = DateTime.UtcNow;
                 if (ShouldYield() != yielding || !appBarOn && ++deskLayerChecks % 5 == 0) UpdateDeskLayer();   // 全屏通知登记失败：每 5 秒再钉一次置顶

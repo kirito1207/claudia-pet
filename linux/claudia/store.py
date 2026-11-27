@@ -147,7 +147,18 @@ PETS_FILE = DATA / "pets.json"
 
 def roster():
     """名单：现在有哪几只、按什么顺序（第几只）。旧格式 {ids: [多开的几只]} 前面补上原来的第一只"""
-    d = read_json(PETS_FILE) or {}
+    ids = try_roster()
+    return ids if ids is not None else []
+
+
+def try_roster():
+    """读名单，分清「确实是空的」（没有这个文件，返回 []）和「读不到」（正被写、坏了，返回 None）。
+    负责人只在接手时读一次，读不到不能当成空名单，不然连上来的几只都会被当成已经送走（2026-11-27 Codex 复审）"""
+    if not PETS_FILE.exists():
+        return []
+    d = read_json(PETS_FILE)
+    if d is None:
+        return None
     ids = d.get("pets") if isinstance(d.get("pets"), list) else (["main"] + d["ids"]) if isinstance(d.get("ids"), list) else []
     out = []
     for i in ids:
@@ -176,8 +187,8 @@ def physics_ranges():
                 table[k] = {f: float(r[f]) for f in ("min", "max", "default", "step")}
             except (TypeError, KeyError, ValueError):
                 log(f"web/physics.json 里 {k} 这一项不对，跳过")
-        if not table:
-            log("读不到 web/physics.json，物理参数都按 0 算（安装不完整？）")
+        if not all(k in table for k in ("throwPower", "gravity", "restitution", "groundFriction")):
+            log("web/physics.json 读不到或不全：拖动直接跟手、不扔不弹（安装不完整？）")
         _physics_ranges = table
     return _physics_ranges
 
