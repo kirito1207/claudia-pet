@@ -12,6 +12,7 @@ namespace Claudia
         Dictionary<string, object> BehaviorState() => new Dictionary<string, object> {
             ["idleEnabled"] = SettingOn("idleEnabled"), ["idleFrequency"] = IdleFrequency,
             ["clickBounce"] = SettingOn("clickBounce"), ["tumbleActions"] = SettingOn("tumbleActions"),
+            ["squashAmount"] = PhysicsValue("elasticity"),   // Q 弹幅度：点击和落地共用（2026-11-27），网页自己压，不再由这里转交撞击
         };
         void SetBehavior(string key, object value)
         {

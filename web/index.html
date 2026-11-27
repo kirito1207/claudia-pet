@@ -1439,7 +1439,7 @@ function applyQuota(id) {
 function handleClick(kind, x, y) {
   lastActive = Date.now()
   // Q 弹不看系统的「减少动画」（2026-11-25：Linux 的 cage / VNC 桌面默认关动画，WebKit 就报减少动画，Q 弹整个没了）；要关用设置里的点击 Q 弹开关
-  clickSequence.play(() => performClick(kind, x, y), clickBounce)
+  clickSequence.play(() => performClick(kind, x, y), squashOn())
 }
 function performClick(kind, x, y) {
   lastActive = Date.now()
@@ -1490,24 +1490,26 @@ function setMotionActive(on) {
     for (const c of [...sheetCanvases, ...sheetVideos]) if (c !== sheetFront) c.classList.remove('on')
   }
 }
-// 撞边、落地的 Q 弹和点击用同一条曲线（squashScale，照 dsh-pet），只是压多深按撞击速度算（照 dsh-pet 的 landingSquash：
-// 慢的压到 80%，1500 像素/秒以上压到和点击一样的 55%）。落地压竖直方向，撞左右墙压水平方向（2026-11-25 用户：撞边和点击的 Q 弹不一样）
+// Q 弹（2026-11-27 用户定，照 dsh-pet）：只上下压——贴着地面压扁再回弹，没有左右压；只在点她和落地时压，撞左右墙、撞顶不压。
+// 点击和落地用同一条曲线（squashScale）、同一组设置：「Q 弹」开关（clickBounce）管两样，「Q 弹幅度」（squashAmount，
+// 设置里的 elasticity，默认 0.12）两样一起变深变浅。点击压到最深一档；落地按往下落的速度（照 dsh-pet 的 landingSquash：
+// 慢的压到 80%，1500 像素/秒以上压到和点击一样的 55%）
 function landingSquash(speed) {
   const t = Math.min(Math.max((Math.abs(speed) - 300) / (1500 - 300), 0), 1)
   return Math.min(.8, 1 - t * (1 - SQ_SQUASH))
 }
-function squashAnimate(depth, axis = 'Y') {
-  const frames = Array.from({ length: 23 }, (_, i) => ({ transform: `scale${axis}(${squashScale(i / 22, depth).toFixed(4)})`, offset: i / 22 }))
+// 幅度：默认 0.12 时就是 dsh-pet 的深度；调大压得更深（最深压到 45%），0 不压
+function squashDepth(base) { return Math.max(.45, 1 - (1 - base) * Math.min(2, squashAmount / .12)) }
+const squashOn = () => clickBounce && squashAmount > 0
+function squashAnimate(depth) {
+  const frames = Array.from({ length: 23 }, (_, i) => ({ transform: `scaleY(${squashScale(i / 22, depth).toFixed(4)})`, offset: i / 22 }))
   return $('impact').animate(frames, { duration: SQ_DURATION_MS, easing: 'linear' })
 }
-function physicsImpact(vx, vy, amount) {
-  if (clickSequence.busy || !amount) return   // 和点击 Q 弹一样不看系统的「减少动画」；弹性设成 0 就不压
-  const speed = Math.max(vx, vy)
-  if (speed < 120) return   // 轻轻碰一下不压
-  // amount 是设置里的「弹性」（默认 0.12、最大 0.25）：默认时就是 dsh-pet 的深度，调大压得更深
-  const k = Math.min(2, amount / .12), depth = Math.max(.45, 1 - (1 - landingSquash(speed)) * k)
+function landingImpact(speed) {
+  if (clickSequence.busy || !squashOn()) return   // 和点击 Q 弹一样不看系统的「减少动画」
+  if (speed < 120) return   // 轻轻落下不压
   impactAnimation?.cancel()
-  impactAnimation = squashAnimate(depth, vy >= vx ? 'Y' : 'X')
+  impactAnimation = squashAnimate(squashDepth(landingSquash(speed)))
   scheduleHitRects()
 }
 // ---- 甩她 / 红温 ----
@@ -1769,10 +1771,11 @@ function tumbleCancel() {
 }
 
 // Idle behavior is configurable and never interrupts work, dragging or explicit interactions.
-let idleSettings = IdlePolicy.normalize({}), idleTimer = null, clickBounce = true
+let idleSettings = IdlePolicy.normalize({}), idleTimer = null, clickBounce = true, squashAmount = .12
 function setBehavior(settings) {
   idleSettings = IdlePolicy.normalize(settings); clickBounce = settings?.clickBounce !== false
-  if (!clickBounce) clickSequence.cancel()
+  if (Number.isFinite(settings?.squashAmount)) squashAmount = Math.min(.25, Math.max(0, settings.squashAmount))
+  if (!squashOn()) clickSequence.cancel()
   tumbleOn = settings?.tumbleActions !== false
   if (!tumbleOn) tumbleCancel()
   const wasAnim = animOn
@@ -1865,7 +1868,7 @@ const clickSequence = new ClickSequence(done => {
   impactAnimation?.cancel()
   let animation = null
   const stopWaiting = whenSheetShown(() => {
-    animation = squashAnimate(SQ_SQUASH)
+    animation = squashAnimate(squashDepth(SQ_SQUASH))
     scheduleHitRects()
     animation.onfinish = done
   }, 350)
@@ -1873,6 +1876,7 @@ const clickSequence = new ClickSequence(done => {
 }, active => { document.documentElement.classList.toggle('clicking', active); if (!active) queueMicrotask(() => motionMood.attempt()) })
 // Browser frame loop mirrors dsh-pet's desktop renderer; the host is only a bounds broker.
 const petMotion = new PetMotion(DshPhysics, message => {
+  if (message.landing) landingImpact(message.landing)
   dragSheet(message)
   tumbleHit(message)
   window.chrome?.webview?.postMessage({ motion: message })

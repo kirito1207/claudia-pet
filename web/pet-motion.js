@@ -62,7 +62,7 @@
       if (!this.phase) return;
       const time = this.now(), rawDt = (time - this.last) / 1000; this.last = time;
       const s = this.state, b = this.bounds;
-      let impactX = 0, impactY = 0, edge = null, atRest = false, shake = false;
+      let impactX = 0, impactY = 0, edge = null, landing = 0, atRest = false, shake = false;
       if (this.phase === 'drag') {
         const dt = Math.min(rawDt, 1 / 30);
         if (this.enabled) {
@@ -83,6 +83,7 @@
         if (next.bounced) {
           if (next.x === b.minX || next.x === b.maxX) impactX = Math.abs(s.vx);
           if (next.y === b.minY || next.y === b.maxY) impactY = Math.abs(s.vy);
+          if (next.y === b.maxY && s.vy > 0) landing = s.vy;   // 落地：往下落时撞到底边（Q 弹只在这时压，照 dsh-pet）
           // Which edge took the harder hit (used by tumble.js).
           if (impactX || impactY) edge = impactX >= impactY ? (next.x === b.minX ? 'left' : 'right') : (next.y === b.minY ? 'top' : 'bottom');
         }
@@ -97,7 +98,7 @@
         current.y = Math.max(b.minY, Math.min(b.maxY, current.y)); current.vy = 0;
       }
       const phase = atRest ? 'end' : this.phase;
-      this.emit({ id: this.id, phase, x: current.x, y: current.y, impactX, impactY, edge, shake });
+      this.emit({ id: this.id, phase, x: current.x, y: current.y, impactX, impactY, edge, landing, shake });
       if (atRest) this.phase = null; else this.schedule();
     }
   }

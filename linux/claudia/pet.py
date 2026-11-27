@@ -993,9 +993,7 @@ class Pet:
             return
         if m.get("shake") is True:
             self.js("shaken()")
-        ix, iy = float(m.get("impactX") or 0), float(m.get("impactY") or 0)
-        if max(ix, iy) > 120:
-            self.js(f"physicsImpact({ix}, {iy}, {self.physics_value('elasticity')})")
+        # 落地 Q 弹网页自己压（2026-11-27 起只在落地时、按落下的速度），这里不再转交撞击
 
     def set_physics(self, key, value):
         if key in ("physicsEnabled", "ceilingBounce"):
@@ -1014,6 +1012,8 @@ class Pet:
         store.save_settings()
         if self.dragging or self.flying:
             self.js(f"petMotion.update({store.dumps(self.motion_packet())})")
+        if key == "elasticity":   # Q 弹幅度点击也要用
+            self.js(f"setBehavior({store.dumps(self.behavior_state())})")
 
     # ================= 自己走路 =================
     # 网页定方向、速度（像素 / 秒）、走多久，发来 {walk: {dir, speed, ms}}；这里逐帧平移窗口，只走水平方向
@@ -1378,7 +1378,8 @@ class Pet:
 
     def behavior_state(self):
         return {"idleEnabled": store.setting_on("idleEnabled"), "idleFrequency": self.idle_frequency(),
-                "clickBounce": store.setting_on("clickBounce"), "tumbleActions": store.setting_on("tumbleActions")}
+                "clickBounce": store.setting_on("clickBounce"), "tumbleActions": store.setting_on("tumbleActions"),
+                "squashAmount": self.physics_value("elasticity")}   # Q 弹幅度：点击和落地共用（2026-11-27），网页自己压
 
     def set_behavior(self, key, value):
         if key in ("idleEnabled", "clickBounce", "tumbleActions"):
@@ -1479,7 +1480,8 @@ class Pet:
                     self.js(f"setAuraMode({store.dumps(value)})")
         elif cmd == "resetPhysics":
             self.stop_motion()
-            for k in list(PHYSICS_RANGES) + ["physicsEnabled", "ceilingBounce"]:
+            # Q 弹幅度（elasticity）2026-11-27 挪到「Q 弹」那组，不归「恢复默认手感」管
+            for k in [k for k in PHYSICS_RANGES if k != "elasticity"] + ["physicsEnabled", "ceilingBounce"]:
                 store.settings.pop(k, None)
             store.save_settings()
         elif cmd == "rename":

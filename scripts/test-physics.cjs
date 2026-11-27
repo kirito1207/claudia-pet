@@ -78,4 +78,14 @@ if (process.argv[2]) {
   }
   console.log('PASS: exact numerical parity with installed dsh-pet (4,800 flight steps, spring and small-stroke release cases)');
 }
-console.log('PASS: small fast horizontal fling, continuous release and no-gravity gentle put-down');
+// Q 弹只在落地时压（2026-11-27 照 dsh-pet）：撞左右墙、撞顶不报 landing，落到底边才报，值是往下落的速度
+{
+  const h = harness();
+  h.m.begin({ id: 1, x: 800, y: 400, downX: 800, downY: 400, px: 800, py: 400, time: 0, physics: cfg, bounds, enabled: true });
+  h.m.phase = 'flight'; h.m.state = { x: 800, y: 400, vx: 4000, vy: -3000 }; h.m.last = 0;
+  for (let i = 0; i < 600 && h.m.phase; i++) h.frame(16);
+  const walls = h.messages.filter(m => m.edge === 'left' || m.edge === 'right' || m.edge === 'top'), lands = h.messages.filter(m => m.landing);
+  assert.ok(walls.length > 0 && walls.every(m => !m.landing || m.y === bounds.maxY), 'wall / ceiling hits must not report a landing');
+  assert.ok(lands.length > 0 && lands.every(m => m.y === bounds.maxY && m.landing > 0), 'landings happen on the floor with the falling speed');
+}
+console.log('PASS: small fast horizontal fling, continuous release and no-gravity gentle put-down, landing-only squash signal');

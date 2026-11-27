@@ -89,7 +89,8 @@ namespace Claudia
                     break;
                 case "resetPhysics":
                     StopMotion();
-                    foreach (var setting in PhysicsRanges) Store.Settings.Remove(setting.Key);
+                    // Q 弹幅度（elasticity）2026-11-27 挪到「Q 弹」那组，不归「恢复默认手感」管
+                    foreach (var setting in PhysicsRanges) if (setting.Key != "elasticity") Store.Settings.Remove(setting.Key);
                     Store.Settings.Remove("physicsEnabled"); Store.Settings.Remove("ceilingBounce");
                     Store.SaveSettings(); break;
                 case "rename":

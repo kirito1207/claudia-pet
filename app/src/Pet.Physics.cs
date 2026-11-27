@@ -55,6 +55,7 @@ namespace Claudia
             }
             Store.SaveSettings();
             if (dragging || flying) Js($"petMotion.update({Store.Json.Serialize(MotionPacket())})");
+            if (key == "elasticity") Js($"setBehavior({Store.Json.Serialize(BehaviorState())})");   // Q 弹幅度点击也要用
         }
         // Browser rAF owns the whole motion loop, as in dsh-pet. WPF only forwards input and moves HWND.
         // 拖动轨迹的时间用「开机以来的毫秒」：和鼠标消息的 Timestamp、系统鼠标历史是同一个时钟，从开始拖动算起
@@ -227,9 +228,7 @@ namespace Claudia
                 lastMotionPosition = position;
             if (phase == "end") { StopMotion(); return; }
             if (m.TryGetValue("shake", out var shake) && shake is bool shaken && shaken) Js("shaken()");
-            var ix = m.TryGetValue("impactX", out var ax) ? Convert.ToDouble(ax) : 0;
-            var iy = m.TryGetValue("impactY", out var ay) ? Convert.ToDouble(ay) : 0;
-            if (Math.Max(ix, iy) > 120) Js($"physicsImpact({Num(ix)}, {Num(iy)}, {Num(PhysicsValue("elasticity"))})");
+            // 落地 Q 弹网页自己压（2026-11-27 起只在落地时、按落下的速度），这里不再转交撞击
         }
     }
 }

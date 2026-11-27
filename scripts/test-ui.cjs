@@ -102,10 +102,20 @@ const root = path.resolve(__dirname, '..');
     await page.evaluate(() => setShowName(true));
     await page.waitForFunction(() => messages.at(-1)?.hitRects?.length === 3);
     const before = await page.locator('#quota').boundingBox();
-    await page.evaluate(() => physicsImpact(0, 1400, .25));
+    await page.evaluate(() => { setBehavior({ squashAmount: .25 }); landingImpact(1400) });
     await page.waitForTimeout(65);
     const after = await page.locator('#quota').boundingBox();
     assert.deepEqual(after, before, 'impact must not transform quota');
+    // Q 弹只上下压（2026-11-27 照 dsh-pet）：压到一半时横向不变、竖向变矮；关掉 Q 弹或幅度为 0 时落地不压
+    const mid = await page.evaluate(() => { const m = new DOMMatrix(getComputedStyle($('impact')).transform); return [m.a, m.d] });
+    assert.ok(mid[0] === 1 && mid[1] < 1, `landing squash must be vertical only (${mid})`);
+    await page.waitForFunction(() => !impactAnimation || impactAnimation.playState === 'finished');
+    for (const b of [{ clickBounce: false }, { clickBounce: true, squashAmount: 0 }]) {
+      await page.evaluate(b => { impactAnimation = null; setBehavior(b); landingImpact(3000) }, b);
+      assert.equal(await page.evaluate(() => impactAnimation), null, `no landing squash with ${JSON.stringify(b)}`);
+    }
+    // 落地速度越快压得越深；幅度跟点击共用
+    assert.deepEqual(await page.evaluate(() => { setBehavior({ clickBounce: true, squashAmount: .12 }); return [squashDepth(landingSquash(400)) > squashDepth(landingSquash(1400)), +squashDepth(SQ_SQUASH).toFixed(2)] }), [true, .55]);
     await page.evaluate(() => { setMotionActive(true); setPose('dizzy'); });
     assert.equal(await page.locator('#body').evaluate(el => getComputedStyle(el).animationName), 'none');
     assert.equal(await page.locator('#body').evaluate(el => getComputedStyle(el).transform), 'none');
