@@ -28,9 +28,18 @@ async function write($: EngineInterface, file: string, data: unknown): Promise<v
 }
 
 type State = { pose: string; event: string; tool: string; ts: number; after?: string; afterTs?: number }
+// 心跳：设置页显示「上次收到消息」（只分到「刚刚 / 几分钟前」）。原来每次写状态都先等它写完，一次工具调用前后各一次；
+// 改成最多 30 秒写一次、不等它（谁先写谁后写都不影响，2026-11-27 Codex 复审）。动作状态照旧按顺序写完再继续：先后决定她演哪个动作
+let seenAt = 0
+function heartbeat($: EngineInterface): void {
+  const now = Date.now()
+  if (now - seenAt < 30000) return
+  seenAt = now
+  write($, 'seen-plugin', String(Math.floor(now / 1000))).catch(() => {})
+}
 async function setState($: EngineInterface, state: State): Promise<void> {
   try {
-    await write($, 'seen-plugin', String(Math.floor(Date.now() / 1000)))   // 心跳：设置页显示「上次收到消息」
+    heartbeat($)
     let sid = ''
     try { sid = await $.session.id() } catch {}
     const { pose, event, ts } = state

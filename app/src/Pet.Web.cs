@@ -88,8 +88,10 @@ namespace Claudia
             if (n > 0) Store.Log($"清掉 {n} 个一天前的会话状态文件");
         }
 
+        /// <summary>各个 Claude Code 会话的状态：只有负责人扫目录，扫到的变化经 PetHub 发给大家（不是负责人的什么都不做，等它发来）</summary>
         void PollSessionStates(string id)
         {
+            if (hub != null && !isLeader) return;
             var cutoff = DateTime.UtcNow.AddMinutes(-10);
             var changed = new List<Dictionary<string, object>>();
             try
@@ -113,6 +115,7 @@ namespace Claudia
             catch (IOException) { }   // 下次轮询重试。
             catch (UnauthorizedAccessException) { }
             if (changed.Count != 0) Js($"setSessionStates({Q(id)}, {Store.Json.Serialize(changed)})");
+            (hub as PetHubServer)?.ShareSessions(changed);
         }
     }
 }

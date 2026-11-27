@@ -614,12 +614,20 @@ function manifest() {
         const kept = [...videoCache.keys()].map(k => atob(k.split(',')[1])[0])
         const bGone = await realFetch(b).then(() => false, () => true)   // 扔掉的 blob 地址已经释放
         sheet = null; trimVideos()
-        return { dedupe, kept, bGone, retired: videoRetired.size }
+        // 切走了（取消了、没人等）：读完不进缓存；主动预读（keep）没人等也进（2026-11-27）
+        VIDEO_CACHE_BYTES = budget
+        const abandoned = clip(69), prefetched = clip(70)
+        loadVideo(abandoned, () => {}, () => {})()
+        loadVideo(prefetched, () => {}, () => {}, true)()
+        await new Promise(r => setTimeout(r, 200))
+        const skip = [videoCache.has(abandoned), videoCache.has(prefetched), videoLoading.size]
+        return { dedupe, kept, bGone, retired: videoRetired.size, skip }
       } finally { window.fetch = realFetch; VIDEO_CACHE_BYTES = budget; sheet = null }
     })
     assert.deepEqual(cache.dedupe, [1, true, true], 'two requests for one clip in flight must share one read')
     assert.deepEqual(cache.kept.sort(), ['A', 'D'], `cache over budget keeps the playing clip and the newest (${cache.kept})`)
     assert.ok(cache.bGone, 'evicted blob URLs must be revoked'); assert.equal(cache.retired, 0)
+    assert.deepEqual(cache.skip, [false, true, 0], 'a read nobody waits for any more stays out of the cache; a prefetch goes in')
 
     assert.deepEqual(errors, [])
     console.log('PASS: video cache, sheet playback, alignment, random click reactions, sleep hold, farewell range, drag overlay, snack caught, quota tiers, idle groups, seasonal/lunar filters, group-balanced picks, walking, no still fallback (reduced motion keeps animating; missing sheet plays idle)')

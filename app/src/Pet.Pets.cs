@@ -185,6 +185,21 @@ namespace Claudia
             if (isLeader) RegisterHideHotKey();
             PushSettings();
         }
+        /// <summary>不是负责人时：负责人发来的会话状态（会话编号 → 最近的），网页重新加载时重放</summary>
+        readonly Dictionary<string, Dictionary<string, object>> sessionCache = new Dictionary<string, Dictionary<string, object>>();
+        static double SessionTs(Dictionary<string, object> s) { try { return s.TryGetValue("ts", out var t) && t != null ? Convert.ToDouble(t) : 0; } catch { return 0; } }
+        public void HubSessions(List<Dictionary<string, object>> states)
+        {
+            foreach (var st in states)
+            {
+                var sid = st.TryGetValue("sid", out var v) ? v as string : null;
+                if (string.IsNullOrEmpty(sid)) continue;
+                if (!sessionCache.TryGetValue(sid, out var old) || SessionTs(old) <= SessionTs(st)) sessionCache[sid] = st;
+            }
+            var cutoff = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 600;
+            foreach (var sid in sessionCache.Where(kv => SessionTs(kv.Value) < cutoff).Select(kv => kv.Key).ToList()) sessionCache.Remove(sid);
+            if (ready) Js($"setSessionStates('claude', {Store.Json.Serialize(states)})");
+        }
         public bool HubLaunch(string id, string mode, string join) => LaunchPet(id, mode, join);
         public bool HubRunning(string id) => PetRunning(id);
         public bool HubLeaving() => leaving;

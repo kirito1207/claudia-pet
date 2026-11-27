@@ -55,9 +55,10 @@ assert.ok(idle.delay(idle.normalize({idleFrequency:'lively'}), .5) < idle.delay(
   const source = stripTypeScriptTypes(fs.readFileSync(require('path').join(__dirname,'../plugin/hooks/register.ts'),'utf8'));
   const { register } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
   const handlers = {}; register((name, fn) => { handlers[name] = fn; });
-  const files = new Map(); let sid = 'session-a';
+  const files = new Map(); let sid = 'session-a', seenWrites = 0;
   const engine = { env: { get: async key => key === 'USERPROFILE' ? 'TEST-HOME' : undefined },
-    fs: { exists: async () => false, read: async p => { if (!files.has(p)) throw Error('missing'); return files.get(p); }, write: async(p,s) => files.set(p,s) },
+    fs: { exists: async () => false, read: async p => { if (!files.has(p)) throw Error('missing'); return files.get(p); },
+      write: async(p,s) => { if (p.endsWith('seen-plugin')) seenWrites++; files.set(p,s) } },
     session: { id: async () => sid, usage: async () => ({ rateLimits: [] }) } };
   const send = (name,e) => handlers[name](engine,e,async e => ({...e,isError:false}));
   const events = () => [...files].filter(([p]) => p.includes('claude-notify-')).flatMap(([,s]) => JSON.parse(s).events);
@@ -86,5 +87,7 @@ assert.ok(idle.delay(idle.normalize({idleFrequency:'lively'}), .5) < idle.delay(
     assert.equal(record.pose, 'listening');
   }
   assert.equal(files.get(prefix + 'claude-sessions.json'), legacy, 'new writers must leave legacy sessions intact');
+  // 心跳文件（设置页「上次收到消息」）最多 30 秒写一次：上面几十次状态写入只写了一次（2026-11-27）
+  assert.equal(seenWrites, 1, `heartbeat written ${seenWrites} times`);
   console.log('PASS: idle controls, notification queues and retention, independent writes from concurrent sessions');
 })().catch(e=>{console.error(e); process.exitCode=1;});

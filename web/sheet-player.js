@@ -268,9 +268,11 @@ const videoCache = new Map()   // 视频地址 → { blob: blob 地址, bytes }�
 const videoLoading = new Map()   // 视频地址 → 正在等这次读取的 { done }
 const videoRetired = new Set()   // 已经不在缓存里、还没释放的 blob 地址
 let videoRaf = 0
-function loadVideo(url, done, fail) {
+// keep：主动预读（点击反应那几段），没人等也要放进缓存。别的读取读完时如果已经没人在等（切走了），
+// 结果就不放进缓存，免得挤掉还会用的片段（2026-11-27 Codex 复审）。外壳整段读文件，读盘本身省不了
+function loadVideo(url, done, fail, keep = false) {
   const hit = videoCache.get(url)
-  const waiter = { done, cancelled: false }
+  const waiter = { done, cancelled: false, keep }
   if (hit) {
     videoCache.delete(url); videoCache.set(url, hit)   // 挪到最新
     Promise.resolve().then(() => { if (!waiter.cancelled) done(hit.blob) })
@@ -281,7 +283,10 @@ function loadVideo(url, done, fail) {
   const set = new Set([waiter]); videoLoading.set(url, set)
   const finish = target => { videoLoading.delete(url); for (const w of set) if (!w.cancelled) w.done(target) }
   fetch(url).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob() })
-    .then(b => { const blob = URL.createObjectURL(b); videoCache.set(url, { blob, bytes: b.size }); finish(blob); trimVideos() })
+    .then(b => {
+      if (![...set].some(w => !w.cancelled || w.keep)) { videoLoading.delete(url); return }   // 没人要了：不进缓存
+      const blob = URL.createObjectURL(b); videoCache.set(url, { blob, bytes: b.size }); finish(blob); trimVideos()
+    })
     .catch(() => finish(url))   // fetch 读不了（测试用 file:// 打开页面时）：直接把地址交给 <video>，真读不出来由 <video> 报错再重读
   return () => { waiter.cancelled = true }
 }
@@ -464,6 +469,6 @@ function prefetchVideos() {
   if (!c?.videos || videoPrefetched === c) return
   videoPrefetched = c
   setTimeout(() => {
-    for (const p of CLICK_POSES) for (const n of c.animations?.[p]?.sheets || []) if (c.videos[n]) loadVideo(c.videos[n], () => {}, () => {})
+    for (const p of CLICK_POSES) for (const n of c.animations?.[p]?.sheets || []) if (c.videos[n]) loadVideo(c.videos[n], () => {}, () => {}, true)
   }, 1500)
 }

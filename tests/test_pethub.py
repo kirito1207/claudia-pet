@@ -32,6 +32,7 @@ class FakePet:
         self.lost = self.user_quit = self.left = False
         self.launch_ok = True
         self.tokens = {}   # id → the join token of the last launch
+        self.sessions = []   # every session-state batch the hub delivered
 
     # leader-side setup the real Pet does in become_leader / give_up_leading
     def lead(self):
@@ -74,6 +75,9 @@ class FakePet:
 
     def hub_toggle(self):
         self.signals.append("toggle")
+
+    def hub_sessions(self, states):
+        self.sessions.append([s["sid"] for s in states])
 
     def hub_app_changed(self):
         self.app_changes += 1
@@ -365,6 +369,21 @@ class HubTests(unittest.TestCase):
         self.leader().hub.request("leave")
         self.assertTrue(self.pets["main"].left and self.pets["main"].user_quit)
         self.assertEqual(store.roster(), [])
+
+    def test_session_states_are_scanned_once_and_shared(self):
+        now = time.time()
+        hub = self.leader().hub
+        hub.share_sessions([{"sid": "a", "pose": "reading", "ts": now}, {"sid": "old", "pose": "thinking", "ts": now - 900}])
+        self.assertTrue(pump(lambda: all(p.sessions for p in (self.pets["2"], self.pets["3"]))))
+        self.assertEqual(self.pets["2"].sessions[0], ["a", "old"], "changes are passed on as scanned")
+        hub.share_sessions([{"sid": "b", "pose": "writing", "ts": now}])
+        self.assertEqual(sorted(hub.sessions), ["a", "b"], "only the last 10 minutes are kept for newcomers")
+        late = self.join("4")
+        store.save_roster(["main", "2", "3", "4"])
+        late.hub.close()
+        newcomer = self.join("4")
+        self.assertTrue(pump(lambda: newcomer.sessions))
+        self.assertEqual(sorted(newcomer.sessions[0]), ["a", "b"], "a pet that reports in gets the full current list first")
 
     def test_pet_dismissed_before_it_connected_is_told_to_leave(self):
         late = self.join("5")   # not in the roster

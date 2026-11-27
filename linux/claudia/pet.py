@@ -95,6 +95,7 @@ class Pet:
         self.characters = []
         self.manifest_json = "{}"
         self.stamps = {}
+        self.session_cache = {}   # 不是负责人时：负责人发来的会话状态（会话编号 → 最近的），网页重新加载时重放
         self.page_w, self.page_h, self.page_foot = BASE_W, BASE_H, 62.0
         self.shown_foot = 0.0
         self.shown_scale = 0.0
@@ -253,6 +254,8 @@ class Pet:
         self.apply_sizes(anchor="corner")
         self.stamps.clear()
         self.poll()
+        if not self.is_leader and self.session_cache:   # 网页重新加载了：把负责人发来过的会话状态重放一遍
+            self.js(f"setSessionStates('claude', {store.dumps(list(self.session_cache.values()))})")
         GLib.timeout_add(3000, self.reveal)
 
     def on_web_crash(self, reason):
@@ -425,6 +428,9 @@ class Pet:
             store.log(f"清掉 {n} 个一天前的会话状态文件")
 
     def poll_session_states(self, cid, cutoff):
+        """各个 Claude Code 会话的状态：只有负责人扫目录，扫到的变化经 pethub 发给大家（不是负责人的什么都不做，等它发来）"""
+        if self.hub and not self.is_leader:
+            return
         changed = []
         for f in store.STATE.glob("claude-session-*.json"):
             result = store.changed_state(f, self.stamps, max_bytes=65536, not_before=cutoff)
@@ -432,6 +438,8 @@ class Pet:
                 changed.append(result[0])
         if changed:
             self.js(f"setSessionStates({store.dumps(cid)}, {store.dumps(changed)})")
+            if self.hub:
+                self.hub.share_sessions(changed)
 
     # ---- 任务通知（只从第一只弹） ----
     def task_notice(self, nid, kind, ts):
@@ -1714,6 +1722,18 @@ class Pet:
             self.apply_hidden(False)
         elif what == "quit":
             self.leave()
+
+    def hub_sessions(self, states):
+        """负责人发来的会话状态（变化，或者刚连上时的完整一份）"""
+        for st in states:
+            sid = st.get("sid")
+            old = self.session_cache.get(sid)
+            if isinstance(sid, str) and (not old or (old.get("ts") or 0) <= (st.get("ts") or 0)):
+                self.session_cache[sid] = st
+        cutoff = time.time() - 600
+        self.session_cache = {k: v for k, v in self.session_cache.items() if (v.get("ts") or 0) >= cutoff}
+        if self.ready:
+            self.js(f"setSessionStates('claude', {store.dumps(states)})")
 
     def hub_toggle(self):
         self.set_user_hidden(not self.user_hidden)

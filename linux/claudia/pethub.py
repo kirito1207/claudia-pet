@@ -21,6 +21,9 @@
   刚取消的编号 30 秒内先不再用（旧进程可能还在启动、还没拿到这个编号的锁）。
   刚送走的那只还在挥手、编号都被占着时，先不加，叫用户等它走了再试。
 - 共用设置只有负责人写：哪一只改，就把「哪一项、改成什么」交给负责人（appSet），它先写 app.json，写成了才叫大家重读。
+- 各个 Claude Code 会话的状态（state 目录里的 claude-session-*.json）只有负责人扫，扫到变化发给大家（sessions）；
+  新报到、断线重连的先收到一份完整的（负责人手上留着最近 10 分钟的），换了负责人新的那只第一次扫时整份发一遍。
+  原来每只每 0.3 秒各扫一遍目录（2026-11-27 Codex 复审）。
 - 每只正常走之前跟负责人说一声 bye。没说就断了的（崩溃、被杀）负责人 3 秒后把它叫回来；新负责人接手时也把名单上
   没在跑的（比如崩溃的上一任）叫回来。同一只 10 分钟内最多叫回 3 次，免得反复崩溃一直重开。
 
@@ -29,10 +32,11 @@
                  req {rid, op, id, action, value}，op：add | leave | pet | quitAll | hide | show | appSet（action = 哪一项）
   命令行 → 负责人：cli {cmd: show | toggle | quit}
   负责人 → 别的：roster {leader, pets: [{id, index, name, mode, online}]}；cmd {rid, action: mode | rename | dismiss, value}；
-                 signal {what: hide | show | quit}；app {}；handoff {next}；reply {rid, ok, error}
+                 signal {what: hide | show | quit}；app {}；handoff {next}；sessions {states}；reply {rid, ok, error}
 
 api 是桌宠（Pet）：hub_info() → {name, mode}；hub_apply(action, value)；hub_roster_changed()；hub_notice(text)；
 hub_signal(what)（藏 / 出 / 一起走，负责人自己也走这里）；hub_app_changed()（共用设置变了，重读）；
+别的几只还要 hub_sessions(states)（负责人扫到的会话状态）；
 负责人还要 hub_launch(id, mode, join)、hub_running(id)、hub_leaving()、hub_toggle()、hub_user_quit()（记下从菜单退出过）、hub_leave_self()；
 别的几只还要 hub_try_lead()（抢负责人锁，抢到就当负责人，返回 True）、hub_main_lost()（没人负责了，跟着走）。
 """
@@ -166,6 +170,7 @@ class HubServer:
         self.srv = None
         self.closed = False
         self.stopping = False   # 全部退出了：再来报到的叫它走
+        self.sessions = {}      # 会话编号 → 最近的状态（只留 10 分钟内的），新报到的先拿到一份完整的
         self.adding = {}        # 新加、还没报到的编号 → {"token", "reply"}；报到了才写进名单
         self.cancelled = {}     # 刚没加成的编号 → 什么时候（秒）：旧进程可能还在启动，先不再用
         self._broadcasting = self._again = False
@@ -261,6 +266,21 @@ class HubServer:
         """负责人自己的名字 / 待在哪变了"""
         self.broadcast_roster()
 
+    def share_sessions(self, changed):
+        """负责人扫到的会话状态变化：记下来（新报到的先拿到一份完整的），发给连着的几只"""
+        cutoff = time.time() - 600
+        for st in changed:
+            sid = st.get("sid") if isinstance(st, dict) else None
+            if isinstance(sid, str) and sid:
+                old = self.sessions.get(sid)
+                if not old or (old.get("ts") or 0) <= (st.get("ts") or 0):
+                    self.sessions[sid] = st
+        for sid in [k for k, v in self.sessions.items() if not isinstance(v.get("ts"), (int, float)) or v["ts"] < cutoff]:
+            del self.sessions[sid]
+        if changed:
+            for link in list(self.clients.values()):
+                link.send({"type": "sessions", "states": changed})
+
     # ---- 连着的那几只、命令行发来的 ----
     def _on_msg(self, link, msg):
         if self.closed:   # 关了以后才排到的消息：不收
@@ -294,6 +314,8 @@ class HubServer:
             self.clients[pid] = link
             self.info[pid] = _info(msg.get("name"), msg.get("mode"))
             self.broadcast_roster()
+            if self.sessions:   # 新报到、断线重连：先给一份完整的会话状态
+                link.send({"type": "sessions", "states": list(self.sessions.values())})
         elif t == "state" and link.id:
             self.info[link.id] = _info(msg.get("name"), msg.get("mode"))
             self.broadcast_roster()
@@ -614,6 +636,8 @@ class HubClient:
             self.api.hub_signal(msg["what"])
         elif t == "app":
             self.api.hub_app_changed()
+        elif t == "sessions" and isinstance(msg.get("states"), list):
+            self.api.hub_sessions([s for s in msg["states"] if isinstance(s, dict)])
         elif t == "handoff":
             self.successor = msg.get("next")
         elif t == "reply":

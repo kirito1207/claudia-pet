@@ -191,6 +191,8 @@ namespace Claudia
             public void HubNotice(string text) { }
             public void HubSignal(string what) { Signals.Add(what); if (what == "quit") Left = true; }
             public void HubAppChanged() => AppChanges++;
+            public readonly List<List<string>> Sessions = new List<List<string>>();
+            public void HubSessions(List<Dictionary<string, object>> states) => Sessions.Add(states.Select(x => (string)x["sid"]).ToList());
             public readonly Dictionary<string, string> Tokens = new Dictionary<string, string>();   // 编号 → 最近一次叫出来带的标记
             public bool HubLaunch(string id, string mode, string join) { Launched.Add(id + ":" + mode); Tokens[id] = join; return true; }
             public bool HubRunning(string id) => family.Running.Contains(id);
@@ -266,6 +268,17 @@ namespace Claudia
                 if (!Pump(f, () => f.Owner == "2" && two.IsLeader && ((PetHubServer)two.Hub).Connected.Contains("3"))) throw new Exception("Leader handoff did not go to the next pet");
                 if (!Pump(f, () => Order(three.Hub, "3") == "1:2,2:3")) throw new Exception("Numbers did not shift after the leader left: " + Order(three.Hub, "3"));
                 if (!main.Left || three.Lost) throw new Exception("Handoff left the wrong pets");
+                // Session states: only the leader scans; changes reach everyone, a pet reporting in gets the full current list
+                var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                var leader = (PetHubServer)two.Hub;
+                leader.ShareSessions(new List<Dictionary<string, object>> {
+                    new Dictionary<string, object> { ["sid"] = "a", ["pose"] = "reading", ["ts"] = now },
+                    new Dictionary<string, object> { ["sid"] = "old", ["pose"] = "thinking", ["ts"] = now - 900 } });
+                if (!Pump(f, () => three.Sessions.Count == 1) || !three.Sessions[0].SequenceEqual(new[] { "a", "old" })) throw new Exception("Session changes did not reach the other pet");
+                if (!leader.SessionIds.SequenceEqual(new[] { "a" })) throw new Exception("Expired sessions were kept for newcomers");
+                Store.SaveRoster(Store.Roster().Concat(new[] { "5" }));
+                var newcomer = JoinLate(f, "5");
+                if (!Pump(f, () => newcomer.Sessions.Count >= 1) || !newcomer.Sessions[0].SequenceEqual(new[] { "a" })) throw new Exception("A pet reporting in did not get the full session list");
                 Console.WriteLine("PASS: multi-pet hub forwards commands in order with replies, signals reach everyone, leader handoff goes to the next pet and numbers shift");
             }
             finally { CloseFamily(f); }

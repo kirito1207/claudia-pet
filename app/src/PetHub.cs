@@ -33,6 +33,9 @@ namespace Claudia
     //   刚取消的编号 30 秒内先不再用（旧进程可能还在启动、还没拿到这个编号的锁）。
     //   刚送走的那只还在挥手、编号都被占着时，先不加，叫用户等它走了再试。
     // - 共用设置只有负责人写：哪一只改，就把「哪一项、改成什么」交给负责人（appSet），它先写 app.json，写成了才叫大家重读。
+    // - 各个 Claude Code 会话的状态（state 目录里的 claude-session-*.json）只有负责人扫，扫到变化发给大家（sessions）；
+    //   新报到、断线重连的先收到一份完整的（负责人手上留着最近 10 分钟的），换了负责人新的那只第一次扫时整份发一遍。
+    //   原来每只每 0.3 秒各扫一遍目录（2026-11-27 Codex 复审）。
     // - 每只正常走之前跟负责人说一声 bye。没说就断了的（崩溃、被杀）负责人 3 秒后把它叫回来；新负责人接手时也把名单上
     //   没在跑的（比如崩溃的上一任）叫回来。同一只 10 分钟内最多叫回 3 次，免得反复崩溃一直重开。
     // 一行一条 JSON：
@@ -40,7 +43,7 @@ namespace Claudia
     //                  req {rid, op, id, action, value}，op：add | leave | pet | quitAll | hide | show | appSet（action = 哪一项）
     //   命令行 → 负责人：cli {cmd: show | toggle | quit}
     //   负责人 → 别的：roster {leader, pets: [{id, index, name, mode, online}]}；cmd {rid, action: mode | rename | dismiss, value}；
-    //                  signal {what: hide | show | quit}；app {}；handoff {next}；reply {rid, ok, error}
+    //                  signal {what: hide | show | quit}；app {}；handoff {next}；sessions {states}；reply {rid, ok, error}
 
     /// <summary>桌宠（Pet）给多开协调用的几样东西。回调都在 Post 交回来的线程（界面线程）上调</summary>
     interface IPetHubHost
@@ -51,6 +54,7 @@ namespace Claudia
         void HubNotice(string text);
         void HubSignal(string what);              // 藏 / 出 / 一起走，负责人自己也走这里
         void HubAppChanged();                     // 共用设置变了，重读
+        void HubSessions(List<Dictionary<string, object>> states);   // 别的几只用：负责人扫到的会话状态
         bool HubLaunch(string id, string mode, string join);   // 负责人用：叫出来了没有；join 是这次添加的标记（重新叫回来的没有）
         bool HubRunning(string id);               // 负责人用：这一只在不在跑
         bool HubLeaving();                        // 负责人用：自己是不是正要走
@@ -187,6 +191,7 @@ namespace Claudia
         sealed class Adding { public string Token; public Action<bool, string> Reply; }
         readonly Dictionary<string, Adding> adding = new Dictionary<string, Adding>();   // 新加、还没报到的；报到了才写进名单
         readonly Dictionary<string, int> cancelled = new Dictionary<string, int>();      // 刚没加成的编号 → 什么时候（TickCount）：旧进程可能还在启动，先不再用
+        readonly Dictionary<string, Dictionary<string, object>> sessions = new Dictionary<string, Dictionary<string, object>>();   // 会话编号 → 最近的状态（10 分钟内），新报到的先拿到一份完整的
         bool broadcasting, again;
         NamedPipeServerStream listening;
         public bool Closed => closed;
@@ -289,6 +294,24 @@ namespace Claudia
 
         public void Report() => BroadcastRoster();   // 负责人自己的名字 / 待在哪变了
 
+        static double Ts(Dictionary<string, object> s) { try { return s.TryGetValue("ts", out var t) && t != null ? Convert.ToDouble(t) : 0; } catch { return 0; } }
+
+        /// <summary>负责人扫到的会话状态变化：记下来（新报到的先拿到一份完整的），发给连着的几只</summary>
+        public void ShareSessions(List<Dictionary<string, object>> changed)
+        {
+            foreach (var st in changed)
+            {
+                var sid = PetHubNames.S(st, "sid");
+                if (string.IsNullOrEmpty(sid)) continue;
+                if (!sessions.TryGetValue(sid, out var old) || Ts(old) <= Ts(st)) sessions[sid] = st;
+            }
+            var cutoff = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 600;
+            foreach (var sid in sessions.Where(kv => Ts(kv.Value) < cutoff).Select(kv => kv.Key).ToList()) sessions.Remove(sid);
+            if (changed.Count == 0) return;
+            foreach (var link in clients.Values.ToList()) link.Send(new Dictionary<string, object> { ["type"] = "sessions", ["states"] = changed.ToArray() });
+        }
+        public IEnumerable<string> SessionIds => sessions.Keys;
+
         /// <summary>刚接手：名单上没在跑的（比如崩溃的上一任）叫回来</summary>
         public void Adopt() { foreach (var id in Store.Roster()) if (id != selfId) RelaunchLater(id); }
 
@@ -330,6 +353,7 @@ namespace Claudia
                     link.Id = id; clients[id] = link;
                     info[id] = PetHubNames.Info(PetHubNames.S(msg, "name"), PetHubNames.S(msg, "mode"));
                     BroadcastRoster();
+                    if (sessions.Count > 0) link.Send(new Dictionary<string, object> { ["type"] = "sessions", ["states"] = sessions.Values.ToArray() });   // 新报到、断线重连：先给一份完整的
                     break;
                 case "state":
                     if (link.Id == null) return;
@@ -613,6 +637,9 @@ namespace Claudia
                     break;
                 case "app":
                     host.HubAppChanged();
+                    break;
+                case "sessions":
+                    if (msg.TryGetValue("states", out var st) && st is object[] states) host.HubSessions(states.OfType<Dictionary<string, object>>().ToList());
                     break;
                 case "handoff":
                     successor = PetHubNames.S(msg, "next");
