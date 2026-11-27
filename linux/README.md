@@ -52,7 +52,7 @@ sh ~/.local/share/claudia-pet/linux/uninstall.sh
 Wayland 下普通程序看不到别的窗口在哪，桌宠自己找不到 Claude。所以配了一个 GNOME Shell 扩展（`gnome-extension/`），它只做一件事：盯着 Claude 桌面端的主窗口，把位置、大小、是否最小化、在不在当前工作区，以及叠在它上面的窗口范围，通过 D-Bus（`io.github.kirito1207.ClaudiaPet`）告诉桌宠。它不改 Claude，不动任何窗口，也不拦截输入。
 
 - 扩展装在 `~/.local/share/gnome-shell/extensions/claudia-pet@kirito1207.github.io`。装好、更新、撤销后，都要注销电脑、重新登录一次才生效（Wayland 下 GNOME Shell 只在登录时加载扩展）。
-- 扩展生效后，在「设置…」→「多开」里把她改成待在「Claude 窗口里」。位置和 Windows 版一样按「离 Claude 窗口右下角多远」记。
+- 扩展生效后，在「设置…」→「位置与多开」里把她改成待在「Claude 窗口里」。位置和 Windows 版一样按「离 Claude 窗口右下角多远」记。
 - Claude 最小化、切到别的工作区时，她跟着藏起来。**她站的地方被别的窗口盖住时，她整只藏起来**：Wayland 下没法只被挡住一部分，这一点和 Windows 版不一样。
 - 扩展没装、没启用、找不到 Claude 的窗口，或者 GNOME 升级后不认这个扩展时，她自动待在桌面上，不会消失。
 - 扩展声明支持 GNOME 50。GNOME 升到新的大版本后，要在 `metadata.json` 里加上新版本号（必要时改代码）。

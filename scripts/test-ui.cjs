@@ -39,7 +39,15 @@ const root = path.resolve(__dirname, '..');
     await page.screenshot({ path: path.join(root, 'build/physics-settings.png'), fullPage: true });
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.screenshot({ path: path.join(root, 'build/physics-settings-dark.png'), fullPage: true });
-    for (const tab of ['daily','general']) {
+    // 2026-11-27 重排成 6 页：额度并进外观、日常并进互动；旧名字（记住的上次那页）换到新位置
+    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('#tabs button')].map(b => b.dataset.tab)), ['look', 'physics', 'pets', 'claude', 'general', 'about']);
+    assert.deepEqual(await page.evaluate(() => ['quota', 'daily', 'nope'].map(t => { showTab(t); return document.querySelector('#tabs .on').dataset.tab })), ['look', 'physics', 'look']);
+    // 多开：每只一格，「在桌面上时」只出现在这一只那格里；别的页看不到它
+    await page.evaluate(s => setState({ ...s, deskLayer: 'yield', pets: [{ id: 'main', index: 1, self: true, name: 'claudia', mode: 'claude' }, { id: 'p2', index: 2, name: '', mode: 'desktop' }], maxPets: 5 }), state);
+    assert.equal(await page.evaluate(() => $('deskLayerLine').closest('.pet-row')?.dataset.pet), 'main');
+    await page.evaluate(() => showTab('look'));
+    assert.equal(await page.locator('#deskLayer').isVisible(), false);
+    for (const tab of ['look','pets','claude','general']) {
       await page.evaluate(tab => showTab(tab), tab);
       for (const width of [388,528]) {
         await page.setViewportSize({width,height:760});
@@ -47,7 +55,7 @@ const root = path.resolve(__dirname, '..');
       }
       await page.screenshot({path:path.join(root,`build/${tab}-settings.png`),fullPage:true});
     }
-    await page.evaluate(() => showTab('daily'));
+    await page.evaluate(() => showTab('physics'));
     await page.locator('#idleFrequency [data-v="lively"]').click();
     assert.ok(await page.evaluate(() => messages.some(m => m.key === 'idleFrequency' && m.value === 'lively')));
     assert.equal(await page.locator('[data-idle-action]').count(), 0);

@@ -209,7 +209,7 @@ def set_gnome_extension(install):
     Gio.Settings.sync()
     if install:
         return ("已装好 GNOME 扩展。\n\n注销电脑、重新登录后生效（是 Ubuntu 的登录，Claude 账号不受影响）。"
-                "生效后，在「多开」里把她改成待在「Claude 窗口里」。" + f"\n\n装在：{dst}")
+                "生效后，在「位置与多开」里把她改成待在「Claude 窗口里」。" + f"\n\n装在：{dst}")
     return "已撤销 GNOME 扩展。注销重新登录后完全卸掉；在那之前她已经待在桌面上了。"
 
 
@@ -227,7 +227,7 @@ def integrations(extension_running=False):
         rows.append({
             "id": "gnome", "label": "GNOME 扩展（跟着 Claude 窗口）", "installed": installed,
             "note": "Wayland 下她自己看不到 Claude 的窗口，要这个扩展告诉她。接入后注销电脑、重新登录一次生效（不是 Claude 账号）",
-            "detail": "正在运行：可以在「多开」里让她待在 Claude 窗口里" if extension_running
+            "detail": "正在运行：可以在「位置与多开」里让她待在 Claude 窗口里" if extension_running
             else "已装好，注销电脑、重新登录后生效" if installed else None,
         })
     return rows

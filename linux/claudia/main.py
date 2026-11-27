@@ -35,12 +35,13 @@ def arg_after(args, flag):
 
 
 def choose_run_mode(fresh, by_claude):
-    """还没选过运行方式时选一次：第一次用、自己打开、又没接入 Claude 的，才设成「独立运行」"""
+    """还没选过运行方式时选一次：第一次用的一律「独立运行」并待在桌面上（2026-11-27 用户定：有人没装 Claude 桌面端、
+    只用 Claude Code，「跟着 Claude」找不到桌面端窗口 30 秒就退出）；以前用过的（已有设置）照旧「跟着 Claude」"""
     try:
         connected = claude.connected()
     except Exception:
         connected = False
-    standalone = fresh and not by_claude and not connected
+    standalone = fresh
     store.set_standalone(standalone)
     if standalone and "mode" not in store.settings:
         store.settings["mode"] = "desktop"

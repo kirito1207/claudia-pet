@@ -16,7 +16,7 @@ h1 { font-size: 15px; margin: 0 0 2px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 12px; overflow: hidden; }
 .card h2 { font-size: 11px; font-weight: 600; color: var(--muted); margin: 0; padding: 8px 14px 4px; letter-spacing: .04em; }
 .item { display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-top: 1px solid var(--line); min-height: 42px; }
-.card h2 + .item, .card > .item:first-child { border-top: none; }
+.card h2 + .item, .card > .item:first-child, .card h2 + div > .item:first-child, .card > div:first-child > .item:first-child { border-top: none; }
 /* 标签页：一次只看一组设置 */
 .tabs { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
 .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); padding: 6px 12px 7px; margin-bottom: -1px; }
@@ -70,9 +70,14 @@ input[type=range] { width: 150px; accent-color: var(--accent); }
 .name-ctl input { width: 140px; }
 input[type=checkbox] { accent-color: var(--accent); }
 .physics-row .ctl { width: 238px; }
-.pet-row { flex-wrap: wrap; }
-.pet-row .ctl { flex-wrap: wrap; justify-content: flex-end; }
-.pet-row input[type=text] { width: 110px; }
+.pet-row { display: block; }   /* 每只一格：标题一行，下面「名字 / 待在 / 在桌面上时」各一行，左边小标签对齐 */
+.pet-head { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.pet-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin-top: 7px; }
+.pet-line .k { width: 72px; flex-shrink: 0; color: var(--muted); font-size: 12px; }
+.pet-line input[type=text] { width: 140px; }
+.pet-line .push { margin-left: auto; }
+.pet-note { flex-basis: 100%; padding-left: 80px; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+.pet-other { color: var(--muted); font-size: 11.5px; font-weight: normal; }
 .physics-row input[type=range] { flex: 1; min-width: 70px; width: auto; }
 .physics-row .val { width: 58px; }
 input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
@@ -84,6 +89,7 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
   .item .label { flex-basis: 100%; }
   .item .ctl { max-width: 100%; }
   .physics-row .ctl { width: 100%; }
+  .pet-note { padding-left: 0; }
 }
 </style></head>
 <body>
@@ -91,7 +97,7 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
 <div class="sub" id="version"></div>
 
 <nav class="tabs" id="tabs">
-  <button data-tab="look">外观</button><button data-tab="pets">多开</button><button data-tab="quota">额度</button><button data-tab="claude">接入 Claude</button><button data-tab="physics">互动</button><button data-tab="daily">日常</button><button data-tab="general">通用</button><button data-tab="about">关于</button>
+  <button data-tab="look">外观</button><button data-tab="physics">互动</button><button data-tab="pets">位置与多开</button><button data-tab="claude">接入 Claude</button><button data-tab="general">通用</button><button data-tab="about">关于</button>
 </nav>
 
 <div class="card" data-tab="look">
@@ -100,12 +106,38 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
   <div class="item"><div class="label">文字大小<small id="textNote">名牌、气泡、额度的字；锁着时跟人物一样大</small></div>
     <div class="ctl"><input type="range" id="textSize" min="0.6" max="1.6" step="0.01"><span class="val" id="textSizeVal"></span>
       <button class="link" id="textLink" title="锁着时文字跟着人物大小"></button></div></div>
-  <div class="item"><div class="label">显示名字<small>名牌下面的额度不受影响</small></div>
-    <div class="ctl"><label class="switch"><input type="checkbox" data-key="showName"><span></span></label></div></div>
-  <div class="item"><div class="label"><label for="customName">自定义名字</label><small>显示在人物下方、额度上方；最多 20 个字符，留空恢复默认名字。</small></div>
+</div>
+<div class="card" data-tab="look">
+  <div class="item"><div class="label">显示名字</div>
+    <div class="ctl"><label class="switch"><input type="checkbox" data-key="showName" aria-label="显示名字"><span></span></label></div></div>
+  <div class="item"><div class="label"><label for="customName">自定义名字</label><small>最多 20 个字，留空用默认名字</small></div>
     <div class="ctl name-ctl"><input type="text" id="customName" maxlength="20" placeholder="claudia" autocomplete="off"><button id="saveName" disabled>保存</button><button id="resetName" disabled>还原</button></div></div>
-  <div class="item"><div class="label">背景光晕<small>深色背景上会变成一圈亮光，「自动」时深色模式下不显示</small></div>
+  <div class="item"><div class="label">额度显示<small>名字下面 Claude 的 5 小时 / 每周额度；快用完时变红</small></div>
+    <div class="ctl"><div class="seg" id="quotaStyle"><button data-v="text">文字</button><button data-v="bars">额度条</button></div></div></div>
+  <div class="item"><div class="label">背景光晕<small>「自动」在深色模式下不显示</small></div>
     <div class="ctl"><div class="seg" id="aura"><button data-v="auto">自动</button><button data-v="on">始终显示</button><button data-v="off">关闭</button></div></div></div>
+</div>
+
+<div class="card" data-tab="physics">
+  <h2>点她</h2>
+  <div class="item"><div class="label">点击 Q 弹<small>先轻轻回弹，再接摸头、惊讶等反应</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="clickBounce" aria-label="点击 Q 弹"><span></span></label></div></div>
+  <div class="item"><div class="label">碰边动作<small>扔出去撞到边框时偶尔撞头、摔倒或趴地；点她会扶她起来</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="tumbleActions" aria-label="碰边动作"><span></span></label></div></div>
+</div>
+<div class="card" data-tab="physics">
+  <h2>拖拽和抛掷</h2>
+  <div class="item"><div class="label">弹性跟手<small>快速松手能把她扔出去；关闭后直接跟手</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="physicsEnabled" aria-label="拖拽与抛掷"><span></span></label></div></div>
+  <div class="item physics-row"><div class="label"><label for="throwPower">力度</label><small>越大跟得越紧、飞得越快</small></div><div class="ctl"><input type="range" id="throwPower" data-physics="throwPower" min="0.2" max="2.5" step="0.05"><output class="val" id="throwPowerVal" for="throwPower"></output></div></div>
+  <div class="item physics-row"><div class="label"><label for="gravity">重力</label><small>0 为无重力</small></div><div class="ctl"><input type="range" id="gravity" data-physics="gravity" min="0" max="3000" step="50"><output class="val" id="gravityVal" for="gravity"></output></div></div>
+  <div class="item physics-row"><div class="label"><label for="restitution">反弹</label><small>碰到边框后保留多少速度</small></div><div class="ctl"><input type="range" id="restitution" data-physics="restitution" min="0" max="0.95" step="0.01"><output class="val" id="restitutionVal" for="restitution"></output></div></div>
+  <div class="item physics-row"><div class="label"><label for="groundFriction">地面摩擦</label><small>落地后多快停下</small></div><div class="ctl"><input type="range" id="groundFriction" data-physics="groundFriction" min="0.5" max="12" step="0.1"><output class="val" id="groundFrictionVal" for="groundFriction"></output></div></div>
+  <div class="item physics-row"><div class="label"><label for="elasticity">弹性幅度</label><small>挤压变形的程度；0 为关闭</small></div><div class="ctl"><input type="range" id="elasticity" data-physics="elasticity" min="0" max="0.25" step="0.01"><output class="val" id="elasticityVal" for="elasticity"></output></div></div>
+  <div class="item"><div class="label">顶部反弹<small>关闭后碰顶就停住、自然落下</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="ceilingBounce" aria-label="顶部反弹"><span></span></label></div></div>
+  <div class="item"><div class="label">恢复默认手感<small>这一组全部还原</small></div><div class="ctl"><button id="resetPhysics">恢复默认</button></div></div>
+</div>
+<div class="card" data-tab="physics">
+  <h2>闲着时</h2>
+  <div class="item"><div class="label">随机小动作<small>不会打断干活、拖动或手动点播</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="idleEnabled" aria-label="随机小动作"><span></span></label></div></div>
+  <div class="item"><div class="label">活跃程度<small>大约每 90 / 45 / 20 秒一次</small></div><div class="ctl"><div class="seg" id="idleFrequency"><button data-v="quiet">安静</button><button data-v="normal">标准</button><button data-v="lively">活泼</button></div></div></div>
 </div>
 
 <div class="card" data-tab="pets">
@@ -114,55 +146,33 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
     <div class="ctl"><button data-add-pet="claude">放在 Claude 窗口里</button><button data-add-pet="desktop">放在桌面上</button></div></div>
 </div>
 <div class="card" data-tab="pets">
-  <div class="item hidden" data-only="deskLayer"><div class="label">待在桌面上时<small>默认在最上面；她这块屏上有东西全屏（看视频全屏、PPT 放映、游戏、浏览器按 F11）时让开，退出后回来，最大化的窗口不算。选「始终最上面」全屏时也不让（独占全屏的游戏多半还是会挡住她）；选「不置顶」（只有 Windows 有）就和普通窗口一样，谁都能盖住她。只管这一只</small></div>
-    <div class="ctl"><div class="seg" id="deskLayer"><button data-v="top">始终最上面</button><button data-v="yield">全屏时让开</button><button data-v="normal">不置顶</button></div></div></div>
+  <div class="item"><div class="label">说明<small>每只各管各的：名字、大小、闲着做什么都分开，右键哪只打开的就是哪只的设置。托盘、系统通知和隐藏快捷键归第 1 只管。</small></div></div>
 </div>
-<div class="card" data-tab="pets">
-  <div class="item"><div class="label">说明<small>每一只都是独立的：名字、大小、闲着做什么互不影响，各自右键打开的是自己的设置。<br>不想看到她时可以按隐藏快捷键。<br>托盘图标、系统通知、隐藏快捷键只归第 1 只管；「跟着 Claude」运行时，Claude 关掉后全部一起退出。</small></div></div>
-</div>
-
-<div class="card" data-tab="quota">
-  <div class="item"><div class="label">额度显示样式<small>Claude 的 5 小时 / 每周额度（Claude Code 插件读到的）。额度条：每个额度一条（Claude 橙），后面是已经用了多少和重置时间，快用完时百分比变红</small></div>
-    <div class="ctl"><div class="seg" id="quotaStyle"><button data-v="text">文字</button><button data-v="bars">额度条</button></div></div></div>
-</div>
+<!-- 「在桌面上时」只管打开这个设置的这一只：renderPets 把这一行挪进「这一只」那一格 -->
+<div class="hidden"><div class="pet-line hidden" id="deskLayerLine" data-only="deskLayer"><span class="k">在桌面上时</span>
+  <div class="seg" id="deskLayer"><button data-v="top">始终最上面</button><button data-v="yield">全屏时让开</button><button data-v="normal">不置顶</button></div>
+  <small class="pet-note">有东西全屏（视频、放映、游戏）时让开，退出全屏后回来</small></div></div>
 
 <div class="card" data-tab="claude">
+  <h2>接入</h2>
   <div id="integrations"></div>
 </div>
-
-<div class="card" data-tab="physics">
-  <div class="item"><div class="label">点击 Q 弹<small>先轻轻回弹，再接原有的摸头、惊讶或被哄动作；关闭后直接回应。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="clickBounce" aria-label="点击 Q 弹"><span></span></label></div></div>
-  <div class="item"><div class="label">碰边动作<small>扔出去撞到 Claude 窗口边框时，偶尔会撞头、摔倒或趴地，再自己爬起来；坐着或趴着时点她会扶她起来。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="tumbleActions" aria-label="碰边动作"><span></span></label></div></div>
-  <div class="item"><div class="label">拖拽与抛掷<small>在 Claude 窗口内带弹性地追随鼠标，快速松手可抛出；轻放停在当前位置。关闭后直接跟手。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="physicsEnabled" aria-label="拖拽与抛掷"><span></span></label></div></div>
-<div class="item physics-row"><div class="label"><label for="throwPower">拖拽 / 抛掷力度</label><small>越大，拖动跟得越紧、松手后飞得越快</small></div><div class="ctl"><input type="range" id="throwPower" data-physics="throwPower" min="0.2" max="2.5" step="0.05"><output class="val" id="throwPowerVal" for="throwPower"></output></div></div>
-<div class="item physics-row"><div class="label"><label for="gravity">重力</label><small>越大，下落越快；0 为无重力</small></div><div class="ctl"><input type="range" id="gravity" data-physics="gravity" min="0" max="3000" step="50"><output class="val" id="gravityVal" for="gravity"></output></div></div>
-<div class="item physics-row"><div class="label"><label for="restitution">反弹系数</label><small>越大，碰到边框后保留的速度越多</small></div><div class="ctl"><input type="range" id="restitution" data-physics="restitution" min="0" max="0.95" step="0.01"><output class="val" id="restitutionVal" for="restitution"></output></div></div>
-<div class="item physics-row"><div class="label"><label for="groundFriction">地面摩擦</label><small>越大，落地后横向滑动停得越快</small></div><div class="ctl"><input type="range" id="groundFriction" data-physics="groundFriction" min="0.5" max="12" step="0.1"><output class="val" id="groundFrictionVal" for="groundFriction"></output></div></div>
-<div class="item physics-row"><div class="label"><label for="elasticity">弹性幅度</label><small>只改变人物的挤压变形；0 为关闭</small></div><div class="ctl"><input type="range" id="elasticity" data-physics="elasticity" min="0" max="0.25" step="0.01"><output class="val" id="elasticityVal" for="elasticity"></output></div></div>
-<div class="item"><div class="label">顶部反弹<small>关闭后碰顶会停住向上的速度，再自然下落；始终留在 Claude 窗口内。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="ceilingBounce" aria-label="顶部反弹"><span></span></label></div></div>
-<div class="item"><div class="label">恢复默认手感<small>恢复本页全部参数</small></div><div class="ctl"><button id="resetPhysics">恢复默认</button></div></div>
-</div>
-
-<div class="card" data-tab="daily">
-  <div class="item"><div class="label">随机小动作<small>只在闲着时触发；不会打断工作、拖动或手动点播。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="idleEnabled" aria-label="随机小动作"><span></span></label></div></div>
-  <div class="item"><div class="label">活跃程度<small>闲着时约每 90 / 45 / 20 秒做一次小动作，时间会略有变化。</small></div><div class="ctl"><div class="seg" id="idleFrequency"><button data-v="quiet">安静</button><button data-v="normal">标准</button><button data-v="lively">活泼</button></div></div></div>
-</div>
-
-<div class="card" data-tab="general">
+<div class="card" data-tab="claude">
   <div class="item"><div class="label">运行方式<small id="runNote"></small></div>
     <div class="ctl"><div class="seg" id="runMode"><button data-v="claude">跟着 Claude</button><button data-v="standalone">独立运行</button></div></div></div>
 </div>
-<div class="card" data-tab="general">
-  <h2>任务通知</h2>
-  <div class="item"><div class="label">任务完成或出错<small>Claude Code 一轮工作结束时发送系统通知；中断不提醒。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="notifyResults" aria-label="任务完成或出错通知"><span></span></label></div></div>
-  <div class="item"><div class="label">等待授权或回答<small>有授权申请或问题需要你处理时提醒。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="notifyWaiting" aria-label="等待授权或回答通知"><span></span></label></div></div>
-  <div class="item"><div class="label">仅在 Claude 不在前台时通知<small>正在使用 Claude 时不额外打扰。系统的勿扰或通知设置也会影响显示。</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="notifyBackgroundOnly" aria-label="仅在后台通知"><span></span></label></div></div>
+<div class="card" data-tab="claude">
+  <h2>系统通知</h2>
+  <div class="item"><div class="label">任务完成或出错<small>Claude Code 一轮干完时；中断不提醒</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="notifyResults" aria-label="任务完成或出错通知"><span></span></label></div></div>
+  <div class="item"><div class="label">等你授权或回答</div><div class="ctl"><label class="switch"><input type="checkbox" data-key="notifyWaiting" aria-label="等待授权或回答通知"><span></span></label></div></div>
+  <div class="item"><div class="label">只在 Claude 不在前台时<small>正用着 Claude 时不打扰；系统勿扰也会挡住通知</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="notifyBackgroundOnly" aria-label="仅在后台通知"><span></span></label></div></div>
 </div>
+
 <div class="card" data-tab="general">
   <div class="item hidden" data-only="hotkeys"><div class="label">隐藏 / 显示的快捷键<small id="hotkeyNote">按一下藏起来，再按一下出来；也可以双击托盘图标叫她出来</small></div>
     <div class="ctl"><select id="hideHotkey" aria-label="隐藏快捷键"></select></div></div>
-  <div class="item hidden" data-only="clickThrough"><div class="label">鼠标穿透<small>开着时点不到她，点击直接落到后面的窗口；右键菜单也打不开，要关请从托盘图标的菜单里关</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="clickThrough" aria-label="鼠标穿透"><span></span></label></div></div>
-  <div class="item"><div class="label">文件夹<small>角色立绘、设置和日志都在这里</small></div>
+  <div class="item hidden" data-only="clickThrough"><div class="label">鼠标穿透<small>点击直接落到后面的窗口；开着时右键菜单也打不开，要从托盘菜单里关</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="clickThrough" aria-label="鼠标穿透"><span></span></label></div></div>
+  <div class="item"><div class="label">文件夹<small>角色素材（动画视频、立绘）、设置和日志</small></div>
     <div class="ctl"><button data-action="openCharacters">角色</button><button data-action="openData">数据和日志</button></div></div>
 </div>
 
@@ -173,7 +183,7 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
   <p>参考 dsh-pet<small>拖拽、抛掷的物理公式摘录自 PC2005-cloud 的 dsh-pet，右键动作菜单和菜单样式参照了 dsh-pet（MIT 协议）。</small>
     <small><button class="srclink" data-action="openDshPet">github.com/PC2005-cloud/dsh-pet</button></small></p>
   <p>角色立绘<small>Claude 娘的立绘、设定和台词来自 CrossPet（由 CrossPet 用 AI 生图工具绘制，形象参考社区流行的 Claude 娘设定），采用 CC BY-NC-SA 4.0：可以转载和二次创作，但要署名、不能商用，衍生作品也要用同样的协议。</small></p>
-  <p>动画动作<small>待机、思考、摸头、节日等动画来自 hunmer 的 claude-pet 动作包（以 CrossPet 的 Claude 娘为基准 AI 生成），经作者授权使用，采用 CC BY-NC-SA 4.0。</small>
+  <p>动画动作<small>待机、思考、摸头、节日等动画来自 hunmer 的 claude-pet 动作包（以 CrossPet 的 Claude 娘为基准 AI 生成），经作者授权使用。派活、查资料、有事问你、道歉、抱 Clawd 等是本项目以作者的帧为首尾帧、用 Seedance 等视频模型生成的。都采用 CC BY-NC-SA 4.0，播放时转成了带透明通道的 WebM 视频。</small>
     <small><button class="srclink" data-action="openAboutmePets">github.com/hunmer/aboutme-pets</button></small></p>
   <p>软件图标<small>以 CrossPet 的 Claude 娘头像和抱 Clawd 立绘为参考，用 OpenAI Codex 内置的图像工具生成，同样采用 CC BY-NC-SA 4.0。</small></p>
   <p>商标<small>「Claude」是 Anthropic 的商标，Clawd 形象的权利也归 Anthropic。claudia-pet 是非官方同人项目，和 Anthropic 无关。</small></p>
@@ -258,10 +268,15 @@ function renderPets(list, max) {
     const old = editing === p.id && document.querySelector(`.pet-row[data-pet="${p.id}"]`)
     if (old) return old
     const row = document.createElement('div'); row.className = 'item pet-row'; row.dataset.pet = p.id
-    row.innerHTML = `<div class="label"></div><div class="ctl"><input type="text" maxlength="20" placeholder="claudia" autocomplete="off"><button data-p="rename">改名</button>
-      <div class="seg"><button data-v="claude">Claude 窗口里</button><button data-v="desktop">桌面上</button></div><button data-p="dismiss">送走</button></div>`
-    row.querySelector('.label').textContent = `第 ${p.index} 只 · ${p.name || 'claudia'}`
-    if (p.self) { const n = document.createElement('small'); n.textContent = '就是打开这个设置的这一只'; row.querySelector('.label').appendChild(n) }
+    row.innerHTML = `<div class="pet-head"><span></span></div>
+      <div class="pet-line"><span class="k">名字</span><input type="text" maxlength="20" placeholder="claudia" autocomplete="off"><button data-p="rename">改名</button></div>
+      <div class="pet-line"><span class="k">待在</span><div class="seg"><button data-v="claude">Claude 窗口里</button><button data-v="desktop">桌面上</button></div><button class="push" data-p="dismiss">送走</button></div>`
+    // 名字只在输入框里出现一次（原来标题里也写一遍，窄的时候折成两行，2026-11-27 重排）
+    row.querySelector('.pet-head span').textContent = `第 ${p.index} 只`
+    const tag = document.createElement('span')
+    if (p.self) { tag.className = 'tag ok'; tag.textContent = '就是这一只' }
+    else { tag.className = 'pet-other'; tag.textContent = '它的其他设置在它自己的右键菜单里' }
+    row.querySelector('.pet-head').appendChild(tag)
     const input = row.querySelector('input'); input.value = p.name || ''; input.dataset.petName = p.id
     const send = (action, value) => post({ cmd: 'pet', id: p.id, action, value })
     const rename = () => { send('rename', input.value.trim()); input.blur(); toast('名字已改') }
@@ -279,6 +294,9 @@ function renderPets(list, max) {
     return row
   })
   $('pets').replaceChildren(...rows)
+  // 「在桌面上时」只管打开设置的这一只，放进它那一格（这一行是页面里固定的一个元素，每次挪过去，选中状态由 setState 管）
+  const self = rows.find(r => list.find(p => p.id === r.dataset.pet)?.self)
+  if (self && $('deskLayerLine').parentNode !== self) self.appendChild($('deskLayerLine'))
 }
 for (const b of document.querySelectorAll('[data-add-pet]')) b.onclick = () => { b.disabled = true; post({ cmd: 'pet', action: 'add', value: b.dataset.addPet }); toast('再来一只…') }
 
@@ -353,7 +371,9 @@ $('customName').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.
 $('hideHotkey').onchange = () => post({ cmd: 'set', key: 'hideHotkey', value: $('hideHotkey').value })
 
 // 标签页：记住上次看的是哪一页（存不下也没关系）
+const OLD_TABS = { quota: 'look', daily: 'physics' }   // 2026-11-27 并掉的两页：记住的、外壳点名的都换到新位置
 function showTab(tab) {
+  tab = OLD_TABS[tab] || tab
   if (!document.querySelector(`.card[data-tab="${tab}"]`)) tab = 'look'
   for (const el of document.querySelectorAll('[data-tab]')) el.classList.toggle('on', el.dataset.tab === tab)
   try { localStorage.setItem('claudia-settings-tab', tab) } catch {}
