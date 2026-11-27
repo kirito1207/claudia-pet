@@ -775,7 +775,8 @@ function show(p, urgent) {
 // 走路的收尾另见 walkEnded。拖动、碰边、多会话、道别时不等，直接换
 // exit.except：换到这些姿态时不演收尾（偷吃时被点到，直接接被抓包）。target 是要换到的姿态
 let exiting = null, exitTimer = null, exitedFrom = null   // exiting：{ pose, next }；exitedFrom：已经演过收尾的那个姿态
-function leaveVia(next, target = null) {
+const WAKE_RATE = 2
+function leaveVia(next, target = null, rate = 1) {
   const a = anim(pose)
   if (menuThrough === pose) { menuThrough = null; return false }   // 菜单点播的整段被 Claude 的新状态打断：直接切过去，不演收尾（2026-11-26 用户定）
   if (!a?.exit || exiting || exitedFrom === pose || (target && a.exit.except?.includes(target))) return false
@@ -790,12 +791,12 @@ function leaveVia(next, target = null) {
   const fadeJump = !!(a.exit.jump && s?.img && from !== s.frame)   // 真的跳了：交叉淡入（sheet-player 的 playSheet）
   exiting = { pose: p, next }
   clearTimeout(revertTimer)
-  playSheet({ ...a, from, to, hold: null, cycle: null, loop: false, keepUrl: true, fadeJump }, framesFor(p)[0])
+  playSheet({ ...a, from, to, hold: null, cycle: null, loop: false, keepUrl: true, fadeJump, rate }, framesFor(p)[0])
   clearTimeout(exitTimer)
   exitTimer = characterTimeout(() => {
     const e = exiting; exiting = null
     if (e && pose === e.pose) { exitedFrom = e.pose; e.next() }   // 收尾演完了：接下来换姿态时不再演一遍
-  }, Math.round((to - from + 1) / (a.fps || SHEET.fps) * 1000) + 150)
+  }, Math.round((to - from + 1) / ((a.fps || SHEET.fps) * rate) * 1000) + 150)
   return true
 }
 function cancelExit() { if (!exiting) return; exiting = null; clearTimeout(exitTimer) }
@@ -1439,7 +1440,8 @@ function applyQuota(id) {
 function handleClick(kind, x, y) {
   lastActive = Date.now()
   // Q 弹不看系统的「减少动画」（2026-11-25：Linux 的 cage / VNC 桌面默认关动画，WebKit 就报减少动画，Q 弹整个没了）；要关用设置里的点击 Q 弹开关
-  clickSequence.play(() => performClick(kind, x, y), squashOn())
+  // 碰边期间的点击不 Q 弹：扶起来有自己的「站起来」伸展，叠一层 Q 弹两个抢同一个动画（2026-11-27 用户定）
+  clickSequence.play(() => performClick(kind, x, y), squashOn() && !tumble)
 }
 function performClick(kind, x, y) {
   lastActive = Date.now()
@@ -1449,7 +1451,8 @@ function performClick(kind, x, y) {
     if (exiting) return
     say('唔…你回来啦')
     const wake = () => { show('idle', true); say('唔…你回来啦') }
-    if (!leaveVia(wake)) { show('yawn', true); say('唔…你回来啦') }
+    // 醒来那段原速要 3.6 秒才站好，点醒时放 2 倍（2026-11-27 用户定）；自己醒（Claude 来活）照原速
+    if (!leaveVia(wake, null, WAKE_RATE)) { show('yawn', true); say('唔…你回来啦') }
     return
   }
   if (kind === 'pat' && (sulking || angerNow() >= ANGER_AT.annoyed)) { coaxHer(); return }   // 生着气的时候摸她 = 哄她
@@ -1474,6 +1477,7 @@ function setMotionActive(on) {
   if (on) stopWalk()
   if (on) {
     tumbleCancel(); tumbled = false; tumblePolicy.throwStarted()
+    standUpWait?.(); standUpWait = null   // 又被拎起来了：还没做的「站起来」不做了
     motionMood.begin()
     clearTimeout(shakeEndTimer)
     if (sulking || ['dizzy','annoyed','puffed','redhot','sulk'].includes(pose)) {
@@ -1697,6 +1701,7 @@ function tumbleStep() {
   }
   const lines = (t.angry && linesOf(p + 'Angry')) || linesOf(p); say(lines ? pick(lines) : '')
   if (t.flash) t.timer = characterTimeout(tumbleFinish, TUMBLE_FLASH)
+  else if (t.helpWanted && ON_FLOOR.has(p) && !isMoving()) t.timer = characterTimeout(tumbleFinish, HELP_BEAT)   // 之前点过她：一趴下就扶
   else if (!isMoving()) t.timer = characterTimeout(tumbleNext, ms)
 }
 // 下一段之前确认图还是她的：被新的工作、提问之类换掉了就不再接着演
@@ -1704,18 +1709,24 @@ function tumbleNext() { if (tumble && pose === tumble.pose) tumbleStep(); else t
 function tumbleLanded() {
   const t = tumble
   if (!t) return
-  if (t.i < 0) tumbleStep()
-  else if (!t.flash) {
+  if (t.i < 0) { tumbleStep(); return }   // 这时才摔下去：点过她的话 tumbleStep 一趴下就扶
+  if (!t.flash) {
     if (flip?.held && flip.pose === pose) { flip.held = false; flipNext() }   // 停稳了：撞头从第一张接着翻
     clearTimeout(t.timer); t.timer = characterTimeout(tumbleNext, t.steps[t.i][1])
   }
+  if (t.helpWanted) tumbleHelpUp()   // 飞着时点过她（撞头这种飞行中途就换图的）：落地了，按现在的样子再看一次
 }
-// 坐着、趴着时单击 = 扶她起来（马上站回去）；其他时候点她不打断
+// 坐着、趴着时单击 = 扶她起来（马上站回去）。还没到地上时点她（还在飞、踉跄着还没趴下）：先记下，一落地、一趴下就扶，
+// 只留一小会儿让人看清她摔了（HELP_BEAT）；撞头揉头这种站着的，落地后点就直接回去（2026-11-27 用户定：原来这些时候点了完全不理）
 const ON_FLOOR = new Set(['fallen', 'faceplant'])
+const HELP_BEAT = 250
 function tumbleHelpUp() {
   const t = tumble
-  if (!t || t.flash || !ON_FLOOR.has(pose)) return
-  tumbleFinish()
+  if (!t) return
+  if (isMoving() || t.i < 0) { t.helpWanted = true; return }   // 还在飞：落地再说
+  if (ON_FLOOR.has(pose)) return tumbleFinish()
+  if (!t.flash && t.steps.slice(t.i + 1).some(([p]) => ON_FLOOR.has(p))) { t.helpWanted = true; return }   // 踉跄着、马上要趴下：趴下就扶
+  tumbleFinish()   // 站着的（撞头揉头）、干活时一闪而过的：直接回去
 }
 function tumbleBack(standUp, angry) {
   say('')
@@ -1729,8 +1740,15 @@ function tumbleBack(standUp, angry) {
 }
 // 从地上换回站着的图：和交叉淡入同时，从低处往上伸展一下再回原样，看起来是「站起来」而不是一下跳成站直。
 // 动画加在外层 #impact 上（落地压扁也用它），所以不管换回待机还是干活的样子都一样
+// 等站着的那张真的显示出来再伸展（新片段要读一会儿）：原来立刻做，伸展的是还躺在地上的那张图，换图时又跳一下（2026-11-27 用户反馈衔接不好）
+let standUpWait = null
 function tumbleStandUp() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  standUpWait?.(); standUpWait = null
+  if (!sheet || sheet.img) { tumbleStretchUp(); return }   // 换成的是静态图，或者那段已经显示着：马上伸展
+  standUpWait = whenSheetShown(() => { standUpWait = null; tumbleStretchUp() }, 350)
+}
+function tumbleStretchUp() {
   impactAnimation?.cancel()
   impactAnimation = $('impact').animate([
     { transform: 'translateY(7%) scale(1.04,.88)' },

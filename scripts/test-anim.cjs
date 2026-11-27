@@ -362,6 +362,14 @@ function manifest() {
     })
     assert.equal(wake.poseDuring, 'sleeping'); assert.ok(wake.minFrame >= 124, `wake started at ${wake.minFrame}`)
     assert.equal(wake.gaps, 0); assert.equal(wake.pose, 'idle'); assert.equal(wake.bubble, '唔…你回来啦'); assert.equal(wake.bubbleAfter, '唔…你回来啦')
+    // 点醒时醒来那段放 2 倍（2026-11-27 用户定）：原速 43 帧 / 12fps ≈ 3.6 秒，2 倍约 1.8 秒
+    await page.evaluate(() => { clearTimeout(revertTimer); pose = null; setPose('sleeping', true) }); await waitSheet()
+    const quickWake = await page.evaluate(async () => {
+      performClick('pat'); const t0 = performance.now(), rate = sheet?.rate
+      while (pose === 'sleeping' && performance.now() - t0 < 6000) await new Promise(r => requestAnimationFrame(r))
+      return { rate, ms: performance.now() - t0 }
+    })
+    assert.equal(quickWake.rate, 2); assert.ok(quickWake.ms < 2800, `click-wake took ${Math.round(quickWake.ms)} ms`)
     // 睡着时 Claude 开始干活：也先醒过来再去干活
     await page.evaluate(() => { clearTimeout(revertTimer); pose = null; setPose('sleeping', true) }); await waitSheet()
     await page.evaluate(() => show('thinking', true))

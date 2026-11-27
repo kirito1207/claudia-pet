@@ -109,7 +109,8 @@ console.log('PASS: frames config (files, grouping, timings vs tumble steps)');
         const seq = (await shown()).filter((s, i, a) => s !== a[i - 1]);
         assert.deepEqual(seq.slice(0, 8), ['stagger', 'stagger-m1', 'stagger-2', 'stagger-m2', 'stagger-3', 'faceplant', 'faceplant-m1', 'faceplant-2'], `tumble frames ${seq}`);
         assert.ok(!seq.some(s => s.startsWith('getup')), 'no getup frames any more');
-        assert.ok(await page.evaluate(() => $('impact').getAnimations().length > 0), 'stand-up stretch when she gets back up from the floor');
+        // 站起来的伸展等站着的那段显示出来才做（2026-11-27），最多等 0.35 秒
+        await page.waitForFunction(() => $('impact').getAnimations().length > 0, null, { timeout: 1000 });
         // 飞行中撞头：第一张停到飞行结束，停稳后才往后翻
         await page.waitForTimeout(800); await clear();
         await page.evaluate(() => { tumblePolicy.hits = 6; tumblePolicy.throwStarted(); tumblePolicy.random = () => 0; setMotionActive(true); tumbleHit({ edge: 'top', impactY: 900, phase: 'fly' }) });
@@ -118,6 +119,28 @@ console.log('PASS: frames config (files, grouping, timings vs tumble steps)');
         await page.evaluate(() => setMotionActive(false));
         await page.waitForTimeout(1500);
         assert.deepEqual((await shown()).filter((s, i, a) => s !== a[i - 1]).slice(0, 6), ['bonk', 'bonk-m0', 'bonk-m1', 'bonk-2', 'bonk-m2', 'bonk-3'], 'bonk flips on after landing');
+        // 还没到地上时点她（2026-11-27 用户定）：踉跄时点 → 一趴下就扶，不等趴满 1.7 秒；飞着撞头时点 → 一落地就回去
+        await page.waitForTimeout(2500); await clear();
+        await page.evaluate(() => { tumblePolicy.hits = 6; tumblePolicy.throwStarted(); tumblePolicy.random = (r => () => r.shift() ?? .5)([0, .9]) });
+        await page.evaluate(() => { setMotionActive(true); tumbleHit({ edge: 'bottom', impactY: 900, phase: 'fly' }); setMotionActive(false) });
+        const helped = await page.evaluate(async () => {
+          handleClick('pat')
+          const t0 = performance.now(), wanted = !!tumble?.helpWanted, during = pose
+          while (tumble && performance.now() - t0 < 5000) await new Promise(r => setTimeout(r, 20))
+          return { wanted, during, ms: performance.now() - t0, pose }
+        });
+        assert.equal(helped.during, 'stagger'); assert.ok(helped.wanted, 'click while staggering is remembered');
+        assert.ok(helped.ms < 2300, `helped up soon after lying down (${Math.round(helped.ms)} ms)`);
+        assert.ok((await shown()).includes('faceplant'), 'she still lies down before being helped up');
+        await page.waitForTimeout(800); await clear();
+        const bonkHelp = await page.evaluate(() => {
+          tumblePolicy.hits = 6; tumblePolicy.throwStarted(); tumblePolicy.random = () => 0
+          setMotionActive(true); tumbleHit({ edge: 'top', impactY: 900, phase: 'fly' })
+          handleClick('pat'); const still = !!tumble
+          setMotionActive(false)
+          return { still, after: !!tumble }
+        });
+        assert.deepEqual(bonkHelp, { still: true, after: false }, 'bonk clicked mid-flight ends as soon as she lands');
       }
       assert.deepEqual(errors, []);
       await page.close();

@@ -51,7 +51,7 @@ function stopSheetClock(s) {
 }
 function startSheetClock(s, draw) {
   if (!s || s.timer !== null || pageHidden || !sheetCanAdvance(s)) return
-  const period = 1000 / (s.fps || SHEET.fps)   // 每个动画可以有自己的帧率（animations[].fps；派活按 15 帧，2026-11-24）
+  const period = 1000 / ((s.fps || SHEET.fps) * (s.rate || 1))   // 每个动画可以有自己的帧率（animations[].fps；派活按 15 帧，2026-11-24）；rate：这一次放快几倍
   let due = performance.now() + period
   const tick = () => {
     const now = performance.now()
@@ -86,7 +86,8 @@ function playSheet(a, still, key = null) {
   // Claude 的来回播动画转码时已经把倒放那段编进视频，配置里 animations[].video 把 hold 换成了 cycle
   const video = name && c?.videos?.[name] && (!a.hold || !c.sheets?.[name]) ? c.videos[name] : null
   const asset = url
-  const s = { key, url, asset, from, to: a.to ?? (a.frames ?? SHEET.frames) - 1, fps: a.fps, hold: a.hold, loop: !!a.loop, cycle: a.cycle, cycled: false, onCycle: null,
+  // a.rate：这一次放快几倍（点醒时醒来那段放 2 倍，2026-11-27 用户定），帧号照旧按 fps 算
+  const s = { key, url, asset, from, to: a.to ?? (a.frames ?? SHEET.frames) - 1, fps: a.fps, rate: a.rate || 1, hold: a.hold, loop: !!a.loop, cycle: a.cycle, cycled: false, onCycle: null,
     frame: from, dir: 1, holding: false,
     canvas: sheetCanvases.find(c => c !== sheetFront), img: null, timer: null }
   if (video) return playVideo(a, s, video, still)
@@ -329,6 +330,7 @@ function videoSync() {
   if (typeof sheetVideos === 'undefined') return
   const s = sheet, play = !pageHidden && videoCanAdvance(s) ? s.canvas : null
   for (const v of sheetVideos) {
+    if (v === play) v.playbackRate = s.rate || 1
     if (v === play || (!pageHidden && fading?.video && fading.canvas === v)) { if (v.paused) v.play().catch(() => {}) }
     else if (!v.paused) v.pause()
   }
