@@ -596,7 +596,32 @@ function manifest() {
     await page.waitForFunction(() => messages.some(x => x.imageError?.includes('claudia-missing')) && sheet?.img && sheet.fallback)
     assert.equal((await state()).url, '待机呼吸休闲.webm')
 
+    // 视频缓存（2026-11-27）：同一段同时要两次只读一次；超过上限从最久没用的扔、扔掉的 blob 地址释放；正挂在 <video> 上的不扔
+    const cache = await page.evaluate(async () => {
+      stopSheet(); await new Promise(r => setTimeout(r, 300))
+      for (const k of [...videoCache.keys()]) dropVideo(k)
+      const realFetch = window.fetch; let reads = 0
+      window.fetch = u => { reads++; return realFetch(u) }
+      const clip = n => 'data:video/webm;base64,' + btoa(String.fromCharCode(n).repeat(1000))
+      const load = u => new Promise(r => loadVideo(u, r, r))
+      const budget = VIDEO_CACHE_BYTES; VIDEO_CACHE_BYTES = 2500
+      try {
+        const [x, y] = await Promise.all([load(clip(65)), load(clip(65))])
+        const dedupe = [reads, x === y, x.startsWith('blob:')]
+        const b = await load(clip(66))
+        sheet = { video: true, canvas: { tagName: 'VIDEO', src: x } }   // 第一段假装正在播
+        await load(clip(67)); await load(clip(68))
+        const kept = [...videoCache.keys()].map(k => atob(k.split(',')[1])[0])
+        const bGone = await realFetch(b).then(() => false, () => true)   // 扔掉的 blob 地址已经释放
+        sheet = null; trimVideos()
+        return { dedupe, kept, bGone, retired: videoRetired.size }
+      } finally { window.fetch = realFetch; VIDEO_CACHE_BYTES = budget; sheet = null }
+    })
+    assert.deepEqual(cache.dedupe, [1, true, true], 'two requests for one clip in flight must share one read')
+    assert.deepEqual(cache.kept.sort(), ['A', 'D'], `cache over budget keeps the playing clip and the newest (${cache.kept})`)
+    assert.ok(cache.bGone, 'evicted blob URLs must be revoked'); assert.equal(cache.retired, 0)
+
     assert.deepEqual(errors, [])
-    console.log('PASS: sheet playback, alignment, random click reactions, sleep hold, farewell range, drag overlay, snack caught, quota tiers, idle groups, seasonal/lunar filters, group-balanced picks, walking, no still fallback (reduced motion keeps animating; missing sheet plays idle)')
+    console.log('PASS: video cache, sheet playback, alignment, random click reactions, sleep hold, farewell range, drag overlay, snack caught, quota tiers, idle groups, seasonal/lunar filters, group-balanced picks, walking, no still fallback (reduced motion keeps animating; missing sheet plays idle)')
   } finally { await browser.close() }
 })().catch(e => { console.error(e); process.exit(1) })

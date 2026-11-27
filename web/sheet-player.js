@@ -234,6 +234,7 @@ function endFade(canvas = null) {
   const f = fading
   if (!f || (canvas && f.canvas !== canvas)) return
   fading = null; stopSheetClock(f); if (f.video) f.canvas.pause(); else f.img?.close?.(); f.img = null
+  if (f.video) trimVideos()   // 淡出完了：它那段视频可以按缓存规则扔了
 }
 function disposeSheet() {
   if (!sheet) return
@@ -259,16 +260,58 @@ function stopSheet() {
 // anim\ 里有和精灵图同名的 .webm（VP9 + 透明通道）时改播视频：帧号照旧（character.json 的 cycle / to / exit 都按帧号写），
 // 换算成时间 = 帧号 ÷ 帧率。视频先整个 fetch 成 blob 再交给 <video>：外壳读文件不支持分段读取，blob 地址才能随意跳
 // （跳回循环段开头要用）。两个 <video> 轮流用，和精灵图画布同一套交叉淡入
-const videoBlobs = new Map()   // 视频地址 → blob 地址，读过一次就留着（一段一两 MB）
+// 读过的视频缓存成 blob（2026-11-27 起有上限）：按最近用过的顺序排，总大小超过 VIDEO_CACHE_BYTES 就从最久没用的扔；
+// 正在播、正在淡出的那段（挂在 <video> 上的）不扔。扔掉的 blob 地址等没有 <video> 再用它时才释放——
+// 还挂在 <video> 上就释放，那个元素之后跳帧会读不出来。同一段还在读时再要，等同一次读取，不重复读文件
+let VIDEO_CACHE_BYTES = 48 * 1024 * 1024   // 约 25 段；点击反应 5 段预读也在里面。测试会改小
+const videoCache = new Map()   // 视频地址 → { blob: blob 地址, bytes }，Map 的顺序就是最近用过的顺序（越靠后越新）
+const videoLoading = new Map()   // 视频地址 → 正在等这次读取的 { done }
+const videoRetired = new Set()   // 已经不在缓存里、还没释放的 blob 地址
 let videoRaf = 0
 function loadVideo(url, done, fail) {
-  let cancelled = false
-  const hit = videoBlobs.get(url)
-  if (hit) Promise.resolve().then(() => { if (!cancelled) done(hit) })
-  else fetch(url).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob() })
-    .then(b => { const u = URL.createObjectURL(b); videoBlobs.set(url, u); if (!cancelled) done(u) })
-    .catch(() => { if (!cancelled) done(url) })   // fetch 读不了（测试用 file:// 打开页面时）：直接把地址交给 <video>，真读不出来由 <video> 报错再退回精灵图
-  return () => { cancelled = true }
+  const hit = videoCache.get(url)
+  const waiter = { done, cancelled: false }
+  if (hit) {
+    videoCache.delete(url); videoCache.set(url, hit)   // 挪到最新
+    Promise.resolve().then(() => { if (!waiter.cancelled) done(hit.blob) })
+    return () => { waiter.cancelled = true }
+  }
+  const waiting = videoLoading.get(url)
+  if (waiting) { waiting.add(waiter); return () => { waiter.cancelled = true } }
+  const set = new Set([waiter]); videoLoading.set(url, set)
+  const finish = target => { videoLoading.delete(url); for (const w of set) if (!w.cancelled) w.done(target) }
+  fetch(url).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob() })
+    .then(b => { const blob = URL.createObjectURL(b); videoCache.set(url, { blob, bytes: b.size }); finish(blob); trimVideos() })
+    .catch(() => finish(url))   // fetch 读不了（测试用 file:// 打开页面时）：直接把地址交给 <video>，真读不出来由 <video> 报错再重读
+  return () => { waiter.cancelled = true }
+}
+// 这段视频以后不用缓存里的了（出错要重读）：从缓存里拿掉，等没有 <video> 挂着它再释放
+function dropVideo(url) {
+  const hit = videoCache.get(url)
+  if (hit) { videoCache.delete(url); videoRetired.add(hit.blob) }
+  trimVideos()
+}
+// 现在挂在 <video> 上、还要用的 blob 地址：正在播的和正在淡出的
+function videosInUse() {
+  const used = new Set()
+  for (const s of [sheet, fading]) if (s?.video && s.canvas?.tagName === 'VIDEO' && s.canvas.src) used.add(s.canvas.src)
+  return used
+}
+function trimVideos() {
+  const used = videosInUse()
+  let total = 0
+  for (const e of videoCache.values()) total += e.bytes
+  for (const [url, e] of videoCache) {
+    if (total <= VIDEO_CACHE_BYTES) break
+    if (used.has(e.blob)) continue
+    videoCache.delete(url); videoRetired.add(e.blob); total -= e.bytes
+  }
+  for (const blob of videoRetired) {
+    if (used.has(blob)) continue
+    // 闲着的那个 <video> 还挂着它：摘下来，下次用这个元素会重新设地址
+    if (typeof sheetVideos !== 'undefined') for (const v of sheetVideos) if (v.src === blob) { v.removeAttribute('src'); v.load() }
+    URL.revokeObjectURL(blob); videoRetired.delete(blob)
+  }
 }
 function videoTime(s, frame) { return (frame + .02) / (s.fps || SHEET.fps) }
 function videoSeek(s, frame) {
@@ -394,7 +437,7 @@ function videoTrouble(s, why) {
   setTimeout(() => {
     if (sheet !== s) return   // 这期间换了别的动作
     const frame = s.frame
-    videoBlobs.delete(s.asset)   // 重新读一遍文件，不用可能坏掉的那份
+    dropVideo(s.asset)   // 重新读一遍文件，不用可能坏掉的那份
     s.cancelLoad?.(); stopSheetClock(s)
     s.img = null   // 旧的这个先留在台上，新的读好了淡入时再换下
     sheet = null
