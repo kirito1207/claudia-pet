@@ -779,22 +779,24 @@ class Pet:
     def set_desk_layer(self, value):
         if value not in self.DESK_LAYERS:
             return
-        store.app["deskLayer"] = value
-        store.save_app()
         store.log("桌面上的层级：" + ("始终在最上面" if value == "top" else "全屏时让开"))
-        self.app_changed()   # 大家一起换
+        self.set_app("deskLayer", value)   # 大家一起换
 
     def set_click_through(self, on):
-        store.app["clickThrough"] = bool(on)
-        store.save_app()
         store.log("鼠标穿透：" + ("开" if on else "关"))
-        self.app_changed()
+        self.set_app("clickThrough", bool(on))
 
-    def app_changed(self):
-        """共用设置（app.json）改了：自己马上照新的来，再请负责人叫大家重读"""
-        self.hub_app_changed()
+    def set_app(self, key, value):
+        """改一项共用设置：交给负责人（只有它写 app.json，写完叫大家重读，自己也在里面）"""
+        text = ("true" if value else "false") if isinstance(value, bool) else str(value)
         if self.hub:
-            self.hub.request("app")
+            self.hub.request("appSet", None, key, text)
+            return
+        ok, error = store.set_app(key, text)
+        if ok:
+            self.hub_app_changed()
+        else:
+            self.hub_notice(error)
 
     def save_position(self):
         if not self.desktop_mode:
@@ -1117,6 +1119,11 @@ class Pet:
         """人物 / 文字大小变了：交给网页算画布（规则在 web/text-size.js），按回来的尺寸设窗口"""
         self.stop_motion()
         self.size_request = request = getattr(self, "size_request", 0) + 1   # 拖滑块时好几次在路上：只按最后一次的结果设窗口
+        # 被后来的请求作废时，它要去的人物大小不能跟着丢：「还原」先发大小 100%、紧接着发锁上文字，
+        # 后一条作废前一条，原来就停在旧大小上（2026-11-27 Codex 复审）。目标留到真正设窗口的那一次
+        if target is not None:
+            self.pending_target = target
+        pending = getattr(self, "pending_target", None)
 
         def got(o):
             if request != self.size_request:
@@ -1126,13 +1133,14 @@ class Pet:
                     self.page_w, self.page_h, self.page_foot = float(o["w"]), float(o["h"]), float(o["foot"])
                 except (KeyError, TypeError, ValueError):
                     pass
-            if target is not None:
-                self.animate_scale(target)
+            goal, self.pending_target = getattr(self, "pending_target", None), None
+            if goal is not None:
+                self.animate_scale(goal)
             else:
                 self.apply_scale(self.shown_scale or self.scale(), anchor)
 
         if self.ready:
-            web.eval_js(self.view, f"setSizes({num(float(target if target is not None else self.scale()))}, "
+            web.eval_js(self.view, f"setSizes({num(float(pending if pending is not None else self.scale()))}, "
                                    f"{num(self.text_scale())}, {'true' if self.text_linked() else 'false'})", got)
         else:
             got(None)
@@ -1463,9 +1471,7 @@ class Pet:
                 self.set_behavior(key, value)
             elif key in ("notifyResults", "notifyWaiting", "notifyBackgroundOnly"):   # 共用设置
                 if isinstance(value, bool):
-                    store.app[key] = value
-                    store.save_app()
-                    self.app_changed()
+                    self.set_app(key, value)
             elif key in ("physicsEnabled", "ceilingBounce") or key in PHYSICS_RANGES:
                 self.set_physics(key, value)
             elif key == "size":
@@ -1491,9 +1497,7 @@ class Pet:
                 self.js(f"setShowName({'true' if on else 'false'})")
             elif key == "hideHotkey":
                 if value in ("p", "h", "off"):   # 共用设置：负责人重新注册
-                    store.app["hideHotkey"] = value
-                    store.save_app()
-                    self.app_changed()
+                    self.set_app("hideHotkey", value)
             elif key == "quotaStyle":
                 if value in ("text", "bars"):
                     store.settings["quotaStyle"] = value
@@ -1593,9 +1597,10 @@ class Pet:
             return 1
 
     @staticmethod
-    def launch_pet(pid, mode=None):
-        r = claude.launch(["--pet", pid] + (["--mode", mode] if mode else []))
+    def launch_pet(pid, mode=None, join=None):
+        r = claude.launch(["--pet", pid] + (["--mode", mode] if mode else []) + (["--join", join] if join else []))
         store.log(f"叫出 {pid} 号：{r}")
+        return r.startswith("已打开")
 
     # ---- 多开：每只平级，都经过 pethub（谁是负责人、怎么交接见 pethub.py 开头）----
     def become_leader(self):
@@ -1694,11 +1699,13 @@ class Pet:
         self.push_settings()
 
     def hub_notice(self, text):
+        """请求没成：设置页底部说一声，再整页刷新一次（「再来一只」之类按了以后变灰的按钮恢复可点）"""
         if self.settings_window:
             web.run_js(self.settings_window.view, f"notice({store.dumps(text)})")
+        self.push_settings()
 
-    def hub_launch(self, pid, mode):
-        self.launch_pet(pid, mode)
+    def hub_launch(self, pid, mode, join=None):
+        return self.launch_pet(pid, mode, join)
 
     def hub_signal(self, what):
         if what == "hide":

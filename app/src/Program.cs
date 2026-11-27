@@ -43,6 +43,7 @@ namespace Claudia
                 var lead = Pet.TakeLeaderLock();
                 if (lead != null)
                 {
+                    PetHubNames.ClearStopping();   // 打开了：「全部退出」的记号作废
                     var ids = Store.Roster();
                     var free = ids.Where(x => !Pet.PetRunning(x)).ToList();
                     if (free.Count > 0 || ids.Count == 0)
@@ -105,6 +106,8 @@ namespace Claudia
                 Store.PetId = id;
                 var modeArg = Array.IndexOf(args, "--mode");
                 if (modeArg >= 0 && modeArg + 1 < args.Length && (args[modeArg + 1] == "desktop" || args[modeArg + 1] == "claude")) firstMode = args[modeArg + 1];
+                var joinArg = Array.IndexOf(args, "--join");
+                if (joinArg >= 0 && joinArg + 1 < args.Length) Store.JoinToken = args[joinArg + 1];
             }
             if (!RenderRecovery.WaitForParent(args)) return;
             if (petArg < 0)

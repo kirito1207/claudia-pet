@@ -209,6 +209,7 @@ def choose_identity():
             return None
         fd = claude.take_lock("leader")
         if fd is not None:
+            pethub.clear_stopping()   # 打开了：「全部退出」的记号作废
             ids = store.roster()
             free = [i for i in ids if not claude.pet_running(i)]
             if free or not ids:
@@ -275,6 +276,8 @@ def main(args):
         store.pet_id = pid
         if "--mode" in args and arg_after(args, "--mode") in ("desktop", "claude"):
             first_mode = arg_after(args, "--mode")
+        if "--join" in args:
+            store.join_token = arg_after(args, "--join")
     else:
         picked = choose_identity()
         if picked is None:

@@ -160,7 +160,12 @@ namespace Claudia
         }
 
         // 多开协调（PetHub，2026-11-27 起每只平级、负责人可以交接）：真的命名管道，一个进程里开几只；回调都排进队列，在测试线程上跑
-        sealed class FakeFamily { public string Owner; public string Pipe; public readonly Dictionary<string, FakeHubHost> Pets = new Dictionary<string, FakeHubHost>(); }
+        sealed class FakeFamily
+        {
+            public string Owner; public string Pipe;
+            public readonly Dictionary<string, FakeHubHost> Pets = new Dictionary<string, FakeHubHost>();
+            public readonly HashSet<string> Running = new HashSet<string>();   // 实例锁还被占着的编号
+        }
 
         sealed class FakeHubHost : IPetHubHost
         {
@@ -171,8 +176,9 @@ namespace Claudia
             public IPetHub Hub;
             public readonly List<string> Applied = new List<string>(), Signals = new List<string>(), Launched = new List<string>();
             public bool Lost, Left, UserQuit;
+            public int AppChanges;
             public FakeHubHost(string id, FakeFamily family) { Id = id; this.family = family; family.Pets[id] = this; }
-            public void Lead() { family.Owner = Id; var s = new PetHubServer(this, family.Pipe, Id) { RelaunchMs = 100 }; Hub = s; s.Start(); }
+            public void Lead() { family.Owner = Id; var s = new PetHubServer(this, family.Pipe, Id) { RelaunchMs = 100, AddWaitMs = 800 }; Hub = s; s.Start(); }
             public bool IsLeader => Hub is PetHubServer s && !s.Closed;
             public Dictionary<string, object> HubInfo() => new Dictionary<string, object> { ["name"] = Name, ["mode"] = Mode };
             public void HubApply(string action, string value)
@@ -184,9 +190,10 @@ namespace Claudia
             public void HubRosterChanged() { }
             public void HubNotice(string text) { }
             public void HubSignal(string what) { Signals.Add(what); if (what == "quit") Left = true; }
-            public void HubAppChanged() { }
-            public void HubLaunch(string id, string mode) => Launched.Add(id + ":" + mode);
-            public bool HubRunning(string id) => false;
+            public void HubAppChanged() => AppChanges++;
+            public readonly Dictionary<string, string> Tokens = new Dictionary<string, string>();   // 编号 → 最近一次叫出来带的标记
+            public bool HubLaunch(string id, string mode, string join) { Launched.Add(id + ":" + mode); Tokens[id] = join; return true; }
+            public bool HubRunning(string id) => family.Running.Contains(id);
             public bool HubLeaving() => Left;
             public void HubToggle() => Signals.Add("toggle");
             public void HubUserQuit() => UserQuit = true;
@@ -228,6 +235,14 @@ namespace Claudia
         }
 
         static void CloseFamily(FakeFamily f) { foreach (var h in f.Pets.Values) h.Hub?.Close(); }
+
+        static FakeHubHost JoinLate(FakeFamily f, string id, string token = null)
+        {
+            var h = new FakeHubHost(id, f);
+            h.Hub = new PetHubClient(h, id, f.Pipe, token) { StepMs = 400, LostWaitMs = 1500 };
+            h.Hub.Start();
+            return h;
+        }
 
         static void TestPetHub()
         {
@@ -281,6 +296,103 @@ namespace Claudia
                 Console.WriteLine("PASS: two pets leave at once, crashed pets are brought back, and a crashed leader is replaced by the next in line");
             }
             finally { CloseFamily(f); }
+
+            Store.App = new Dictionary<string, object>();
+            PetHubNames.ClearStopping();
+            f = NewFamily();
+            try
+            {
+                FakeHubHost main = f.Pets["main"], two = f.Pets["2"], three = f.Pets["3"];
+                // Shared settings go through the leader: two pets changing different keys at once both survive
+                var replies = new List<bool>();
+                two.Hub.Request("appSet", null, "clickThrough", "true", (ok, e) => replies.Add(ok));
+                three.Hub.Request("appSet", null, "deskLayer", "top", (ok, e) => replies.Add(ok));
+                three.Hub.Request("appSet", null, "hideHotkey", "nonsense", (ok, e) => replies.Add(ok));
+                if (!Pump(f, () => replies.Count == 3) || replies.Count(r => r) != 2) throw new Exception("appSet replies were wrong");
+                var saved = Store.ReadJson(Path.Combine(Store.Data, "app.json"));
+                if (!(saved.TryGetValue("clickThrough", out var ct) && ct is bool b && b) || !(saved.TryGetValue("deskLayer", out var dl) && (string)dl == "top"))
+                    throw new Exception("Concurrent shared-setting changes overwrote each other");
+                if (!Pump(f, () => f.Pets.Values.All(h => h.AppChanges == 2))) throw new Exception("Shared-setting change did not reach every pet");
+
+                // A number whose pet is still waving goodbye is not reused
+                two.Hub.Request("pet", "3", "dismiss");
+                if (!Pump(f, () => three.Left)) throw new Exception("Dismissed pet was not told to go");
+                f.Running.Add("3");
+                main.Hub.Request("add", value: "claude");
+                if (!main.Launched.SequenceEqual(new[] { "4:claude" })) throw new Exception("Add reused a number still in use: " + string.Join(",", main.Launched));
+
+                // Quit all: a pet still starting follows instead of taking over and bringing everyone back
+                main.Hub.Request("quitAll");
+                if (!Pump(f, () => two.Left)) throw new Exception("Quit all did not reach the pets");
+                var late = JoinLate(f, "4");
+                if (!Pump(f, () => late.Signals.Contains("quit"))) throw new Exception("A pet reporting in during quit all was not told to go");
+                f.Owner = null; main.Hub.Close();
+                var later = JoinLate(f, "2");
+                if (!Pump(f, () => later.Lost) || f.Owner != null) throw new Exception("A pet still starting after quit all took over");
+                Console.WriteLine("PASS: shared settings have one writer, busy numbers are not reused, and quit all is not undone by late starters");
+            }
+            finally { CloseFamily(f); PetHubNames.ClearStopping(); }
+
+            f = NewFamily();
+            try
+            {
+                FakeHubHost main = f.Pets["main"], two = f.Pets["2"];
+                // Adding is confirmed only once the new pet reports in
+                var added = new List<string>();
+                two.Hub.Request("add", value: "desktop", reply: (ok, e) => added.Add(ok + ":" + e));
+                if (!Pump(f, () => main.Launched.Count == 1)) throw new Exception("Add did not launch");
+                Pump(f, () => false, 200);
+                if (added.Count != 0) throw new Exception("Add was confirmed before the new pet reported in");
+                JoinLate(f, "4", main.Tokens["4"]);
+                if (!Pump(f, () => added.Count == 1) || added[0] != "True:") throw new Exception("Add was not confirmed when the new pet reported in: " + string.Join(",", added));
+
+                // One that never reports in is taken off the roster and the slot is freed
+                added.Clear();
+                two.Hub.Request("add", value: "claude", reply: (ok, e) => added.Add(ok + ":" + e));
+                if (!Pump(f, () => added.Count == 1) || added[0].StartsWith("True")) throw new Exception("A pet that never reported in was confirmed");
+                if (Store.Roster().Contains("5")) throw new Exception("A pet that never reported in stayed on the roster");
+
+                // Every spare number still held by a pet waving goodbye: ask to wait instead of launching one that cannot start
+                added.Clear();
+                f.Running.UnionWith(new[] { "5", "6" });
+                main.Launched.Clear();
+                two.Hub.Request("add", value: "claude", reply: (ok, e) => added.Add(ok + ":" + e));
+                if (!Pump(f, () => added.Count == 1) || !added[0].Contains("等它走了再试") || main.Launched.Count != 0)
+                    throw new Exception("Add with no free number did not ask to wait: " + string.Join(",", added));
+                Console.WriteLine("PASS: adding waits for the new pet to report in, frees the slot when it never does, and asks to wait while numbers are still in use");
+            }
+            finally { CloseFamily(f); }
+
+            f = NewFamily();
+            try
+            {
+                FakeHubHost main = f.Pets["main"], two = f.Pets["2"];
+                ((PetHubServer)main.Hub).AddWaitMs = 5000;   // 刚取消的编号多久内不再用（跟着它走），留足余量
+                // Cancelled on its way, then added again: the old process reporting in late is not taken for the new add
+                var replies = new List<string>();
+                two.Hub.Request("add", value: "claude", reply: (ok, e) => replies.Add("first:" + ok));
+                if (!Pump(f, () => main.Launched.Count == 1)) throw new Exception("Add did not launch");
+                var oldToken = main.Tokens["4"];
+                two.Hub.Request("pet", "4", "dismiss");
+                if (!Pump(f, () => replies.Contains("first:False"))) throw new Exception("Cancelling an add on its way did not answer");
+                two.Hub.Request("add", value: "desktop", reply: (ok, e) => replies.Add("second:" + ok));
+                if (!Pump(f, () => main.Launched.Count == 2) || main.Launched[1] != "5:desktop") throw new Exception("A number just cancelled was reused: " + string.Join(",", main.Launched));
+                var stale = JoinLate(f, "4", oldToken);
+                if (!Pump(f, () => stale.Applied.Contains("dismiss:"))) throw new Exception("The late old process was not sent away");
+                if (Store.Roster().Contains("4") || replies.Contains("second:True")) throw new Exception("The late old process was taken for the new add");
+                JoinLate(f, "5", main.Tokens["5"]);
+                if (!Pump(f, () => replies.Contains("second:True")) || !Store.Roster().Contains("5")) throw new Exception("Second add was not confirmed");
+
+                // An add still on its way when everyone quits is not kept for next time
+                two.Hub.Request("add", value: "claude");
+                if (!Pump(f, () => main.Launched.Count == 3)) throw new Exception("Third add did not launch");
+                var third = main.Launched[2].Split(':')[0];
+                main.Hub.Request("quitAll");
+                if (!Pump(f, () => two.Left)) throw new Exception("Quit all did not reach the pets");
+                if (Store.Roster().Contains(third)) throw new Exception("An add that never reported in was kept in the roster");
+                Console.WriteLine("PASS: a late process from a cancelled add is sent away, a cancelled number waits before reuse, and a pet is written to the roster only once it reports in");
+            }
+            finally { CloseFamily(f); PetHubNames.ClearStopping(); }
         }
 
         [STAThread]

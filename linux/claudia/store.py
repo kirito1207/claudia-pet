@@ -103,6 +103,7 @@ def changed_state(path, stamps, *, max_bytes, not_before=None):
 
 
 pet_id = "main"
+join_token = None   # 负责人加这一只时给的标记（--join），报到时带回去，好和取消前叫出来的旧进程分开
 
 
 def is_main():
@@ -185,11 +186,32 @@ def load_app():
     app = d
 
 
-def save_app():
+def save_app(d=None):
     try:
-        write_json(APP_FILE, app)
+        write_json(APP_FILE, app if d is None else d)
+        return True
     except OSError as e:
         log("保存共用设置失败: " + str(e))
+        return False
+
+
+def set_app(key, text):
+    """负责人改一项共用设置（别的几只把「哪一项、改成什么」交给它，只有它写 app.json，免得互相盖掉）。
+    值按文字传：开关是 true / false。返回 (成没成, 没成的原因)；文件先写成功才换内存里的，写不进去就保留旧设置"""
+    if key in ("notifyResults", "notifyWaiting", "notifyBackgroundOnly", "clickThrough"):
+        if text not in ("true", "false"):
+            return False, "这一项设置没认出来"
+        value = text == "true"
+    elif key == "hideHotkey" and text in ("p", "h", "off"):
+        value = text
+    elif key == "deskLayer" and text in ("top", "yield", "normal"):
+        value = text
+    else:
+        return False, "这一项设置没认出来"
+    if not save_app(dict(app, **{key: value})):
+        return False, "设置没能保存，还是原来的样子"
+    app[key] = value
+    return True, ""
 
 
 def app_on(key):

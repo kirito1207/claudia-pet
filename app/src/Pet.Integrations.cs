@@ -59,7 +59,7 @@ namespace Claudia
                     {
                         case "clickBounce": case "tumbleActions": case "idleEnabled": case "idleFrequency": SetBehavior(key, value); break;
                         case "notifyResults": case "notifyWaiting": case "notifyBackgroundOnly":   // 共用设置
-                            if (value is bool) { Store.App[key] = value; Store.SaveApp(); AppChanged(); } break;
+                            if (value is bool) SetApp(key, value); break;
                         case "physicsEnabled": case "ceilingBounce":
                         case "throwPower": case "gravity": case "restitution": case "groundFriction": case "elasticity":
                             SetPhysics(key, value); break;
@@ -74,7 +74,7 @@ namespace Claudia
                             return;   // 同上；解锁状态这一页自己已经改了
                         case "textLinked": Store.Settings["textLinked"] = !(value is bool lb) || lb; Store.SaveSettings(); ApplySizes(); break;
                         case "showName": Store.Settings["showName"] = on; Store.SaveSettings(); Js($"setShowName({(on ? "true" : "false")})"); break;
-                        case "hideHotkey": if (value is string hk) { Store.App["hideHotkey"] = hk; Store.SaveApp(); AppChanged(); } break;   // 共用设置：负责人重新注册
+                        case "hideHotkey": if (value is string hk) SetApp("hideHotkey", hk); break;   // 共用设置：负责人重新注册
                         case "quotaStyle":
                             if (value is string qs && (qs == "text" || qs == "bars")) { Store.Settings["quotaStyle"] = qs; Store.SaveSettings(); Js($"setQuotaStyle({Q(qs)})"); }
                             break;

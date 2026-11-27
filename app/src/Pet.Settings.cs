@@ -122,15 +122,19 @@ namespace Claudia
         /// <summary>人物大小 / 文字大小变了：交给网页算画布（规则在 app/web/text-size.js），按回来的尺寸设窗口。
         /// target：人物大小要动画到哪（底边不动）；null = 文字变了（Feet）或网页刚加载完（Corner），按现在的人物大小重设一次</summary>
         int sizeRequest;   // 拖滑块时好几次在路上：只按最后一次的结果设窗口（2026-11-27）
+        // 被后来的请求作废时，它要去的人物大小不能跟着丢：「还原」先发大小 100%、紧接着发锁上文字，
+        // 后一条作废前一条，原来就停在旧大小上（2026-11-27 Codex 复审）。目标留到真正设窗口的那一次
+        double? pendingTarget;
         async void ApplySizes(double? target = null, Anchor anchor = Anchor.Feet)
         {
             StopMotion();
             var request = ++sizeRequest;
+            if (target != null) pendingTarget = target;
             if (ready && web?.CoreWebView2 != null)   // 网页还没加载完：先按旧画布，加载完（NavigationCompleted）会再调一次
             {
                 try
                 {
-                    var json = await Eval($"setSizes({Num(target ?? Scale)}, {Num(TextScale)}, {(TextLinked ? "true" : "false")})");
+                    var json = await Eval($"setSizes({Num(pendingTarget ?? Scale)}, {Num(TextScale)}, {(TextLinked ? "true" : "false")})");
                     if (request != sizeRequest) return;   // 后面又来了新的，这次的结果作废
                     if (Store.Json.DeserializeObject(Store.Json.Deserialize<string>(json)) is Dictionary<string, object> o)
                     {
@@ -140,7 +144,8 @@ namespace Claudia
                 }
                 catch (Exception e) { Store.Log("文字大小：算画布失败 " + e.Message); }
             }
-            if (target is double t) { AnimateScale(t); return; }
+            var goal = pendingTarget; pendingTarget = null;
+            if (goal is double t) { AnimateScale(t); return; }
             ApplyScale(shownScale > 0 ? shownScale : Scale, anchor);
         }
 

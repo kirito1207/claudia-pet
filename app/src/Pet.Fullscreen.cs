@@ -83,23 +83,23 @@ namespace Claudia
         void SetDeskLayer(object value)
         {
             if (!(value is string s) || (s != "top" && s != "yield" && s != "normal")) return;
-            Store.App["deskLayer"] = s; Store.SaveApp();
             Store.Log("桌面上的层级：" + (s == "top" ? "始终在最上面" : s == "yield" ? "全屏时让开" : "不置顶"));
-            AppChanged();   // 大家一起换
+            SetApp("deskLayer", s);   // 大家一起换
         }
 
         void SetClickThrough(bool on)
         {
-            Store.App["clickThrough"] = on; Store.SaveApp();
             Store.Log(on ? "鼠标穿透：开" : "鼠标穿透：关");
-            AppChanged();
+            SetApp("clickThrough", on);
         }
 
-        /// <summary>共用设置（app.json）改了：自己马上照新的来，再请负责人叫大家重读</summary>
-        void AppChanged()
+        /// <summary>改一项共用设置：交给负责人（只有它写 app.json，写完叫大家重读，自己也在里面）</summary>
+        void SetApp(string key, object value)
         {
-            HubAppChanged();
-            hub?.Request("app");
+            var text = value is bool b ? (b ? "true" : "false") : value as string ?? "";
+            if (hub != null) { hub.Request("appSet", null, key, text); return; }
+            if (Store.SetApp(key, text, out var error)) HubAppChanged();
+            else HubNotice(error);
         }
     }
 

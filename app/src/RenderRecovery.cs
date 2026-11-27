@@ -65,7 +65,8 @@ namespace Claudia
                 else Store.Log("渲染线程连续失败，重试预算已耗尽，停止自动重启并提示手动打开");
                 var parent = Process.GetCurrentProcess();
                 // 不经过 cmd/start（安装路径可能含空格、& 等）；子进程先等父进程真正退出，再抢单实例锁。
-                var args = $"--render-restart {parent.Id} {parent.StartTime.ToUniversalTime().Ticks} {(next == null ? "stop" : "retry")} --pet {Store.PetId}";   // 每只平级：重启的还是这一只
+                var args = $"--render-restart {parent.Id} {parent.StartTime.ToUniversalTime().Ticks} {(next == null ? "stop" : "retry")} --pet {Store.PetId}"   // 每只平级：重启的还是这一只
+                    + (Store.JoinToken == null ? "" : " --join " + Store.JoinToken);   // 还没报到的新桌宠：带回这次添加的标记，不然重启后会被当成旧进程送走
                 if (Process.Start(new ProcessStartInfo(parent.MainModule.FileName, args)
                     { UseShellExecute = false, WorkingDirectory = Store.Install }) == null)
                     throw new InvalidOperationException("未能创建接班进程");

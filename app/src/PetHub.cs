@@ -24,11 +24,20 @@ namespace Claudia
     //   下一任抢到锁就当负责人，别的重新连上它。负责人突然没了（崩溃）：大家按名单顺序轮流试，排第一的马上试，
     //   第二的等 2 秒才试，以此类推，所以还是名单上的下一只接手。
     // - 「退出」只走这一只；名单里最后一只也走了才记下「从菜单退出过」。托盘的「全部退出」大家一起走，名单留着下次一起回来。
+    // - 「全部退出」时留一个记号（数据目录的 pets-stopping），一直留到用户手动打开程序（见 Program.ChooseIdentity）：
+    //   有它在，退出前就已经在启动、来晚了的那只不接手、不叫回别人，直接跟着走；负责人挥手那两秒里才来报到的，直接叫它走。
+    // - 加一只：新的那只报到了才写进名单、才算成功（2026-11-27 Codex 复审：原来先写名单，负责人换了、全部退出、
+    //   清理失败都可能留下一条没加成的，下次打开又被叫出来）。报到前它只在负责人的内存里（adding，名单上显示
+    //   「还在出来的路上」、占一个名额）；每次添加有自己的编号，30 秒没报到只把这一次去掉。起不来就马上说没成。
+    //   新的那只启动时拿到这次添加的标记（--join），报到时带回来；对不上的（取消前叫出来、来晚了的旧进程）叫它走。
+    //   刚取消的编号 30 秒内先不再用（旧进程可能还在启动、还没拿到这个编号的锁）。
+    //   刚送走的那只还在挥手、编号都被占着时，先不加，叫用户等它走了再试。
+    // - 共用设置只有负责人写：哪一只改，就把「哪一项、改成什么」交给负责人（appSet），它先写 app.json，写成了才叫大家重读。
     // - 每只正常走之前跟负责人说一声 bye。没说就断了的（崩溃、被杀）负责人 3 秒后把它叫回来；新负责人接手时也把名单上
     //   没在跑的（比如崩溃的上一任）叫回来。同一只 10 分钟内最多叫回 3 次，免得反复崩溃一直重开。
     // 一行一条 JSON：
-    //   别的 → 负责人：hello {id, name, mode}；state {name, mode}；done {rid}；bye {}
-    //                  req {rid, op, id, action, value}，op：add | leave | pet | quitAll | hide | show | app
+    //   别的 → 负责人：hello {id, name, mode, join}；state {name, mode}；done {rid}；bye {}
+    //                  req {rid, op, id, action, value}，op：add | leave | pet | quitAll | hide | show | appSet（action = 哪一项）
     //   命令行 → 负责人：cli {cmd: show | toggle | quit}
     //   负责人 → 别的：roster {leader, pets: [{id, index, name, mode, online}]}；cmd {rid, action: mode | rename | dismiss, value}；
     //                  signal {what: hide | show | quit}；app {}；handoff {next}；reply {rid, ok, error}
@@ -42,7 +51,7 @@ namespace Claudia
         void HubNotice(string text);
         void HubSignal(string what);              // 藏 / 出 / 一起走，负责人自己也走这里
         void HubAppChanged();                     // 共用设置变了，重读
-        void HubLaunch(string id, string mode);   // 负责人用
+        bool HubLaunch(string id, string mode, string join);   // 负责人用：叫出来了没有；join 是这次添加的标记（重新叫回来的没有）
         bool HubRunning(string id);               // 负责人用：这一只在不在跑
         bool HubLeaving();                        // 负责人用：自己是不是正要走
         void HubToggle();                         // 负责人用：隐藏快捷键
@@ -61,13 +70,14 @@ namespace Claudia
         readonly PipeStream pipe;
         readonly StreamWriter writer;
         readonly object writeLock = new object();
+        readonly Action<PetLink> onClose;
         public string Id;
         public bool Bye;
         public bool Closed { get; private set; }
 
         public PetLink(PipeStream pipe, IPetHubHost host, Action<PetLink, Dictionary<string, object>> onMsg, Action<PetLink> onClose)
         {
-            this.pipe = pipe;
+            this.pipe = pipe; this.onClose = onClose;
             writer = new StreamWriter(pipe, new UTF8Encoding(false)) { AutoFlush = true, NewLine = "\n" };
             new Thread(() =>
             {
@@ -82,7 +92,7 @@ namespace Claudia
                         }
                 }
                 catch { }
-                host.Post(() => { if (!Closed) { Close(); onClose(this); } });
+                host.Post(Fail);
             }) { IsBackground = true, Name = "PetLink" }.Start();
         }
 
@@ -90,7 +100,15 @@ namespace Claudia
         {
             if (Closed) return;
             try { lock (writeLock) writer.WriteLine(Store.Json.Serialize(msg)); }
-            catch { Close(); }   // 读线程会发现断了，走 onClose
+            catch { Fail(); }   // 写的时候先发现断了：也要走断线处理（原来只关掉，读线程随后看到已关就跳过，客户端永远不重连，2026-11-27 Codex 复审）
+        }
+
+        /// <summary>断了：关掉并通知一次（读线程和发送哪边先发现都一样，都在界面线程上调）</summary>
+        void Fail()
+        {
+            if (Closed) return;
+            Close();
+            onClose(this);
         }
 
         public void Close()
@@ -115,6 +133,15 @@ namespace Claudia
         public static Dictionary<string, object> InfoFromSettings(Dictionary<string, object> s) =>
             Info(s.TryGetValue("names", out var nv) && nv is Dictionary<string, object> names && names.TryGetValue("claude", out var cn) ? cn as string : "",
                 S(s, "mode"));
+
+        static string StopPath => Path.Combine(Store.Data, "pets-stopping");
+        /// <summary>「全部退出」过、用户还没手动打开（2026-11-27 Codex 复审：原来 30 秒后就放行，来得更晚的又会把大家叫回来）</summary>
+        public static bool Stopping()
+        {
+            try { return File.Exists(StopPath); } catch { return false; }
+        }
+        public static void MarkStopping() { try { File.WriteAllText(StopPath, ""); } catch { } }
+        public static void ClearStopping() { try { File.Delete(StopPath); } catch { } }
 
         /// <summary>命令行（再次打开程序）交给负责人；没有负责人返回 false</summary>
         public static bool SendCli(string cmd, string pipeName = null, int timeoutMs = 1000)
@@ -146,7 +173,7 @@ namespace Claudia
     /// <summary>负责人这一头：名单的唯一主人，转发指令、广播名单和信号</summary>
     sealed class PetHubServer : IPetHub
     {
-        public int RelaunchMs = 3000;
+        public int RelaunchMs = 3000, AddWaitMs = 30000;   // AddWaitMs：新加的那只多久没报到就算没成
         const int RelaunchLimit = 3, RelaunchWindowS = 600;
         readonly IPetHubHost host;
         readonly string pipeName, selfId;
@@ -156,6 +183,11 @@ namespace Claudia
         readonly Dictionary<string, List<int>> relaunched = new Dictionary<string, List<int>>();
         int nextRid;
         volatile bool closed;
+        bool stopping;   // 全部退出了：再来报到的叫它走
+        sealed class Adding { public string Token; public Action<bool, string> Reply; }
+        readonly Dictionary<string, Adding> adding = new Dictionary<string, Adding>();   // 新加、还没报到的；报到了才写进名单
+        readonly Dictionary<string, int> cancelled = new Dictionary<string, int>();      // 刚没加成的编号 → 什么时候（TickCount）：旧进程可能还在启动，先不再用
+        bool broadcasting, again;
         NamedPipeServerStream listening;
         public bool Closed => closed;
         public IEnumerable<string> Connected => clients.Keys;
@@ -213,7 +245,7 @@ namespace Claudia
             self = self ?? selfId;
             var list = new List<Dictionary<string, object>>();
             var n = 0;
-            foreach (var id in Store.Roster())
+            foreach (var id in Members())
             {
                 var i = id == selfId ? host.HubInfo() : info.TryGetValue(id, out var known) ? known
                     : PetHubNames.InfoFromSettings(Store.ReadJson(SettingsFileOf(id)) ?? new Dictionary<string, object>());
@@ -226,10 +258,25 @@ namespace Claudia
             return list;
         }
 
+        /// <summary>名单上的，加上新加、还没报到的（排在后面）</summary>
+        List<string> Members() { var ids = Store.Roster(); return ids.Concat(adding.Keys.Where(i => !ids.Contains(i))).ToList(); }
+
         void BroadcastRoster()
         {
-            var pets = Roster().Select(p => p.Where(kv => kv.Key != "self").ToDictionary(kv => kv.Key, kv => kv.Value)).ToArray();
-            foreach (var link in clients.Values.ToList()) link.Send(new Dictionary<string, object> { ["type"] = "roster", ["leader"] = selfId, ["pets"] = pets });
+            // 发的时候某一只断了，会在这一轮里面又要发一份（标它离线）；外面这一轮接着发的还是旧的（标它在线），
+            // 大家最后收到的就是旧名单（2026-11-27 Codex 复审）。所以里面那次只记一笔，这一轮发完再按最新的补发
+            if (broadcasting) { again = true; return; }
+            broadcasting = true;
+            try
+            {
+                do
+                {
+                    again = false;
+                    var pets = Roster().Select(p => p.Where(kv => kv.Key != "self").ToDictionary(kv => kv.Key, kv => kv.Value)).ToArray();
+                    foreach (var link in clients.Values.ToList()) link.Send(new Dictionary<string, object> { ["type"] = "roster", ["leader"] = selfId, ["pets"] = pets });
+                } while (again);
+            }
+            finally { broadcasting = false; }
             host.HubRosterChanged();
         }
 
@@ -249,12 +296,12 @@ namespace Claudia
         {
             host.Later(RelaunchMs, () =>
             {
-                if (closed || host.HubLeaving() || !Store.Roster().Contains(id) || host.HubRunning(id)) return;
+                if (closed || stopping || PetHubNames.Stopping() || host.HubLeaving() || !Store.Roster().Contains(id) || host.HubRunning(id)) return;
                 var now = Environment.TickCount / 1000;
                 var recent = (relaunched.TryGetValue(id, out var r) ? r : new List<int>()).Where(t => now - t < RelaunchWindowS).ToList();
                 if (recent.Count >= RelaunchLimit) { Store.Log($"{id} 号最近反复退出，先不叫它回来"); return; }
                 recent.Add(now); relaunched[id] = recent;
-                host.HubLaunch(id, null);
+                host.HubLaunch(id, null, null);
             });
         }
 
@@ -271,6 +318,13 @@ namespace Claudia
                 case "hello":
                     var id = PetHubNames.S(msg, "id");
                     if (!Store.ValidPetId(id) || id == selfId) { link.Close(); return; }
+                    if (stopping) { link.Send(new Dictionary<string, object> { ["type"] = "signal", ["what"] = "quit" }); return; }   // 大家正在一起走：晚到的也跟着走
+                    if (adding.TryGetValue(id, out var pendingAdd))
+                    {
+                        // 取消前叫出来的旧进程来晚了：不是这一次的，叫它走
+                        if (PetHubNames.S(msg, "join") != pendingAdd.Token) { Cmd(link, 0, "dismiss", ""); return; }
+                        if (!ConfirmAdd(id, link)) return;
+                    }
                     if (!Store.Roster().Contains(id)) { Cmd(link, 0, "dismiss", ""); return; }   // 还没出来时就被送走了：叫它走
                     if (clients.TryGetValue(id, out var old) && old != link) old.Close();
                     link.Id = id; clients[id] = link;
@@ -315,8 +369,8 @@ namespace Claudia
             else if (cmd == "quit") QuitAll();
         }
 
-        /// <summary>大家一起走，名单留着下次一起回来</summary>
-        void QuitAll() { host.HubUserQuit(); Signal("quit"); }
+        /// <summary>大家一起走，名单留着下次一起回来；留下记号，正在启动的那只别接手再把大家叫回来</summary>
+        void QuitAll() { stopping = true; PetHubNames.MarkStopping(); host.HubUserQuit(); Signal("quit"); }
 
         static void Cmd(PetLink link, int rid, string action, string value) =>
             link.Send(new Dictionary<string, object> { ["type"] = "cmd", ["rid"] = rid, ["action"] = action, ["value"] = value ?? "" });
@@ -328,31 +382,46 @@ namespace Claudia
         void Request(string op, string id, string action, string value, Action<bool, string> reply, string sender)
         {
             reply = reply ?? ((ok, error) => { if (!ok && !string.IsNullOrEmpty(error)) host.HubNotice(error); });
-            var ids = Store.Roster();
+            var ids = Members();
             switch (op)
             {
                 case "add":
                     if (ids.Count >= Store.MaxPets) { reply(false, $"已经有 {ids.Count} 只了，家里住不下啦"); return; }
-                    var fresh = Store.FreePetId(ids);
+                    // 刚送走的那只还在挥手、占着它的编号：跳过还在跑的编号，不然新进程拿不到锁、起不来；都被占着就先不加
+                    var now = Environment.TickCount;
+                    var fresh = new[] { "main" }.Concat(Enumerable.Range(2, Store.MaxPets).Select(n => n.ToString()))
+                        .FirstOrDefault(i => !ids.Contains(i) && !host.HubRunning(i) && !(cancelled.TryGetValue(i, out var at) && now - at < AddWaitMs));
+                    if (fresh == null) { reply(false, "刚送走的那只还在挥手，等它走了再试"); return; }
                     // 这个编号以前用过、又送走了：旧设置不留给新来的（main 的设置在最上层，不删）
                     if (fresh != "main") try { var old = Path.Combine(Store.Data, "pets", fresh, "settings.json"); if (File.Exists(old)) File.Delete(old); } catch { }
-                    try { Store.SaveRoster(ids.Concat(new[] { fresh })); }
-                    catch (Exception e) { Store.Log("保存多开名单失败: " + e.Message); reply(false, "没能记下名单"); return; }
+                    var token = Guid.NewGuid().ToString("N").Substring(0, 12);   // 随机的：换了负责人也不会和旧进程手上的撞上
+                    adding[fresh] = new Adding { Token = token, Reply = reply };   // 报到了才写进名单、才回话
                     // 它连上来报到之前名单就先按要它待的地方显示（不然先显示成默认的 Claude 窗口里，报到后才跳成桌面上）
                     info[fresh] = PetHubNames.Info("", value);
-                    host.HubLaunch(fresh, value == "desktop" ? "desktop" : "claude");
+                    if (!host.HubLaunch(fresh, value == "desktop" ? "desktop" : "claude", token)) { EndAdd(fresh, token, "没能叫出新的一只", reserve: false); return; }
                     BroadcastRoster();
-                    reply(true, ""); return;
-                case "leave": Leave(new List<string> { sender }); reply(true, ""); return;   // 菜单里的「退出」：只走发请求的这一只
+                    // 这一次等不到它报到：只去掉这一次（同一个编号后来又加了一次，那是另一次，不碰）
+                    host.Later(AddWaitMs, () => { if (!closed) EndAdd(fresh, token, "新的一只没能出来，名额腾出来了"); });
+                    return;
+                case "leave":   // 菜单里的「退出」：只走发请求的这一只
+                    if (Leave(new List<string> { sender })) reply(true, ""); else reply(false, "没能记下名单，先没走");
+                    return;
                 case "quitAll": reply(true, ""); QuitAll(); return;
                 case "hide": case "show": Signal(op); reply(true, ""); return;
-                case "app":   // 共用设置变了：大家重读
+                case "appSet":   // 改一项共用设置：只有负责人写 app.json，写成了才叫大家重读
+                    if (!Store.SetApp(action, value, out var appError)) { reply(false, appError); return; }
                     foreach (var link in clients.Values.ToList()) link.Send(new Dictionary<string, object> { ["type"] = "app" });
                     host.HubAppChanged();
                     reply(true, ""); return;
             }
             if (op != "pet" || !PetHubNames.Actions.Contains(action) || !ids.Contains(id)) { reply(false, "这一只已经不在了"); return; }
-            if (action == "dismiss") { Leave(new List<string> { id }); reply(true, ""); return; }
+            if (adding.TryGetValue(id, out var onTheWay))   // 还在出来的路上
+            {
+                if (action != "dismiss") { reply(false, "那一只还没出来，等一下再试"); return; }
+                EndAdd(id, onTheWay.Token, "这次添加取消了");
+                reply(true, ""); return;
+            }
+            if (action == "dismiss") { if (Leave(new List<string> { id })) reply(true, ""); else reply(false, "没能记下名单，先没送走"); return; }
             if (id == selfId) { host.HubApply(action, value); reply(true, ""); return; }
             if (!clients.TryGetValue(id, out var target)) { reply(false, "那一只还没出来，等一下再试"); return; }
             var rid = ++nextRid;
@@ -361,11 +430,44 @@ namespace Claudia
             Cmd(target, rid, action, value);
         }
 
+        /// <summary>这一次添加没成（起不来、等不到、取消）：去掉、回话；不是这一次（编号又被加了一次）就不碰。没写过名单，不用改文件。
+        /// reserve：叫出来过的（取消、等不到）编号先空一阵——那个进程可能还在启动；根本没起来的不用留（2026-11-27 Codex 复审）</summary>
+        void EndAdd(string id, string token, string error, bool reserve = true)
+        {
+            if (!adding.TryGetValue(id, out var current) || current.Token != token) return;
+            adding.Remove(id);
+            if (reserve) cancelled[id] = Environment.TickCount;
+            if (!clients.ContainsKey(id)) info.Remove(id);
+            Store.Log($"{id} 号没加成：{error}");
+            current.Reply(false, error);
+            BroadcastRoster();
+        }
+
+        /// <summary>新加的那只报到了：这时才写进名单、才回成功。写不进去就说没成，叫它走</summary>
+        bool ConfirmAdd(string id, PetLink link)
+        {
+            var current = adding[id];
+            adding.Remove(id);
+            try { Store.SaveRoster(Store.Roster().Where(i => i != id).Concat(new[] { id })); }
+            catch (Exception e)
+            {
+                Store.Log("保存多开名单失败: " + e.Message);
+                Cmd(link, 0, "dismiss", "");
+                info.Remove(id);
+                current.Reply(false, "没能记下名单，新的一只先走了");
+                BroadcastRoster();
+                return false;
+            }
+            current.Reply(true, "");
+            return true;
+        }
+
         /// <summary>这几只从名单里去掉并挥手走（连着的告诉它，没连着的等它报到时再叫它走）。负责人自己也在里面：交给名单上的下一只</summary>
-        void Leave(List<string> ids)
+        bool Leave(List<string> ids)
         {
             var keep = Store.Roster().Where(i => !ids.Contains(i)).ToList();
-            try { Store.SaveRoster(keep); } catch (Exception e) { Store.Log("保存多开名单失败: " + e.Message); }
+            // 没记下来就先不走：不然下次打开又会把它叫回来
+            try { Store.SaveRoster(keep); } catch (Exception e) { Store.Log("保存多开名单失败: " + e.Message); return false; }
             if (keep.Count == 0) host.HubUserQuit();   // 最后一只也走了：之后 Claude 先不把她叫出来
             foreach (var id in ids) if (clients.TryGetValue(id, out var link)) Cmd(link, 0, "dismiss", "");
             BroadcastRoster();
@@ -374,6 +476,7 @@ namespace Claudia
                 foreach (var link in clients.Values.ToList()) link.Send(new Dictionary<string, object> { ["type"] = "handoff", ["next"] = keep.FirstOrDefault() });
                 host.HubLeaveSelf();
             }
+            return true;
         }
     }
 
@@ -382,7 +485,7 @@ namespace Claudia
     {
         public int RetryMs = 300, StepMs = 2000, StartWaitMs = 15000, LostWaitMs = 6000;
         readonly IPetHubHost host;
-        readonly string pipeName, id;
+        readonly string pipeName, id, join;
         PetLink link;
         List<Dictionary<string, object>> pets = new List<Dictionary<string, object>>();
         string leader, successor;
@@ -390,9 +493,9 @@ namespace Claudia
         int nextRid, lostSince;
         bool leaving, everConnected, searching;
 
-        public PetHubClient(IPetHubHost host, string id = null, string pipeName = null)
+        public PetHubClient(IPetHubHost host, string id = null, string pipeName = null, string join = null)
         {
-            this.host = host; this.id = id ?? Store.PetId; this.pipeName = pipeName ?? PetHubNames.Pipe;
+            this.host = host; this.id = id ?? Store.PetId; this.pipeName = pipeName ?? PetHubNames.Pipe; this.join = join ?? Store.JoinToken;
         }
 
         public void Start() => Search();
@@ -437,6 +540,8 @@ namespace Claudia
             if (leaving) { pipe?.Dispose(); searching = false; return; }
             if (pipe != null) { searching = false; Attach(pipe); return; }
             var waited = Environment.TickCount - lostSince;
+            if (PetHubNames.Stopping())   // 大家刚一起退出（用户还没手动打开）：不接手、不把大家叫回来，跟着走
+            { Store.Log("大家刚一起退出了，跟着走"); leaving = true; searching = false; host.HubMainLost(); return; }
             var rank = Rank();
             if (rank != null && waited >= rank.Value * StepMs && host.HubTryLead())
             {
@@ -454,7 +559,7 @@ namespace Claudia
             link = new PetLink(pipe, host, OnMsg, OnClose);
             everConnected = true;
             var info = host.HubInfo();
-            link.Send(new Dictionary<string, object> { ["type"] = "hello", ["id"] = id, ["name"] = info["name"], ["mode"] = info["mode"] });
+            link.Send(new Dictionary<string, object> { ["type"] = "hello", ["id"] = id, ["name"] = info["name"], ["mode"] = info["mode"], ["join"] = join });
         }
 
         /// <summary>正常走：先跟负责人说再见（没说就断的会被叫回来）</summary>

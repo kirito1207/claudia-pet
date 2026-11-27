@@ -79,6 +79,7 @@ namespace Claudia
         // 每只桌宠是一个独立进程，编号只用来找它自己的设置和网页数据（main 的在数据目录最上层——原来第一只的，不用搬；
         // 别的在 pets\<编号>\）。界面上的「第几只」是它在名单里的位置；谁是负责人见 PetHub.cs
         public static string PetId = "main";
+        public static string JoinToken;   // 负责人加这一只时给的标记（--join），报到时带回去，好和取消前叫出来的旧进程分开
         public static bool IsMain => PetId == "main";   // 只表示「设置放在最上层」，不再有别的特权
         public const int MaxPets = 5;
         public static string PetDir => IsMain ? Data : Path.Combine(Data, "pets", PetId);
@@ -116,9 +117,28 @@ namespace Claudia
             }
             App = d;
         }
-        public static void SaveApp(Dictionary<string, object> d = null)
+        public static bool SaveApp(Dictionary<string, object> d = null)
         {
-            try { WriteJson(AppFile, d ?? App); } catch (Exception e) { Log("保存共用设置失败: " + e.Message); }
+            try { WriteJson(AppFile, d ?? App); return true; } catch (Exception e) { Log("保存共用设置失败: " + e.Message); return false; }
+        }
+        /// <summary>负责人改一项共用设置（别的几只把「哪一项、改成什么」交给它，只有它写 app.json，免得互相盖掉）。
+        /// 值按文字传：开关是 true / false。文件先写成功才换内存里的，写不进去就保留旧设置，error 说原因</summary>
+        public static bool SetApp(string key, string text, out string error)
+        {
+            object value;
+            error = "这一项设置没认出来";
+            if (key == "notifyResults" || key == "notifyWaiting" || key == "notifyBackgroundOnly" || key == "clickThrough")
+            {
+                if (text != "true" && text != "false") return false;
+                value = text == "true";
+            }
+            else if (key == "hideHotkey" && (text == "p" || text == "h" || text == "off")) value = text;
+            else if (key == "deskLayer" && (text == "top" || text == "yield" || text == "normal")) value = text;
+            else return false;
+            var next = new Dictionary<string, object>(App) { [key] = value };
+            if (!SaveApp(next)) { error = "设置没能保存，还是原来的样子"; return false; }
+            App = next; error = "";
+            return true;
         }
         /// <summary>没写过的开关：通知默认开，鼠标穿透默认关</summary>
         public static bool AppOn(string key) => App.TryGetValue(key, out var v) && v is bool b ? b : key != "clickThrough";

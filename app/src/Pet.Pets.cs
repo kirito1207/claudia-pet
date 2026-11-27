@@ -45,15 +45,18 @@ namespace Claudia
         static int PetIndex => Store.IsMain ? 0 : int.TryParse(Store.PetId, out var n) ? Math.Max(1, n - 1) : 1;
         const int StaggerX = 190;
 
-        public static void LaunchPet(string id, string mode = null)
+        public static bool LaunchPet(string id, string mode = null, string join = null)
         {
             try
             {
                 var exe = Process.GetCurrentProcess().MainModule.FileName;
-                Process.Start(new ProcessStartInfo(exe, "--pet " + id + (mode == null ? "" : " --mode " + mode))
-                    { UseShellExecute = false, WorkingDirectory = Store.Install })?.Dispose();
+                var p = Process.Start(new ProcessStartInfo(exe, "--pet " + id + (mode == null ? "" : " --mode " + mode) + (join == null ? "" : " --join " + join))
+                    { UseShellExecute = false, WorkingDirectory = Store.Install });
+                if (p == null) return false;
+                p.Dispose();
+                return true;
             }
-            catch (Exception e) { Store.Log($"没能叫出 {id} 号: " + e.Message); }
+            catch (Exception e) { Store.Log($"没能叫出 {id} 号: " + e.Message); return false; }
         }
 
         IPetHub hub;
@@ -165,7 +168,8 @@ namespace Claudia
             else if (action == "dismiss") Leave();
         }
         public void HubRosterChanged() => PushSettings();
-        public void HubNotice(string text) => settings?.Notice(text);
+        /// <summary>请求没成：设置页底部说一声，再整页刷新一次（「再来一只」之类按了以后变灰的按钮恢复可点）</summary>
+        public void HubNotice(string text) { settings?.Notice(text); PushSettings(); }
         public void HubSignal(string what)
         {
             if (what == "hide") ApplyHidden(true);
@@ -181,7 +185,7 @@ namespace Claudia
             if (isLeader) RegisterHideHotKey();
             PushSettings();
         }
-        public void HubLaunch(string id, string mode) => LaunchPet(id, mode);
+        public bool HubLaunch(string id, string mode, string join) => LaunchPet(id, mode, join);
         public bool HubRunning(string id) => PetRunning(id);
         public bool HubLeaving() => leaving;
         public void HubToggle() => SetUserHidden(!userHidden);

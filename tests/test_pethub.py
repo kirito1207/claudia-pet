@@ -18,7 +18,7 @@ class Family:
     """The leader lock, shared by the fake pets of one test (stands in for run/leader.lock)."""
 
     def __init__(self, path):
-        self.path, self.owner = path, None
+        self.path, self.owner, self.running = path, None, set()   # running: ids whose instance lock is still held
 
 
 class FakePet:
@@ -30,6 +30,8 @@ class FakePet:
         self.hub, self.applied, self.notices, self.signals = None, [], [], []
         self.roster_changes, self.launched, self.app_changes = 0, [], 0
         self.lost = self.user_quit = self.left = False
+        self.launch_ok = True
+        self.tokens = {}   # id → the join token of the last launch
 
     # leader-side setup the real Pet does in become_leader / give_up_leading
     def lead(self):
@@ -60,8 +62,10 @@ class FakePet:
     def hub_notice(self, text):
         self.notices.append(text)
 
-    def hub_launch(self, pid, mode):
+    def hub_launch(self, pid, mode, join=None):
         self.launched.append((pid, mode))
+        self.tokens[pid] = join
+        return self.launch_ok
 
     def hub_signal(self, what):
         self.signals.append(what)
@@ -93,7 +97,7 @@ class FakePet:
         self.lost = True
 
     def hub_running(self, pid):
-        return False   # the hub asks before relaunching; in these tests nobody that dropped is still running
+        return pid in self.family.running
 
     def hub_leaving(self):
         return self.left
@@ -118,12 +122,14 @@ class HubTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         data = Path(tmp.name)
-        p = patch.multiple(store, DATA=data, RUN=data / "run", PETS_FILE=data / "pets.json", pet_id="main")
+        p = patch.multiple(store, DATA=data, RUN=data / "run", PETS_FILE=data / "pets.json", APP_FILE=data / "app.json",
+                           app={}, pet_id="main")
         p.start()
         self.addCleanup(p.stop)
-        fast = patch.object(pethub.HubServer, "RELAUNCH_MS", 100)
-        fast.start()
-        self.addCleanup(fast.stop)
+        for name, ms in (("RELAUNCH_MS", 100), ("ADD_WAIT_MS", 600)):
+            fast = patch.object(pethub.HubServer, name, ms)
+            fast.start()
+            self.addCleanup(fast.stop)
         self.family = Family(data / "run" / "pets.sock")
         store.save_roster(["main", "2", "3"])
         self.pets = {"main": FakePet("main", self.family)}
@@ -133,9 +139,9 @@ class HubTests(unittest.TestCase):
         self.assertTrue(pump(lambda: set(self.leader().hub.clients) == {"2", "3"}))
         self.addCleanup(lambda: [p.hub.close() for p in self.pets.values() if p.hub])
 
-    def join(self, pid):
+    def join(self, pid, token=None):
         pet = FakePet(pid, self.family)
-        pet.hub = pethub.HubClient(pet, self.family.path, self_id=pid)
+        pet.hub = pethub.HubClient(pet, self.family.path, self_id=pid, join=token)
         pet.hub.STEP_MS, pet.hub.LOST_WAIT_MS = 400, 1500
         pet.hub.start()
         self.pets[pid] = pet
@@ -169,14 +175,67 @@ class HubTests(unittest.TestCase):
         self.assertEqual(store.roster(), ["main"])
         self.assertFalse(self.pets["main"].user_quit)
 
-    def test_add_uses_the_lowest_free_number_and_refuses_when_full(self):
+    def test_add_uses_the_lowest_free_number_and_confirms_once_it_reports_in(self):
         replies = []
         self.pets["2"].hub.request("add", value="desktop", reply=lambda ok, error="": replies.append((ok, error)))
-        self.assertTrue(pump(lambda: replies))
+        self.assertTrue(pump(lambda: self.pets["main"].launched))
         self.assertEqual(self.pets["main"].launched, [("4", "desktop")])
-        self.assertEqual(store.roster(), ["main", "2", "3", "4"])
+        self.assertEqual(store.roster(), ["main", "2", "3"], "not written to the roster before it reports in")
         new = next(p for p in self.leader().hub.roster() if p["id"] == "4")
         self.assertEqual((new["mode"], new["online"]), ("desktop", False), "before it reports in, it shows where it was asked to go")
+        pump(lambda: False, timeout=0.2)
+        self.assertEqual(replies, [], "success is only confirmed once the new pet reports in")
+        self.join("4", self.pets["main"].tokens["4"])
+        self.assertTrue(pump(lambda: replies))
+        self.assertEqual(replies, [(True, "")])
+        self.assertEqual(store.roster(), ["main", "2", "3", "4"])
+
+    def test_late_old_process_from_a_cancelled_add_is_not_taken_for_the_next_add(self):
+        replies = []
+        two, main = self.pets["2"].hub, self.pets["main"]
+        two.request("add", value="claude", reply=lambda ok, error="": replies.append(("first", ok)))
+        self.assertTrue(pump(lambda: main.launched))
+        old_token = main.tokens["4"]
+        two.request("pet", "4", "dismiss")   # still on its way: cancel this add
+        self.assertTrue(pump(lambda: ("first", False) in replies))
+        two.request("add", value="desktop", reply=lambda ok, error="": replies.append(("second", ok)))
+        self.assertTrue(pump(lambda: len(main.launched) == 2))
+        self.assertEqual(main.launched[-1], ("5", "desktop"), "a number just cancelled is not reused at once")
+        # The old process for 4 reports in late: it is sent away and does not count as anything
+        stale = self.join("4", old_token)
+        self.assertTrue(pump(lambda: ("dismiss", "") in stale.applied))
+        self.assertNotIn("4", store.roster())
+        self.assertNotIn(("second", True), replies)
+        self.join("5", main.tokens["5"])
+        self.assertTrue(pump(lambda: ("second", True) in replies))
+        self.assertEqual(store.roster(), ["main", "2", "3", "5"])
+
+    def test_same_number_and_wrong_token_is_sent_away(self):
+        replies = []
+        self.pets["2"].hub.request("add", value="claude", reply=lambda ok, error="": replies.append(ok))
+        self.assertTrue(pump(lambda: self.pets["main"].launched))
+        impostor = self.join("4", "not-this-add")
+        self.assertTrue(pump(lambda: ("dismiss", "") in impostor.applied))
+        self.assertEqual(replies, [])
+        self.join("4", self.pets["main"].tokens["4"])
+        self.assertTrue(pump(lambda: replies == [True]))
+
+    def test_add_not_reported_in_before_the_leader_goes_is_not_kept(self):
+        self.pets["2"].hub.request("add", value="claude")
+        self.assertTrue(pump(lambda: self.pets["main"].launched))
+        self.leader().hub.request("quitAll")
+        self.assertTrue(pump(lambda: self.pets["2"].left))
+        self.assertEqual(store.roster(), ["main", "2", "3"], "next start must not bring back a pet that never joined")
+
+    def test_add_that_cannot_be_written_when_it_reports_in_is_sent_away(self):
+        replies = []
+        self.pets["2"].hub.request("add", value="claude", reply=lambda ok, error="": replies.append((ok, error)))
+        self.assertTrue(pump(lambda: self.pets["main"].launched))
+        with patch.object(store, "save_roster", side_effect=OSError("disk full")):
+            newcomer = self.join("4", self.pets["main"].tokens["4"])
+            self.assertTrue(pump(lambda: replies and ("dismiss", "") in newcomer.applied))
+        self.assertFalse(replies[0][0])
+        self.assertEqual(store.roster(), ["main", "2", "3"])
         store.save_roster(["main", "2", "3", "4", "5"])
         self.leader().hub.request("add", value="claude")
         self.assertTrue(self.pets["main"].notices and "住不下" in self.pets["main"].notices[-1])
@@ -191,9 +250,106 @@ class HubTests(unittest.TestCase):
         self.assertTrue(pethub.send_cli("show", self.family.path))
         self.assertTrue(pump(lambda: self.pets["main"].signals == ["toggle", "show"] and self.pets["2"].signals == ["show"]))
 
-    def test_shared_settings_change_reaches_everyone(self):
-        self.pets["2"].hub.request("app")
-        self.assertTrue(pump(lambda: all(p.app_changes == 1 for p in self.pets.values())))
+    def test_shared_settings_are_written_only_by_the_leader(self):
+        replies = []
+        self.pets["2"].hub.request("appSet", None, "clickThrough", "true", lambda ok, error="": replies.append(ok))
+        self.pets["3"].hub.request("appSet", None, "deskLayer", "top", lambda ok, error="": replies.append(ok))
+        self.pets["3"].hub.request("appSet", None, "hideHotkey", "nonsense", lambda ok, error="": replies.append(ok))
+        self.assertTrue(pump(lambda: len(replies) == 3))
+        self.assertEqual(sorted(replies), [False, True, True])
+        # Two pets changing different keys at once: both survive (each used to write its own stale copy)
+        self.assertEqual(store.read_json(store.APP_FILE), {"clickThrough": True, "deskLayer": "top"})
+        self.assertTrue(pump(lambda: all(p.app_changes == 2 for p in self.pets.values())))
+
+    def test_add_skips_a_number_still_in_use(self):
+        # 3 was just dismissed but is still waving with its lock held: the new pet must not reuse its number
+        self.pets["2"].hub.request("pet", "3", "dismiss")
+        self.assertTrue(pump(lambda: self.pets["3"].left))
+        self.family.running.add("3")
+        self.leader().hub.request("add", value="claude")
+        self.assertEqual(self.pets["main"].launched, [("4", "claude")])
+
+    def test_add_that_never_reports_in_frees_the_slot(self):
+        replies = []
+        self.pets["2"].hub.request("add", value="claude", reply=lambda ok, error="": replies.append((ok, error)))
+        self.assertTrue(pump(lambda: replies, timeout=3))
+        self.assertFalse(replies[0][0])
+        self.assertEqual(store.roster(), ["main", "2", "3"])
+        self.assertTrue(pump(lambda: [p["id"] for p in self.pets["2"].hub.pets] == ["main", "2", "3"]))
+
+    def test_add_that_fails_to_launch_frees_the_slot_at_once(self):
+        self.pets["main"].launch_ok = False
+        replies = []
+        self.pets["2"].hub.request("add", value="claude", reply=lambda ok, error="": replies.append((ok, error)))
+        self.assertTrue(pump(lambda: replies))
+        self.assertEqual((replies[0][0], store.roster()), (False, ["main", "2", "3"]))
+        # Nothing started, so the number is free again at once (not held back like a cancelled one)
+        self.pets["main"].launch_ok = True
+        self.pets["2"].hub.request("add", value="claude")
+        self.assertTrue(pump(lambda: len(self.pets["main"].launched) == 2))
+        self.assertEqual(self.pets["main"].launched[-1][0], "4")
+
+    def test_add_waits_while_every_free_number_is_still_waving(self):
+        self.family.running.update({"4", "5", "6"})   # 6 numbers for 5 places: every spare one is still waving
+        replies = []
+        self.pets["2"].hub.request("add", value="claude", reply=lambda ok, error="": replies.append((ok, error)))
+        self.assertTrue(pump(lambda: replies))
+        self.assertFalse(replies[0][0])
+        self.assertIn("等它走了再试", replies[0][1])
+        self.assertEqual(self.pets["main"].launched, [])
+
+    def test_shared_setting_that_cannot_be_saved_is_not_applied(self):
+        replies = []
+        with patch.object(store, "write_json", side_effect=OSError("disk full")):
+            self.pets["2"].hub.request("appSet", None, "clickThrough", "true", lambda ok, error="": replies.append((ok, error)))
+            self.assertTrue(pump(lambda: replies))
+        self.assertFalse(replies[0][0])
+        self.assertNotIn("clickThrough", store.app)
+        pump(lambda: False, timeout=0.2)
+        self.assertTrue(all(p.app_changes == 0 for p in self.pets.values()))
+
+    def test_last_roster_marks_a_pet_that_dropped_during_the_broadcast_offline(self):
+        self.assertTrue(pump(lambda: len(self.pets["2"].hub.pets) == 3))
+        server = self.leader().hub
+        server.clients = {"3": server.clients["3"], "2": server.clients["2"]}   # 3 gets the broadcast first
+        three_hub = self.pets["3"].hub
+        three_hub.leaving = True   # 3 is really gone: it will not reconnect
+        three_hub.link.sock.close()
+        server.report()   # sending to 3 fails first; the rest of that round must not leave a stale roster behind
+        three = lambda: next(p for p in self.pets["2"].hub.pets if p["id"] == "3")  # noqa: E731
+        self.assertTrue(pump(lambda: three()["online"] is False))
+        pump(lambda: False, timeout=0.3)
+        self.assertIs(three()["online"], False, "a stale roster must not mark it online again")
+
+    def test_roster_write_failure_is_reported(self):
+        replies = []
+        with patch.object(store, "save_roster", side_effect=OSError("disk full")):
+            self.pets["2"].hub.request("leave", reply=lambda ok, error="": replies.append((ok, error)))
+            self.assertTrue(pump(lambda: replies))
+        self.assertFalse(replies[0][0])
+        self.assertFalse(self.pets["2"].left)
+        self.assertEqual(store.roster(), ["main", "2", "3"])
+
+    def test_late_arrivals_after_quit_all_follow_instead_of_taking_over(self):
+        self.leader().hub.request("quitAll")
+        self.assertTrue(pump(lambda: self.pets["2"].left and self.pets["3"].left))
+        # A pet that was still starting reports in while the leader waves: it is told to go too
+        late = self.join("3")
+        self.assertTrue(pump(lambda: "quit" in late.signals))
+        # Once the leader is gone, one still starting must not take over and bring everyone back
+        self.family.owner = None
+        self.pets["main"].hub.close()
+        later = self.join("2")
+        self.assertTrue(pump(lambda: later.lost))
+        self.assertIsNone(self.family.owner)
+        self.assertEqual(store.roster(), ["main", "2", "3"])
+        # Much later still (the old 30-second window): until the user reopens, nobody takes over
+        import os
+        old = time.time() - 3600
+        os.utime(pethub.stop_path(), (old, old))
+        latest = self.join("3")
+        self.assertTrue(pump(lambda: latest.lost))
+        self.assertIsNone(self.family.owner)
 
     def test_quit_all_keeps_the_roster(self):
         self.pets["3"].hub.request("quitAll")
