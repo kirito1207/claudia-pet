@@ -287,21 +287,72 @@ def _same_resources(src, dst):
     return True
 
 
+def _match_mirror_layout(directory, expected, files):
+    if directory.is_symlink() or os.path.ismount(directory) or not directory.is_dir():
+        return False
+    entries = {path.name: path for path in directory.iterdir()}
+    if entries.keys() != expected.keys():
+        return False
+    for name, path in entries.items():
+        item = expected[name]
+        if path.is_symlink():
+            return False
+        if isinstance(item, dict):
+            if not _match_mirror_layout(path, item, files):
+                return False
+        elif (not isinstance(item, list) or len(item) != 2 or type(item[0]) is not int
+              or not isinstance(item[1], str) or not path.is_file() or path.stat().st_size != item[0]):
+            return False
+        else:
+            files.append((path, item[1]))
+    return True
+
+
+def _match_legacy_mirror(directory, releases):
+    if not isinstance(releases, dict):
+        return None
+    for version, expected in releases.items():
+        files = []
+        # A leaf is [byte length, uppercase SHA-256]. Check the entire layout before reading asset contents.
+        if isinstance(expected, dict) and _match_mirror_layout(directory, expected, files) and files:
+            if all(_digest(path).hex().upper() == checksum for path, checksum in files):
+                return version
+    return None
+
+
 def sync_resources():
     CHARACTERS.mkdir(parents=True, exist_ok=True)
     STATE.mkdir(parents=True, exist_ok=True)
     src = INSTALL / "characters"
     if not src.is_dir() or src.resolve() == CHARACTERS.resolve() or CHARACTERS.is_symlink():
         return
+    legacy = None
+    history_root = DATA / "builtin-resource-sync"
     for d in sorted(src.iterdir()):
         if not d.is_dir():
             continue
         dst = CHARACTERS / d.name
         try:
-            previous = DATA / "builtin-resource-sync" / d.name / "previous"
-            if not dst.exists() and not dst.is_symlink() and previous.is_dir():
+            history = history_root / d.name
+            if history_root.is_symlink() or history.is_symlink():
+                continue
+            previous = history / "previous"
+            # Once the mirror has been retired, keep any old interrupted-sync backup out of character selection.
+            if (not dst.exists() and not dst.is_symlink() and previous.is_dir() and not previous.is_symlink()
+                    and not any(path.is_dir() for path in history.glob("retired-*"))):
                 os.replace(previous, dst)
+            if not dst.is_dir() or dst.is_symlink():
+                continue
             if not _same_resources(d, dst):
+                if legacy is None:
+                    legacy = read_json(src / "legacy-mirrors.json") or {}
+                version = _match_legacy_mirror(dst, legacy.get(d.name))
+                if version is None or _read_character(d) is None:
+                    continue
+                history.mkdir(parents=True, exist_ok=True)
+                backup = history / ("retired-" + uuid.uuid4().hex)
+                os.rename(dst, backup)
+                log(f"已备份 {version} 内置角色镜像 {d.name}：{backup}")
                 continue
             # Leave the active directory intact if moving it fails. A failed cleanup
             # after moving cannot make a partially deleted character visible.
@@ -363,6 +414,24 @@ def _videos(d):
     return {f.stem: _url(d.name, ANIM_DIR, f.name) for f in sorted(anim.glob("*.webm"), key=lambda f: f.name)}
 
 
+def _read_character(directory):
+    info = read_json(directory / "character.json")
+    if info is None:
+        return None
+    poses, blink, blink_base = _sprites(directory)
+    sheets, videos = _sheets(directory), _videos(directory)
+    if "idle" not in poses and "default" not in poses:
+        animations = info.get("animations")
+        idle = animations.get("idle") if isinstance(animations, dict) else None
+        idle_sheets = idle.get("sheets") if isinstance(idle, dict) else None
+        if not isinstance(idle_sheets, list) or not any(
+            isinstance(name, str) and (name in sheets or name in videos) for name in idle_sheets
+        ):
+            return None
+    info.update(poses=poses, blink=blink, blinkBase=blink_base, sheets=sheets, videos=videos)
+    return info
+
+
 def manifest():
     global _character_dirs
     chars, selected = {}, {}
@@ -371,23 +440,12 @@ def manifest():
     for d in sorted(dirs, key=lambda x: x.name):
         if d.name in selected:
             continue
-        info = read_json(d / "character.json")
+        info = _read_character(d)
         if info is None:
             continue
-        poses, blink, blink_base = _sprites(d)
-        sheets, videos = _sheets(d), _videos(d)
-        if "idle" not in poses and "default" not in poses:
-            animations = info.get("animations")
-            idle = animations.get("idle") if isinstance(animations, dict) else None
-            idle_sheets = idle.get("sheets") if isinstance(idle, dict) else None
-            if not isinstance(idle_sheets, list) or not any(
-                isinstance(name, str) and (name in sheets or name in videos) for name in idle_sheets
-            ):
-                continue
         custom = names().get(d.name)
         if isinstance(custom, str) and custom.strip():
             info["name"] = custom.strip()
-        info.update(poses=poses, blink=blink, blinkBase=blink_base, sheets=sheets, videos=videos)
         chars[d.name] = info
         selected[d.name] = d
     _character_dirs = selected

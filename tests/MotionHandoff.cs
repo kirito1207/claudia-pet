@@ -110,6 +110,53 @@ namespace Claudia
             finally { if (Directory.Exists(source)) Directory.Delete(source, true); }
         }
 
+        static void TestLegacyMirrorMigration(string id)
+        {
+            var source = Path.Combine(Store.Data, "test-install");
+            var installed = Path.Combine(source, id);
+            var local = Path.Combine(Store.Characters, id);
+            Directory.CreateDirectory(Path.Combine(installed, "anim"));
+            Directory.CreateDirectory(Path.Combine(local, "anim"));
+            const string character = "{\"animations\":{\"idle\":{\"sheets\":[\"待机\"]}}}";
+            File.WriteAllText(Path.Combine(installed, "character.json"), character);
+            File.WriteAllText(Path.Combine(local, "character.json"), character);
+            var video = Path.Combine(installed, "anim", "待机.webm");
+            var sheet = Path.Combine(local, "anim", "待机.webp");
+            File.WriteAllText(sheet, "released");
+            var files = new Dictionary<string, object>();
+            using (var hash = System.Security.Cryptography.SHA256.Create())
+            {
+                object[] Fingerprint(string path)
+                {
+                    var bytes = File.ReadAllBytes(path);
+                    return new object[] { bytes.Length, BitConverter.ToString(hash.ComputeHash(bytes)).Replace("-", "") };
+                }
+                files["character.json"] = Fingerprint(Path.Combine(local, "character.json"));
+                files["anim"] = new Dictionary<string, object> { ["待机.webp"] = Fingerprint(sheet) };
+            }
+            Store.WriteJson(Path.Combine(source, "legacy-mirrors.json"), new Dictionary<string, object>
+            {
+                [id] = new Dictionary<string, object> { ["v0.4.2"] = files },
+            });
+
+            Store.SyncResources(source);
+            if (!File.Exists(sheet)) throw new Exception("Legacy mirror moved without a usable installed replacement");
+            File.WriteAllText(video, "new video");
+            File.WriteAllText(sheet, "modified");
+            Store.SyncResources(source);
+            if (File.ReadAllText(sheet) != "modified") throw new Exception("Legacy mirror same-size edit was not preserved");
+            File.WriteAllText(sheet, "released");
+            var history = Path.Combine(Store.Data, "builtin-resource-sync", id);
+            var previous = Path.Combine(history, "previous");
+            Directory.CreateDirectory(previous);
+            Store.SyncResources(source);
+            Store.SyncResources(source);
+            var backups = Directory.GetDirectories(history, "retired-*");
+            if (backups.Length != 1 || File.ReadAllText(Path.Combine(backups[0], "anim", "待机.webp")) != "released" ||
+                Directory.Exists(local) || !Directory.Exists(previous)) throw new Exception("Legacy mirror was not safely backed up");
+            Console.WriteLine("PASS: legacy mirrors are backed up, same-size edits are preserved, and a usable replacement is required");
+        }
+
         [STAThread]
         static int Main()
         {
@@ -117,7 +164,7 @@ namespace Claudia
             var data = Path.Combine(Path.GetTempPath(), "claudia-" + id);
             Environment.SetEnvironmentVariable("CLAUDIA_DATA_DIR", data);
             Environment.SetEnvironmentVariable("CLAUDIA_STATE_DIR", Path.Combine(data, "state"));
-            try { Pet.TestHandoff(); TestCharacterMigration(id); return 0; }
+            try { Pet.TestHandoff(); TestCharacterMigration(id); TestLegacyMirrorMigration(id + "-legacy"); return 0; }
             catch (Exception e) { Console.Error.WriteLine(e); return 1; }
             finally { if (Directory.Exists(data)) Directory.Delete(data, true); }
         }

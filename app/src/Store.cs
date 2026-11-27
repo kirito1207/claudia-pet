@@ -166,27 +166,45 @@ namespace Claudia
             return id != null && characterDirs.TryGetValue(id, out var dir) ? Path.GetDirectoryName(dir) : Characters;
         }
 
-        /// <summary>恢复旧同步遗留的备份。仅退役已逐文件验证的重复镜像。</summary>
-        public static void SyncResources()
+        /// <summary>恢复旧同步遗留的备份，退役已逐文件验证的内置角色镜像。</summary>
+        public static void SyncResources(string source = null)
         {
             Directory.CreateDirectory(Characters);
             Directory.CreateDirectory(State);
-            var src = BuiltinCharacters;
+            var src = source ?? BuiltinCharacters;
             if (!Directory.Exists(src) ||
                 string.Equals(Path.GetFullPath(src), Path.GetFullPath(Characters), StringComparison.OrdinalIgnoreCase)) return;
             // 数据目录可能经由联接指向安装目录。此时只加载素材，不迁移。
             for (var dir = new DirectoryInfo(Characters); dir != null; dir = dir.Parent)
                 if ((dir.Attributes & FileAttributes.ReparsePoint) != 0) return;
+            var legacy = new Lazy<Dictionary<string, object>>(() => ReadJson(Path.Combine(src, "legacy-mirrors.json")));
             foreach (var dir in Directory.GetDirectories(src))
             {
-                var old = Path.Combine(Characters, Path.GetFileName(dir));
+                var id = Path.GetFileName(dir);
+                var old = Path.Combine(Characters, id);
                 try
                 {
-                    var previous = Path.Combine(Data, "builtin-resource-sync", Path.GetFileName(dir), "previous");
-                    if (!Directory.Exists(old) && Directory.Exists(previous)) Directory.Move(previous, old);
+                    var historyRoot = Path.Combine(Data, "builtin-resource-sync");
+                    var history = Path.Combine(historyRoot, id);
+                    if ((Directory.Exists(historyRoot) && IsLink(historyRoot)) || (Directory.Exists(history) && IsLink(history))) continue;
+                    var previous = Path.Combine(history, "previous");
+                    // 已迁移的角色使用安装目录，旧同步残留的 previous 不再恢复到角色目录。
+                    if (!Directory.Exists(old) && Directory.Exists(previous) && !IsLink(previous) &&
+                        !Directory.EnumerateDirectories(history, "retired-*").Any()) Directory.Move(previous, old);
                     if (!Directory.Exists(old)) continue;
                     using (var hash = SHA256.Create())
-                        if (!SameResources(dir, old, hash)) continue;
+                    {
+                        if (!SameResources(dir, old, hash))
+                        {
+                            var version = MatchLegacyMirror(old, id, legacy.Value, hash);
+                            if (version == null || ReadCharacter(dir) == null) continue;
+                            Directory.CreateDirectory(history);
+                            var backup = Path.Combine(history, "retired-" + Guid.NewGuid().ToString("N"));
+                            Directory.Move(old, backup);
+                            Log($"已备份 {version} 内置角色镜像 {id}：{backup}");
+                            continue;
+                        }
+                    }
                     // 先完整移出角色目录。即使个别文件被锁导致清理失败，也不会加载半删的角色。
                     var duplicate = Path.Combine(Data, "builtin-duplicate-" + Guid.NewGuid().ToString("N"));
                     Directory.Move(old, duplicate);
@@ -247,6 +265,47 @@ namespace Claudia
 
         static bool IsLink(string path) => (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
 
+        static string MatchLegacyMirror(string dir, string id, Dictionary<string, object> manifest, HashAlgorithm hash)
+        {
+            if (manifest == null || !manifest.TryGetValue(id, out var raw) || !(raw is Dictionary<string, object> releases)) return null;
+            foreach (var release in releases)
+            {
+                var files = new List<(string path, string checksum)>();
+                if (!(release.Value is Dictionary<string, object> expected) || !MatchMirrorLayout(dir, expected, files)) continue;
+                if (files.Count != 0 && files.All(file =>
+                {
+                    using (var stream = File.OpenRead(file.path))
+                        return BitConverter.ToString(hash.ComputeHash(stream)).Replace("-", "") == file.checksum;
+                })) return release.Key;
+            }
+            return null;
+        }
+
+        // The release manifest mirrors the directory tree. A leaf is [byte length, uppercase SHA-256].
+        // Reject extra files and directories before hashing any asset contents.
+        static bool MatchMirrorLayout(string dir, Dictionary<string, object> expected, List<(string, string)> files)
+        {
+            if (IsLink(dir)) return false;
+            var entries = Directory.GetFileSystemEntries(dir);
+            if (entries.Length != expected.Count) return false;
+            foreach (var path in entries)
+            {
+                if (!expected.TryGetValue(Path.GetFileName(path), out var item) || IsLink(path)) return false;
+                if (item is Dictionary<string, object> child)
+                {
+                    if (!Directory.Exists(path) || !MatchMirrorLayout(path, child, files)) return false;
+                }
+                else
+                {
+                    if (!(item is object[] leaf) || leaf.Length != 2 || !(leaf[1] is string checksum) ||
+                        !(leaf[0] is int || leaf[0] is long) || !File.Exists(path) ||
+                        new FileInfo(path).Length != Convert.ToInt64(leaf[0])) return false;
+                    files.Add((path, checksum));
+                }
+            }
+            return true;
+        }
+
         /// <summary>扫描 characters/&lt;id&gt;/：character.json + 立绘</summary>
         // 立绘：<文件名去掉 -2、-3> 是姿态名，idle-blink 是眨眼帧（照着 idle 本身画的）
         static (Dictionary<string, List<string>> poses, string blink, string blinkBase) Sprites(string dir)
@@ -303,6 +362,21 @@ namespace Claudia
             anims.TryGetValue("idle", out var i) && i is Dictionary<string, object> idle &&
             idle.TryGetValue("sheets", out var n) && n is object[] names && names.OfType<string>().Any(k => sheets.ContainsKey(k) || videos.ContainsKey(k));
 
+        static Dictionary<string, object> ReadCharacter(string dir)
+        {
+            var info = ReadJson(Path.Combine(dir, "character.json"));
+            if (info == null) return null;
+            var (poses, blink, blinkBase) = Sprites(dir);
+            var sheets = Sheets(dir);
+            var videos = Videos(dir);
+            // 有待机立绘或待机动画才算是可用的角色。
+            if (!(poses.ContainsKey("idle") || poses.ContainsKey("default") || HasIdleSheet(info, sheets, videos))) return null;
+            info["poses"] = poses; info["blink"] = blink; info["blinkBase"] = blinkBase;
+            info["sheets"] = sheets;
+            info["videos"] = videos;
+            return info;
+        }
+
         public static Dictionary<string, object> Manifest()
         {
             var chars = new Dictionary<string, object>();
@@ -315,17 +389,9 @@ namespace Claudia
             {
                 var id = Path.GetFileName(dir);
                 if (selected.ContainsKey(id)) continue;
-                var info = ReadJson(Path.Combine(dir, "character.json"));
+                var info = ReadCharacter(dir);
                 if (info == null) continue;
-                var (poses, blink, blinkBase) = Sprites(dir);
-                var sheets = Sheets(dir);
-                var videos = Videos(dir);
-                // 有待机立绘，或者有待机动画（2026-11-18 起 Claude 角色不再带静态的 idle.webp），才算一个角色
-                if (!(poses.ContainsKey("idle") || poses.ContainsKey("default") || HasIdleSheet(info, sheets, videos))) continue;
                 if (Names.TryGetValue(id, out var custom) && custom is string s && s.Trim() != "") info["name"] = s.Trim();
-                info["poses"] = poses; info["blink"] = blink; info["blinkBase"] = blinkBase;
-                info["sheets"] = sheets;
-                info["videos"] = videos;
                 chars[id] = info;
                 selected[id] = dir;
             }
