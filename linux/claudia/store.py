@@ -514,6 +514,7 @@ def manifest():
         info = _read_character(d)
         if info is None:
             continue
+        info["defaultName"] = info.get("name") if isinstance(info.get("name"), str) else d.name   # 改名留空时恢复成它
         custom = names().get(d.name)
         if isinstance(custom, str) and custom.strip():
             info["name"] = custom.strip()

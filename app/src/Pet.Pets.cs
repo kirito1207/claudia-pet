@@ -136,7 +136,7 @@ namespace Claudia
             if (name.Length > 20) name = name.Substring(0, 20);
             if (name == "") Store.Names.Remove(cid); else Store.Names[cid] = name;
             Store.SaveSettings();
-            LoadCharacters();
+            RefreshCharacterName(cid);
             var shown = Characters().FirstOrDefault(x => x.id == cid).name;
             if (shown != null) Js($"setName({Q(cid)}, {Q(shown)})");
             hub?.Report();

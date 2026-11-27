@@ -31,7 +31,7 @@ namespace Claudia
             try { return web?.CoreWebView2 == null ? "null" : await web.CoreWebView2.ExecuteScriptAsync(code); }
             catch { return "null"; }
         }
-        public void Reload() { ++followEventGeneration; ready = false; web?.CoreWebView2?.Reload(); }
+        public void Reload() { ready = false; web?.CoreWebView2?.Reload(); }
         public static string Q(string s) => Store.Json.Serialize(s);
 
         /// <summary>读取 Claude 插件写入 state 目录的状态和额度，有变化就交给网页</summary>

@@ -139,6 +139,7 @@ class ResourceUpdateTests(unittest.TestCase):
         (anim / "待机.webm").write_bytes(b"video")
         info = store.manifest()["characters"]["claude"]
         self.assertEqual(info["sheets"], {})
+        self.assertEqual(info["defaultName"], "claude")   # 没写名字就用目录名；改名留空时恢复成它
         self.assertEqual(list(info["videos"]), ["待机"])
         root, mime = store.resolve_sprite("/characters/claude/anim/" + urllib.parse.quote("待机.webm"))
         self.assertEqual((root, mime), (anim / "待机.webm", "video/webm"))

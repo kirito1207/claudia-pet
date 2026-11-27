@@ -38,7 +38,7 @@ namespace Claudia
         public bool Paused                     // 开发者控制台测试时，先不把真实 AI 的状态交给桌宠
         {
             get => paused;
-            set { if (paused != value) ++followEventGeneration; paused = value; }
+            set => paused = value;
         }
         public string ManifestJson { get; private set; } = "{}";
         readonly Dictionary<string, string> stamps = new Dictionary<string, string>();
@@ -124,7 +124,7 @@ namespace Claudia
                 await web.EnsureCoreWebView2Async(env);
                 var core = web.CoreWebView2;
                 Map(core);
-                core.NavigationStarting += (_, a) => { if (!a.Cancel) { StopMotion(); ++followEventGeneration; ready = false; hitRects = null; } };
+                core.NavigationStarting += (_, a) => { if (!a.Cancel) { StopMotion(); ready = false; hitRects = null; } };
                 core.Settings.AreDefaultContextMenusEnabled = false;
                 core.Settings.AreDevToolsEnabled = false;
                 core.Settings.IsZoomControlEnabled = false;
@@ -194,7 +194,6 @@ namespace Claudia
             crashes.RemoveAll(t => (DateTime.UtcNow - t).TotalMinutes > 10);
             if (crashes.Count >= 3) { Store.Log("10 分钟内崩溃太多次，不再自动恢复"); return; }
             crashes.Add(DateTime.UtcNow);
-            ++followEventGeneration;
             ready = false;
             try
             {
@@ -224,15 +223,29 @@ namespace Claudia
         }
 
         List<(string id, string name)> characters = new List<(string id, string name)>();   // 当前素材清单中的角色
+        Dictionary<string, object> manifest;
+        /// <summary>扫一遍角色目录（素材、character.json），整份交给网页的清单也跟着换</summary>
         public void LoadCharacters()
         {
-            ++followEventGeneration;
-            var m = Store.Manifest();
-            ManifestJson = Store.Json.Serialize(m);
-            var chars = (Dictionary<string, object>)m["characters"];
+            manifest = Store.Manifest();
+            ApplyManifest();
+        }
+        void ApplyManifest()
+        {
+            ManifestJson = Store.Json.Serialize(manifest);
+            var chars = (Dictionary<string, object>)manifest["characters"];
             characters = chars
                               .Select(kv => (kv.Key, (kv.Value as Dictionary<string, object>)?["name"] as string ?? kv.Key)).ToList();
             if (!characters.Any(c => c.id == current)) current = characters.FirstOrDefault().id ?? "claude";
+        }
+        /// <summary>改了名字：只换清单里这一个名字，不重扫素材（2026-11-27）</summary>
+        void RefreshCharacterName(string cid)
+        {
+            if (!(manifest?["characters"] is Dictionary<string, object> chars) || !chars.TryGetValue(cid, out var v) || !(v is Dictionary<string, object> info))
+            { LoadCharacters(); return; }
+            info["name"] = Store.Names.TryGetValue(cid, out var n) && n is string s && s.Trim() != "" ? s.Trim()
+                : info.TryGetValue("defaultName", out var d) && d is string ds ? ds : cid;
+            ApplyManifest();
         }
         List<(string id, string name)> Characters() => characters;
 

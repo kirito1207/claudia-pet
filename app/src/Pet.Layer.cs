@@ -21,8 +21,6 @@ namespace Claudia
 {
     sealed partial class Pet
     {
-        long followEventGeneration;
-
         // ---- 藏起来 / 露出来 ----
         // 「隐身」：窗口一直开着，不透明度 0、鼠标穿过整个窗口、取消置顶（不压在全屏游戏 / 视频上面），网页动画暂停。
         // （以前是 WPF 窗口：反复 Hide / Show 有概率让 WPF 渲染线程挂掉，所以一直这么藏；换成 DirectHost 后照旧，省得窗口来回建）

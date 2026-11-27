@@ -435,6 +435,7 @@ namespace Claudia
                 if (selected.ContainsKey(id)) continue;
                 var info = ReadCharacter(dir);
                 if (info == null) continue;
+                info["defaultName"] = info.TryGetValue("name", out var dn) && dn is string dns ? dns : id;   // character.json 里的名字：改名留空时恢复成它
                 if (Names.TryGetValue(id, out var custom) && custom is string s && s.Trim() != "") info["name"] = s.Trim();
                 chars[id] = info;
                 selected[id] = dir;

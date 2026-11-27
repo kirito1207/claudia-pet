@@ -355,11 +355,26 @@ class Pet:
             store.log("立绘加载失败: " + str(m["imageError"]))
 
     def load_characters(self):
-        m = store.manifest()
+        """扫一遍角色目录（素材、character.json），整份交给网页的清单也跟着换"""
+        self.manifest = store.manifest()
+        self.apply_manifest()
+
+    def apply_manifest(self):
+        m = self.manifest
         self.manifest_json = store.dumps(m)
         self.characters = [(k, (v or {}).get("name") or k) for k, v in m["characters"].items()]
         if not any(c[0] == self.current for c in self.characters):
             self.current = self.characters[0][0] if self.characters else "claude"
+
+    def refresh_character_name(self, cid):
+        """改了名字：只换清单里这一个名字，不重扫素材（2026-11-27）"""
+        info = (getattr(self, "manifest", None) or {}).get("characters", {}).get(cid)
+        if not isinstance(info, dict):
+            self.load_characters()
+            return
+        custom = store.names().get(cid)
+        info["name"] = custom.strip() if isinstance(custom, str) and custom.strip() else info.get("defaultName") or cid
+        self.apply_manifest()
 
     # ================= 读 Claude Code 插件写的状态 =================
     def poll(self):
@@ -839,13 +854,18 @@ class Pet:
 
     # ================= 鼠标：单击摸头、拖动、右键菜单 =================
     @staticmethod
-    def pointer():
-        """鼠标在屏幕上的位置（X 服务器的屏幕像素，和窗口坐标一致）"""
+    def pointer_state():
+        """鼠标在屏幕上的位置（X 服务器的屏幕像素，和窗口坐标一致）和左键按着没有：一次问完 X 服务器"""
         p = xwin.pointer()
         if p is not None:
-            return p[0], p[1]
+            return p
         c = QCursor.pos()
-        return c.x(), c.y()
+        return c.x(), c.y(), bool(QGuiApplication.mouseButtons() & Qt.MouseButton.LeftButton)
+
+    @classmethod
+    def pointer(cls):
+        px, py, _ = cls.pointer_state()
+        return px, py
 
     def on_press(self, button, gx, gy):
         if button == Qt.MouseButton.LeftButton:
@@ -914,35 +934,30 @@ class Pet:
         # 一帧交一次鼠标位置就够了（网页按帧算）：交得更勤只会和画面抢 CPU，虚拟机里尤其明显
         self.drag_timer = GLib.timeout_add(16, self.pump_pointer)
 
-    def button_held(self):
-        """左键现在还按着没有（问 X 服务器，不等松开的消息）"""
-        p = xwin.pointer()
-        if p is None:
-            return bool(QGuiApplication.mouseButtons() & Qt.MouseButton.LeftButton)
-        return p[2]
-
     def pump_pointer(self):
         if not self.dragging:
             self.drag_timer = None
             return False
         # 松开的消息可能丢了（鼠标甩出窗口、窗口在鼠标底下挪动时）：每一帧都直接看左键还按没按着，
-        # 不然拖动一直不结束，看着像「断触」（2026-11-17 用户说拖拽不跟手还会断触）
-        if not self.button_held():
+        # 不然拖动一直不结束，看着像「断触」（2026-11-17 用户说拖拽不跟手还会断触）。
+        # 位置和按键一次问完（原来分开问两次 X 服务器，2026-11-27）
+        px, py, held = self.pointer_state()
+        if not held:
             self.drag_timer = None   # 返回 False 后 GLib 自己删掉这个计时器；不清空的话 stop_motion 会拿旧编号再删一次
-            self.end_drag()
+            self.end_drag(px, py)
             self.pressed = False
             self.update_hit_rects()
             return False
-        px, py = self.pointer()
         if (px, py) != self.last_ptr:
             self.last_ptr = (px, py)
             self.js(f"petMotion.pointer({{id:{self.motion_id},px:{px},py:{py},time:{round(_ms() - self.drag_t0, 1)}}})")
         return True
 
-    def end_drag(self):
+    def end_drag(self, px=None, py=None):
         if not self.dragging:
             return
-        px, py = self.pointer()
+        if px is None:
+            px, py = self.pointer()
         t = round(_ms() - self.drag_t0, 1)
         self.dragging = False
         self.flying = True
@@ -1513,7 +1528,7 @@ class Pet:
                 else:
                     store.names().pop(cid, None)
                 store.save_settings()
-                self.load_characters()
+                self.refresh_character_name(cid)
                 self.js(f"setName({store.dumps(cid)}, {store.dumps(dict(self.characters)[cid])})")
                 if self.hub:
                     self.hub.report()   # 这个名字也是「位置与多开」里这一只的名字
@@ -1635,7 +1650,7 @@ class Pet:
         else:
             store.names().pop("claude", None)
         store.save_settings()
-        self.load_characters()
+        self.refresh_character_name("claude")
         shown = dict(self.characters).get("claude")
         if shown:
             self.js(f"setName('claude', {store.dumps(shown)})")

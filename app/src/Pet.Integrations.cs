@@ -100,7 +100,7 @@ namespace Claudia
                         var name = (msg.TryGetValue("name", out var nm) ? nm as string ?? "" : "").Trim();
                         if (name == "") Store.Names.Remove(cid); else Store.Names[cid] = name;
                         Store.SaveSettings();
-                        LoadCharacters();
+                        RefreshCharacterName(cid);
                         Js($"setName({Q(cid)}, {Q(Characters().First(x => x.id == cid).name)})");
                         hub?.Report();   // 这个名字也是「位置与多开」里这一只的名字
                     }
