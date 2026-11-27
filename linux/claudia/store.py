@@ -355,7 +355,8 @@ def _sheets(d):
 
 
 def _videos(d):
-    """anim/ 里和精灵图同名的 .webm（2026-11-25 试验视频播放）：有的话网页改播视频，没有就照旧播精灵图"""
+    """anim/ 里的 .webm（VP9 + 透明通道）：character.json 的 animations 按文件名引用，有就播视频；
+    同名精灵图可以没有（2026-11-27 起 Claude 角色只留视频），没有视频才播精灵图"""
     anim = d / ANIM_DIR
     if not anim.is_dir():
         return {}
@@ -374,19 +375,19 @@ def manifest():
         if info is None:
             continue
         poses, blink, blink_base = _sprites(d)
-        sheets = _sheets(d)
+        sheets, videos = _sheets(d), _videos(d)
         if "idle" not in poses and "default" not in poses:
             animations = info.get("animations")
             idle = animations.get("idle") if isinstance(animations, dict) else None
             idle_sheets = idle.get("sheets") if isinstance(idle, dict) else None
             if not isinstance(idle_sheets, list) or not any(
-                isinstance(name, str) and name in sheets for name in idle_sheets
+                isinstance(name, str) and (name in sheets or name in videos) for name in idle_sheets
             ):
                 continue
         custom = names().get(d.name)
         if isinstance(custom, str) and custom.strip():
             info["name"] = custom.strip()
-        info.update(poses=poses, blink=blink, blinkBase=blink_base, sheets=sheets, videos=_videos(d))
+        info.update(poses=poses, blink=blink, blinkBase=blink_base, sheets=sheets, videos=videos)
         chars[d.name] = info
         selected[d.name] = d
     _character_dirs = selected

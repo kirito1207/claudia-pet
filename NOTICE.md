@@ -26,18 +26,18 @@ claudia-pet 作为独立项目维护，基于 [CrossPet](https://github.com/loki
 
 按动画比例重画的 19 张立绘（`listening`、`reading`、`busy_left`、`busy_right`、`searching`、`oops`、`tired`、`puffed`、`sulk`、`dizzy`、`coaxed`、`forgiven`、六个 `greet_*`、`fest_newyear`，2026-11-06 又补了 `proud`、`annoyed`、`asking`、`delegating`，并给派活、查资料、看书加了循环翻页的过渡帧（`delegating-2/3`、`searching-2`、`reading-2`，提示词见 [docs/prompts/工作状态补帧/](docs/prompts/工作状态补帧/)；2026-11-07 看书的底图 `reading` 换成同一批画的一张，有事问你的过渡帧不再使用）；另画了一张国庆，后来不再使用）也是本项目制作的衍生图：以 CrossPet 的设计参考图 `ref-claude.webp`、claude-pet 动作包的待机帧（比例参考）和 CrossPet 原有的同名立绘（姿势参考）为附图，在 OpenAI Codex 中生成，再由 `scripts/prepare-sprites.py` 统一大小、底边对齐并转成 WebP。沿用 CC BY-NC-SA 4.0，提示词和附图见 [docs/prompts/立绘重画-统一比例/](docs/prompts/立绘重画-统一比例/)。
 
-动画动作（`characters/claude/anim/` 里的 162 张精灵图：替换原有姿态的待机、思考、写东西、敲命令、整理记忆、睡觉、开心、吃惊、被摸头、不耐烦、再见、哼歌、伸懒腰、打哈欠和六个节日；新加的被拎起来、闲置小动作、才艺、玩耍、吃喝、时令、偷吃零食、Claude 梗、手工、五档余额钱袋和走路；2026-11-07 起哎呀、拆礼物也换成动画）来自 claude-pet 动作包：
+动画动作（`characters/claude/anim/` 里的动画，原为精灵图，2026-11-27 起只留由精灵图逐帧转出的同名 `.webm` 视频：替换原有姿态的待机、思考、写东西、敲命令、整理记忆、睡觉、开心、吃惊、被摸头、不耐烦、再见、哼歌、伸懒腰、打哈欠和六个节日；新加的被拎起来、闲置小动作、才艺、玩耍、吃喝、时令、偷吃零食、Claude 梗、手工、五档余额钱袋和走路；2026-11-07 起哎呀、拆礼物也换成动画）来自 claude-pet 动作包：
 
 - 作者：hunmer
 - 来源：[hunmer/aboutme-pets](https://github.com/hunmer/aboutme-pets)（`pets/claude` 动作包），取自固定提交 `3ba083bee0ef88d9300eaa941fe2da89d0d99c7b`；2026-11-07 又加了作者之后新增的 82 个动作，取自提交 `da5a6fea396a7973af2fe2be72c804b341265988`（其中两批作者用 Gemini 生成，同在 `pets/claude`，同一授权）
 - 制作方式（作者说明）：AI（Claude）生成 + 人工抠像转换，以 CrossPet 的 Claude 娘立绘 `idle.webp` 为基准
 - 授权：作者 2026-11-05 在 [hunmer/aboutme-pets#1](https://github.com/hunmer/aboutme-pets/issues/1) 书面同意在 claudia-pet 中使用和再分发（放进公开仓库、打包进 Release；可裁剪、缩放、重新压缩或改格式，不改画面内容），按 CC BY-NC-SA 4.0 发布；以后新增的 Claude 动作同样适用。同一仓库的 `pets/dsh`、`pets/dsh1` 素材来自其他上游，不在这份授权里，本项目没有使用。
 
-本项目原样使用这些精灵图文件（没有重新编码），只在播放时缩放、对齐，按每个姿态选取播放的帧段。文件清单和用途见 [characters/claude/anim/SOURCE.md](characters/claude/anim/SOURCE.md)。
+本项目把这些精灵图逐帧转成同名 `.webm` 视频（VP9 + 透明通道；作者的授权允许改格式和重新压缩），画面内容不变；播放时缩放、对齐，按每个姿态选取播放的帧段。2026-11-27 起仓库和发布包里只留视频，精灵图原件可从上面的固定提交取得。文件清单和用途见 [characters/claude/anim/SOURCE.md](characters/claude/anim/SOURCE.md)。
 
 作者不再出新动作后，本项目自己生成的动画也放在 `characters/claude/anim/`。「看书-翻页」「得意-叉腰」「小侦探-放大镜」使用 ByteDance Seedance 2.0 生成，「查资料-扫读翻页」「有事问你-举手」「派活-分身帮手」「忙碌-左右看」「忙不过来-抱书摞」「道歉-鞠躬挠头」「累了-叹气垂书」「抱Clawd-书飘蹭蹭」经 LibTV 生成（「抱Clawd」里的方块小布偶是 Clawd 的样子，Clawd 形象的权利见下表）。生成时使用动作包里待机动画的第 1 帧作为首帧、尾帧，出片后抠像并转成同一规格的精灵图。它们基于作者的帧，同样按 CC BY-NC-SA 4.0 发布，署名 hunmer 和 claudia-pet。做法和清单见 SOURCE.md 末尾。
 
-2026-11-25 起每张精灵图旁边另有一个由它逐帧转出的同名 `.webm`（VP9 + 透明通道），网页优先播视频；来源和许可跟对应的精灵图相同，见 SOURCE.md「视频版」。
+2026-11-25 起每张精灵图都逐帧转出一个同名 `.webm`（VP9 + 透明通道）、网页改播视频；2026-11-27 起精灵图从项目里删掉，只留视频。视频的来源和许可跟对应的精灵图相同，见 SOURCE.md「视频版」。
 
 | 内容 | 来源 | 授权 |
 |---|---|---|

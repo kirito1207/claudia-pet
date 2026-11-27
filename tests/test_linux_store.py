@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+import urllib.parse
 from pathlib import Path
 from unittest.mock import patch
 
@@ -81,6 +82,20 @@ class ResourceUpdateTests(unittest.TestCase):
         store.sync_resources()
         self.assertFalse(self.active.exists())
         self.assert_route(self.source)
+
+    def test_video_only_idle_counts_as_role(self):
+        # 2026-11-27 起 Claude 角色的动画只有 .webm，没有精灵图也没有静态 idle：待机动画是视频也要认作角色
+        (self.source / "idle.webp").unlink()
+        (self.source / "character.json").write_text('{"animations": {"idle": {"sheets": ["待机"], "loop": true}}}', encoding="utf-8")
+        self.assertNotIn("claude", store.manifest()["characters"])
+        anim = self.source / store.ANIM_DIR
+        anim.mkdir()
+        (anim / "待机.webm").write_bytes(b"video")
+        info = store.manifest()["characters"]["claude"]
+        self.assertEqual(info["sheets"], {})
+        self.assertEqual(list(info["videos"]), ["待机"])
+        root, mime = store.resolve_sprite("/characters/claude/anim/" + urllib.parse.quote("待机.webm"))
+        self.assertEqual((root, mime), (anim / "待机.webm", "video/webm"))
 
 
 if __name__ == "__main__":

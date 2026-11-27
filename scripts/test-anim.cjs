@@ -1,4 +1,4 @@
-// 动画动作（claude-pet 动作包精灵图）：播放、对齐、睡觉来回播、再见的帧段；有动画的姿态没有静态图，省电 / 减少动画照样播，读不到改播待机动画。
+// 动画动作（claude-pet 动作包，2026-11-27 起只有 .webm 视频；精灵图播放器另用页面里画的小图测）：播放、对齐、睡觉来回播、再见的帧段；有动画的姿态没有静态图，省电 / 减少动画照样播，读不到改播待机动画。
 // Requires Playwright (NODE_PATH may point to the bundled runtime's node_modules).
 const { chromium } = require('playwright')
 const fs = require('fs')
@@ -23,14 +23,18 @@ function manifest() {
   info.sheets = {}
   for (const f of fs.readdirSync(path.join(dir, 'anim')).filter(f => f.endsWith('.webp')))
     info.sheets[f.replace(/\.webp$/, '')] = url(path.join(dir, 'anim', f))
+  info.videos = {}   // 2026-11-27 起 Claude 角色的动画只有视频（精灵图全删了）
+  for (const f of fs.readdirSync(path.join(dir, 'anim')).filter(f => f.endsWith('.webm')))
+    info.videos[f.replace(/\.webm$/, '')] = url(path.join(dir, 'anim', f))
   return { characters: { claude: info } }
 }
 
 ;(async () => {
   const m = manifest()
-  // 配置里引用的精灵图都在 anim\ 里
+  // 配置里引用的动画都在 anim\ 里；2026-11-27 起只有视频，精灵图全删了（存档在本机，git 历史里也有）
   for (const [p, a] of Object.entries(m.characters.claude.animations))
-    for (const n of a.sheets) assert.ok(m.characters.claude.sheets[n], `${p} 用的 ${n}.webp 不在 anim 里`)
+    for (const n of a.sheets) assert.ok(m.characters.claude.videos[n], `${p} 用的 ${n}.webm 不在 anim 里`)
+  assert.deepEqual(Object.keys(m.characters.claude.sheets), [], 'anim 里不该再有精灵图（2026-11-27 用户定：只用视频）')
   // 被动画替换的姿态（2026-11-18 起连待机也算）一律不留静态立绘
   const replaced = ['idle', 'thinking', 'writing', 'running', 'compact', 'sleeping', 'happy', 'surprised', 'pat', 'bye', 'hum', 'stretch', 'yawn', 'sorry', 'tired', 'clawd',
     'fest_spring', 'fest_lantern', 'fest_dragonboat', 'fest_midautumn', 'fest_halloween', 'fest_christmas']
@@ -149,10 +153,9 @@ function manifest() {
       sheetStep(sheet); frames.push(sheet.frame)
       return frames
     }), [0, 15, 59, 40, 50, 119, null, 51], 'asking (15 fps, 120 frames since 2026-11-25) must raise the hand, loop the wave 40-59, and on leaving play on from the current frame to the end')
-    // 视频试验（2026-11-25）：anim 里有同名 .webm 时改播视频，帧号规则不变——播到循环段末尾跳回开头，离开时接着播到收尾最后一帧
-    const askingVideo = url(path.join(dir, 'anim', '有事问你-举手.webm'))
-    if (fs.existsSync(path.join(dir, 'anim', '有事问你-举手.webm'))) {
-      await page.evaluate(u => { setPageHidden(false); char().videos = { '有事问你-举手': u }; setPose('idle', true); setPose('asking', true) }, askingVideo)
+    // 视频（2026-11-25 起，2026-11-27 起只有视频）：帧号规则不变——播到循环段末尾跳回开头，离开时接着播到收尾最后一帧
+    {
+      await page.evaluate(() => { setPageHidden(false); setPose('idle', true); setPose('asking', true) })
       await page.waitForFunction(() => pose === 'asking' && sheet?.video && sheet.img && sheetFront === sheet.canvas, null, { timeout: 10000 })
       const loop = await page.evaluate(() => new Promise(done => {
         const seen = { max: 0, wrapped: false, last: 0 }, t0 = performance.now()
@@ -173,13 +176,13 @@ function manifest() {
       await page.waitForFunction(() => sheet?.video && sheet.img && sheetFront === sheet.canvas, null, { timeout: 10000 })
       await page.evaluate(() => show('thinking', true))
       await page.waitForFunction(() => sheet?.video && sheet.frame === 119 && sheet.canvas.paused, null, { timeout: 9000 })
-      await page.evaluate(() => { cancelExit(); delete char().videos; setPose('idle', true) })
+      await page.evaluate(() => { cancelExit(); setPose('idle', true) })
     }
     await page.evaluate(() => { setPageHidden(false); setPose('idle', true) })
     await page.evaluate(() => { pose = null; setPose('idle', true) }); await waitSheet()
     let s = await state()
-    assert.equal(s.url, '待机呼吸休闲.webp'); assert.ok(s.on && s.front); assert.equal(s.bodyClass, '')
-    assert.equal(await page.evaluate(() => sheet.img.width), 5120, 'idle decodes the full sheet (the .scaled copies were removed with the switch to video, 2026-11-25)')
+    assert.equal(s.url, '待机呼吸休闲.webm'); assert.ok(s.on && s.front); assert.equal(s.bodyClass, '')
+    assert.deepEqual(await page.evaluate(() => [sheet.video, sheet.img.tagName, sheet.img.videoWidth]), [true, 'VIDEO', 640], 'idle plays the 640×360 video (sprite sheets were removed, 2026-11-27)')
     await page.waitForFunction(() => !$('fx').querySelector('svg') && fxFps === 0 && !fxClock && !fxRaf, null, { timeout: 4000 })
 
     // 换姿势后 0.22 秒程序会补画一次特效层（待机没有特效 = 清空）。塞测试用的 SVG 之前先等它画完，
@@ -203,6 +206,16 @@ function manifest() {
     assert.ok(Math.abs(place.center - place.bodyW / 2) < 1, 'not centred')
     assert.ok(Math.abs(place.charH - place.bodyH * 638 / 640) < 1, 'height differs from the still sprite')
 
+    // 精灵图播放器本身（时钟、补帧、缩放、后台暂停）：别的角色还能用精灵图，Claude 2026-11-27 起只有视频，
+    // 所以在页面里画一张 8 列 × 15 行、每帧 64×36 的小图来测
+    await page.evaluate(() => {
+      const cv = document.createElement('canvas'); cv.width = 8 * 64; cv.height = 15 * 36
+      const g = cv.getContext('2d'); g.fillStyle = '#e8a33d'; g.fillRect(0, 0, cv.width, cv.height)
+      char().sheets = { ...char().sheets, '测试精灵图': cv.toDataURL('image/png') }
+      char().animations.__sprite = { sheets: ['测试精灵图'], loop: true }
+      playSheet(anim('__sprite'), null)
+    })
+    await page.waitForFunction(() => sheet?.img && !sheet.video && sheetFront === sheet.canvas && sheet.timer !== null)
     const steadyLayoutReads = await page.evaluate(() => {
       const place = sheetPlace
       let calls = 0
@@ -242,7 +255,7 @@ function manifest() {
       $('body').style.height = '85%'
       return sheetFront.width
     })
-    await page.waitForFunction(width => sheetFront.width > width && sheet?.img?.width === 5120, normalWidth)
+    await page.waitForFunction(width => sheetFront.width > width && sheet?.img?.width === 512, normalWidth)
     await page.evaluate(() => { $('body').style.height = '' })
     await page.waitForFunction(width => sheetFront.width === width, normalWidth)
 
@@ -259,7 +272,7 @@ function manifest() {
 
     await page.evaluate(() => {
       setPageHidden(true)
-      playSheet({ ...anim('idle'), to: 2, loop: false }, null)
+      playSheet({ ...anim('__sprite'), to: 2, loop: false }, null)
     })
     await waitSheet()
     assert.ok(await page.evaluate(() => sheet.frame === 0 && sheet.timer === null && auraTimer === null),
@@ -276,7 +289,7 @@ function manifest() {
 
     // 动画姿态不画我们的特效；临时状态停满整段
     await page.evaluate(() => show('hum', true)); await waitSheet()
-    s = await state(); assert.equal(s.url, '悠闲哼歌.webp'); assert.equal(s.fx, 0)
+    s = await state(); assert.equal(s.url, '悠闲哼歌.webm'); assert.equal(s.fx, 0)
     assert.ok(await page.evaluate(() => transientMs('hum') >= 10000 && transientMs('pat') >= 10000))
     // 不耐烦 2026-11-06 换回 CrossPet 的静态图（和鼓脸、红温、赌气一串）；傲娇生气的动画改成点击反应 pout
     assert.ok(await page.evaluate(() => !anim('annoyed') && framesFor('annoyed')[0]?.includes('annoyed') && transientMs('annoyed') === 4500))
@@ -309,7 +322,7 @@ function manifest() {
     // 每段点击动画说它自己的台词（clipLines），四段摸头动作不再共用一套摸头台词
     const clipSaid = {}
     for (let i = 0; i < 40 && Object.keys(clipSaid).length < 4; i++) {
-      const r = await page.evaluate(() => { pose = null; show('pat', true); const n = decodeURIComponent(sheet.url.split('/').pop()).replace('.webp', ''); return [n, $('bubble').textContent] })
+      const r = await page.evaluate(() => { pose = null; show('pat', true); const n = decodeURIComponent(sheet.url.split('/').pop()).replace('.webm', ''); return [n, $('bubble').textContent] })
       clipSaid[r[0]] = r[1]
     }
     const clipInfo = JSON.parse(fs.readFileSync(path.join(root, 'characters/claude/character.json'), 'utf8')).clipLines
@@ -330,12 +343,13 @@ function manifest() {
       await page.evaluate(() => { clearTimeout(revertTimer); $('body').className = ''; pose = null; setPose('idle', true) })
     }
 
-    // 睡觉：入睡后在 28～76 帧来回，不会醒过来
+    // 睡觉：入睡后一直睡着，不会醒过来。精灵图时代在 28～76 帧来回播；视频把倒放那段编了进去，
+    // 帧号按 character.json 的 animations.sleeping.video：28～123 往前循环，醒过来从 124 起（精灵图的第 77 帧）
     await page.evaluate(() => { pose = null; setPose('sleeping', true) }); await waitSheet()
     await page.waitForTimeout(7500)
-    s = await state(); assert.ok(s.holding && s.frame >= 28 && s.frame <= 76, `sleeping frame ${s.frame}`)
+    s = await state(); assert.ok(!s.holding && s.frame >= 28 && s.frame <= 123, `sleeping frame ${s.frame}`)
 
-    // 睡着时点她：先演醒过来（第 77 帧往后），演完才回待机，中间不露静态图；醒的时候再点不重来
+    // 睡着时点她：先演醒过来（视频第 124 帧往后），演完才回待机，中间不露静态图；醒的时候再点不重来
     const wake = await page.evaluate(async () => {
       messages.length = 0; performClick('pat'); performClick('pat')
       const seen = { minFrame: 999, gaps: 0, poseDuring: pose, bubble: $('bubble').textContent }
@@ -346,7 +360,7 @@ function manifest() {
       }
       return { ...seen, pose, bubbleAfter: $('bubble').textContent }
     })
-    assert.equal(wake.poseDuring, 'sleeping'); assert.ok(wake.minFrame >= 77, `wake started at ${wake.minFrame}`)
+    assert.equal(wake.poseDuring, 'sleeping'); assert.ok(wake.minFrame >= 124, `wake started at ${wake.minFrame}`)
     assert.equal(wake.gaps, 0); assert.equal(wake.pose, 'idle'); assert.equal(wake.bubble, '唔…你回来啦'); assert.equal(wake.bubbleAfter, '唔…你回来啦')
     // 睡着时 Claude 开始干活：也先醒过来再去干活
     await page.evaluate(() => { clearTimeout(revertTimer); pose = null; setPose('sleeping', true) }); await waitSheet()
@@ -365,7 +379,7 @@ function manifest() {
       out.national = festivalOf(new Date('2026-10-02T10:00:00'))
       return out
     })
-    assert.ok(fest.greeted); assert.equal(fest.pose, 'fest_spring'); assert.equal(fest.url, '舞狮头.webp')
+    assert.ok(fest.greeted); assert.equal(fest.pose, 'fest_spring'); assert.equal(fest.url, '舞狮头.webm')
     assert.equal(fest.national, null)
     await page.evaluate(() => { clearTimeout(revertTimer); setPose('idle', true) })
 
@@ -380,15 +394,15 @@ function manifest() {
     await page.evaluate(() => setBehavior({ idleEnabled: false, animatedSprites: false }))
     s = await state(); assert.equal(s.url, null); assert.equal(s.on, false); assert.equal(s.bodyClass, 'm-rock')
     await page.evaluate(() => setBehavior({ idleEnabled: false })); await waitSheet()
-    assert.equal((await state()).url, '工作状态-思考冒泡.webp')
+    assert.equal((await state()).url, '工作状态-思考冒泡.webm')
 
     await page.evaluate(() => setPose('writing', true)); await waitSheet()
-    assert.equal((await state()).url, '写代码.webp')   // 2026-11-10 写东西只用写代码，轻快记录给了听你说
+    assert.equal((await state()).url, '写代码.webm')   // 2026-11-10 写东西只用写代码，轻快记录给了听你说
 
     // 系统要求减少动画：有动画的姿态照样播动画（2026-11-18 起）
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.evaluate(() => { pose = null; setPose('thinking', true) }); await waitSheet()
-    assert.equal((await state()).url, '工作状态-思考冒泡.webp')
+    assert.equal((await state()).url, '工作状态-思考冒泡.webm')
     await page.emulateMedia({ reducedMotion: 'no-preference' })
 
     // 拖着她：盖一层「被拎起来」，松手后回到原来的常态动画；被甩出火气后不盖
@@ -398,33 +412,33 @@ function manifest() {
       REDUCED_MOTION.dispatchEvent(new Event('change'))
     })
     await page.waitForFunction(() => sheet?.key === 'drag' && sheet.img)
-    assert.equal((await state()).url, '被鼠标拖拽悬空反馈.webp')
+    assert.equal((await state()).url, '被鼠标拖拽悬空反馈.webm')
     // 松手（原地放下）：动画一直盖着，不露出静态立绘
     const gap = await page.evaluate(async () => {
       let shown = 0, frames = 0
       dragSheet({ phase: 'end' })
       // 松手那一刻：动画还得盖着（拖动时静态图的淡入淡出是关掉的，一去掉就是整张露出来）
-      if (!document.documentElement.classList.contains('sheet-on') || !sheetCanvases.some(c => c.classList.contains('on'))) shown++
+      if (!document.documentElement.classList.contains('sheet-on') || ![...sheetCanvases, ...sheetVideos].some(c => c.classList.contains('on'))) shown++
       for (const t0 = performance.now(); performance.now() - t0 < 1200; frames++) {
         await new Promise(r => requestAnimationFrame(r))
-        if (!document.documentElement.classList.contains('sheet-on') || !sheetCanvases.some(c => c.classList.contains('on'))) shown++
+        if (!document.documentElement.classList.contains('sheet-on') || ![...sheetCanvases, ...sheetVideos].some(c => c.classList.contains('on'))) shown++
       }
       return { shown, frames }
     })
     assert.equal(gap.shown, 0, `still sprite showed in ${gap.shown}/${gap.frames} frames after release`)
-    s = await state(); assert.equal(s.pose, 'idle'); assert.equal(s.url, '待机呼吸休闲.webp')
+    s = await state(); assert.equal(s.pose, 'idle'); assert.equal(s.url, '待机呼吸休闲.webm')
     await page.evaluate(() => { setPose('annoyed', true); dragSheet({ phase: 'drag' }) })
     assert.notEqual(await page.evaluate(() => sheet?.key), 'drag')
     await page.evaluate(() => { clearTimeout(revertTimer); setPose('idle', true) })
 
-    // 偷吃：吃的那段来回播；点她接被抓包（从第 52 帧开始）
+    // 偷吃：吃的那段一直循环（视频帧号见 animations.snack.video：34～67，倒放已编进视频）；点她接被抓包（视频第 68 帧起 = 精灵图第 52 帧）
     await page.evaluate(() => show('snack', true)); await waitSheet()
     await page.waitForTimeout(5500)
-    s = await state(); assert.ok(s.holding && s.frame >= 34 && s.frame <= 51, `snack frame ${s.frame}`)
+    s = await state(); assert.ok(!s.holding && s.frame >= 34 && s.frame <= 67, `snack frame ${s.frame}`)
     await page.evaluate(() => performClick('pat')); await waitSheet()
-    s = await state(); assert.equal(s.pose, 'snack_caught'); assert.ok(s.frame >= 52)
+    s = await state(); assert.equal(s.pose, 'snack_caught'); assert.ok(s.frame >= 68)
     await page.evaluate(() => { clearTimeout(revertTimer); setPose('idle', true) })
-    // 偷吃没被抓、自己吃完：先演收起零食（第 100 帧往后），再回待机
+    // 偷吃没被抓、自己吃完：先演收起零食（视频第 116 帧往后 = 精灵图第 100 帧），再回待机
     await page.evaluate(() => show('snack', true)); await waitSheet()
     const snackEnd = await page.evaluate(async () => {
       const seen = { minFrame: 999 }
@@ -434,13 +448,13 @@ function manifest() {
       }
       return { ...seen, pose }
     })
-    assert.equal(snackEnd.pose, 'idle'); assert.ok(snackEnd.minFrame >= 100 && snackEnd.minFrame < 999, `snack exit frame ${snackEnd.minFrame}`)
+    assert.equal(snackEnd.pose, 'idle'); assert.ok(snackEnd.minFrame >= 116 && snackEnd.minFrame < 999, `snack exit frame ${snackEnd.minFrame}`)
 
     // 余额：第一次拿到额度不演，换档才演对应钱袋
     await page.evaluate(() => setQuota('claude', { text: 't', low: false, bars: [{ label: '5小时', left: .9 }] }))
     assert.equal((await state()).pose, 'idle')
     await page.evaluate(() => setQuota('claude', { text: 't', low: false, bars: [{ label: '5小时', left: .6 }, { label: '本周', left: .3 }] }))
-    await waitSheet(); s = await state(); assert.equal(s.pose, 'quota_count'); assert.equal(s.url, '余额-数金皱眉.webp')
+    await waitSheet(); s = await state(); assert.equal(s.pose, 'quota_count'); assert.equal(s.url, '余额-数金皱眉.webm')
     await page.evaluate(() => { clearTimeout(revertTimer); setPose('idle', true) })
 
     // 闲置随机池：按分组展开（测试里直接限定分组，设置页已不能挑）；关掉动画就没有动画小动作
@@ -520,14 +534,21 @@ function manifest() {
       return { ...seen, pose }
     })
     assert.equal(outro.pose, 'idle'); assert.ok(outro.minFrame >= 92, `outro started at ${outro.minFrame}`); assert.equal(outro.gaps, 0)
-    await waitSheet(); assert.equal((await state()).url, '待机呼吸休闲.webp')
-    // 新图读取期间旧动画继续播，新首帧接手后旧画布只淡出、不再换帧。
+    await waitSheet(); assert.equal((await state()).url, '待机呼吸休闲.webm')
+    // 新图读取期间旧动画继续播，新首帧接手后旧画布只淡出、不再换帧（精灵图播放器，用前面画的测试小图再加一张）
+    await page.evaluate(() => {
+      clearTimeout(revertTimer)
+      const cv = document.createElement('canvas'); cv.width = 8 * 64; cv.height = 15 * 36; cv.getContext('2d').fillRect(0, 0, cv.width, cv.height)
+      char().sheets['测试精灵图2'] = cv.toDataURL('image/png'); char().animations.__sprite2 = { sheets: ['测试精灵图2'], loop: true }
+      playSheet(anim('__sprite'), null)
+    })
+    await page.waitForFunction(() => sheet?.img && !sheet.video && sheetFront === sheet.canvas && sheet.timer !== null && !fading)
     const fadeAdvance = await page.evaluate(async () => {
       const load = loadSheet
       let reveal
       loadSheet = (url, done, fail) => load(url, image => { reveal = () => done(image) }, fail)
       try {
-        show('hum', true)
+        playSheet(anim('__sprite2'), null)
         const f = fading, from = f.frame
         await new Promise(r => setTimeout(r, 160))
         if (f.frame === from || sheetFront !== f.canvas) return 'old action stopped before handoff'
@@ -544,7 +565,7 @@ function manifest() {
     await page.evaluate(() => { show('thinking', true); show('writing', true); show('hum', true) })
     await waitSheet()
     // 等到交叉淡入真的结束（原来固定等 260 毫秒，Windows 上解码慢时淡出还没收完就查，偶尔失败，2026-11-25）
-    await page.waitForFunction(() => pose === 'hum' && sheet?.img && sheet.canvas === sheetFront && sheetFront.width > 1 && !fading, null, { timeout: 3000 })
+    await page.waitForFunction(() => pose === 'hum' && sheet?.img && sheet.canvas === sheetFront && (sheet.video ? sheetFront.classList.contains('on') : sheetFront.width > 1) && !fading, null, { timeout: 3000 })
       .catch(() => { throw new Error('a superseded switch interfered with the final canvas') })
     await page.evaluate(() => { clearTimeout(revertTimer); show('idle', true) }); await waitSheet()
     await page.evaluate(() => { messages.length = 0; startWalk('walk_crab', -1) }); await page.waitForFunction(() => messages.some(m => m.walk))
@@ -566,10 +587,14 @@ function manifest() {
     assert.ok(await page.evaluate(() => messages.some(m => 'walk' in m && m.walk === null)))
     await page.evaluate(() => { setMotionActive(false); clearTimeout(revertTimer); setPose('idle', true) })
 
-    // 精灵图读不到：报给外壳，改播待机动画，不露静态立绘
-    await page.evaluate(() => { char().sheets['被吓一跳'] = char().sheets['被吓一跳'] + '.missing'; pose = null; setPose('surprised', true) })
-    await page.waitForFunction(() => messages.some(x => x.imageError?.includes('.missing')) && sheet?.img && sheet.fallback)
-    assert.equal((await state()).url, '待机呼吸休闲.webp')
+    // 视频读不到：报给外壳、隔 0.4 秒重读，连着三次不行改播待机视频，不露静态立绘
+    await page.evaluate(() => { messages.length = 0; char().videos['被吓一跳'] += '.missing'; pose = null; setPose('surprised', true) })
+    await page.waitForFunction(() => messages.filter(x => x.videoError?.includes('.missing')).length >= 3 && sheet?.video && sheet.img && !sheet.url.includes('.missing'), null, { timeout: 10000 })
+    assert.equal((await state()).url, '待机呼吸休闲.webm')
+    // 精灵图（别的角色）读不到：报给外壳，改播待机动画
+    await page.evaluate(() => { messages.length = 0; char().sheets['测试精灵图'] = 'file:///claudia-missing.webp'; playSheet(anim('__sprite'), null) })
+    await page.waitForFunction(() => messages.some(x => x.imageError?.includes('claudia-missing')) && sheet?.img && sheet.fallback)
+    assert.equal((await state()).url, '待机呼吸休闲.webm')
 
     assert.deepEqual(errors, [])
     console.log('PASS: sheet playback, alignment, random click reactions, sleep hold, farewell range, drag overlay, snack caught, quota tiers, idle groups, seasonal/lunar filters, group-balanced picks, walking, no still fallback (reduced motion keeps animating; missing sheet plays idle)')

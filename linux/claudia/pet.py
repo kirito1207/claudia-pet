@@ -1290,7 +1290,7 @@ class Pet:
                 if not isinstance(cfg, dict) or cfg.get("hidden") is True:
                     continue
                 sheets = cfg.get("sheets")
-                if isinstance(sheets, list) and any(isinstance(n, str) and (d / store.ANIM_DIR / (n + ".webp")).exists() for n in sheets):
+                if isinstance(sheets, list) and any(isinstance(n, str) and any((d / store.ANIM_DIR / (n + ext)).exists() for ext in (".webm", ".webp")) for n in sheets):
                     have.add(k)
         if not have:
             return None

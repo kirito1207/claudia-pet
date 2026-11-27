@@ -81,8 +81,10 @@ function sheetTick(steps = 1) {
 function playSheet(a, still, key = null) {
   const from = a.from ?? 0
   const url = a.keepUrl && sheet?.url && a.urls.includes(sheet.url) ? sheet.url : pick(a.urls)
-  const name = a.sheets?.find(n => char()?.sheets?.[n] === url)
-  const video = !a.hold && name && char()?.videos?.[name]   // 来回播（hold）视频倒着放会卡，照旧精灵图；走路和 dsh-pet 一样走视频
+  const c = char(), name = a.sheets?.find(n => (c?.sheets?.[n] || c?.videos?.[n]) === url)
+  // 来回播（hold）视频倒着放会卡：有精灵图时照旧播精灵图；只有视频（2026-11-27 起 Claude 角色精灵图全删了）也播视频——
+  // Claude 的来回播动画转码时已经把倒放那段编进视频，配置里 animations[].video 把 hold 换成了 cycle
+  const video = name && c?.videos?.[name] && (!a.hold || !c.sheets?.[name]) ? c.videos[name] : null
   const asset = url
   const s = { key, url, asset, from, to: a.to ?? (a.frames ?? SHEET.frames) - 1, fps: a.fps, hold: a.hold, loop: !!a.loop, cycle: a.cycle, cycled: false, onCycle: null,
     frame: from, dir: 1, holding: false,
@@ -354,7 +356,9 @@ function playVideo(a, s, url, still) {
       v.currentTime = videoTime(s, s.from)
       setTimeout(ready, 400)   // 个别情况跳到同一个位置不发 seeked：兜底
     }
-    if (v.src !== blob) { v.src = blob; v.addEventListener('loadeddata', seek) }
+    // 上次这个 <video> 出过错（v.error）：地址一样也要重新设一遍才会重读。文件读不到时 loadVideo 交回的还是原地址，
+    // 原来只比地址，重读那次什么都不发生——不出错也不出画面，停在空白上，也不会改播待机（2026-11-27 测试里查到）
+    if (v.src !== blob || v.error) { v.src = blob; v.addEventListener('loadeddata', seek) }
     else if (v.readyState >= 2) seek()
     else v.addEventListener('loadeddata', seek)
   }, failed)

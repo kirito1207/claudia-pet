@@ -423,7 +423,8 @@ function flipNext() {
   }, ms)
 }
 // ---- 动画动作：claude-pet 动作包（作者 hunmer，hunmer/aboutme-pets 的 pets/claude，CC BY-NC-SA 4.0）----
-// 精灵图放在角色目录\anim，外壳把「文件名 → 地址」交在 char().sheets；character.json 的 animations 写每个姿态用哪几张、播哪几帧：
+// 动画放在角色目录\anim：视频（.webm）的「文件名 → 地址」在 char().videos，精灵图在 char().sheets（2026-11-27 起 Claude 角色只留视频，
+// 精灵图只给别的角色用）；character.json 的 animations 写每个姿态用哪几段、播哪几帧（视频按帧号 ÷ 帧率换算成时间）：
 //   sheets 随机选一张；from / to 播放范围；loop 播完从头再来；hold [a, b] 播到 to 后在 a～b 之间来回（睡着时一直睡）；
 //   full 让临时状态停满整段（不然按 TRANSIENT 的时长换回去，靠交叉淡入盖住）。
 // 每张 8 列、每帧 640×360、12 fps；作者每个动作第 1 帧里人物在 x 206–444、y 40–321，按人物高、脚底、中线和静态立绘对齐。
@@ -445,7 +446,7 @@ addEventListener('resize', () => {
 function anim(p) {
   const c = char(), a = c?.animations?.[p]
   if (!a || !animOn) return null
-  const urls = (a.sheets || []).map(n => c.sheets?.[n]).filter(Boolean)
+  const urls = (a.sheets || []).map(n => c.sheets?.[n] || c.videos?.[n]).filter(Boolean)   // 没有精灵图、只有视频也算（2026-11-27）
   // 走视频时用视频里的帧号（来回播的动画转码时把倒放那段也编进去了，帧号跟精灵图不一样，见 character.json 的 animations[].video）
   const video = a.video && (a.sheets || []).some(n => c.videos?.[n]) ? a.video : null
   return urls.length ? { ...a, ...video, urls } : null

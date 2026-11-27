@@ -121,13 +121,13 @@ namespace Claudia
                 var p = stem.Split('-')[0];
                 have.Add(p);
             }
-            // 只有动画、没有静态立绘的姿态（被动画替换的那些、东张西望、余额钱袋……）：精灵图在 anim\ 里才列出来；hidden 的不进菜单
+            // 只有动画、没有静态立绘的姿态（被动画替换的那些、东张西望、余额钱袋……）：视频或精灵图在 anim\ 里才列出来；hidden 的不进菜单
             if (Store.ReadJson(Path.Combine(dir, "character.json"))?.TryGetValue("animations", out var a) == true && a is Dictionary<string, object> anims)
                 foreach (var kv in anims)
                 {
                     if (!(kv.Value is Dictionary<string, object> cfg) || (cfg.TryGetValue("hidden", out var h) && h is bool hb && hb)) continue;
                     if (cfg.TryGetValue("sheets", out var s) && s is object[] names &&
-                        names.OfType<string>().Any(n => File.Exists(Path.Combine(dir, SpritePath.AnimDir, n + ".webp")))) have.Add(kv.Key);
+                        names.OfType<string>().Any(n => File.Exists(Path.Combine(dir, SpritePath.AnimDir, n + ".webm")) || File.Exists(Path.Combine(dir, SpritePath.AnimDir, n + ".webp")))) have.Add(kv.Key);
                 }
             if (have.Count == 0) return null;
 

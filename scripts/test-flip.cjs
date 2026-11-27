@@ -40,6 +40,9 @@ console.log('PASS: frames config (files, grouping, timings vs tumble steps)');
       m.sheets = {};
       for (const file of fs.readdirSync(path.join(dir, 'anim')).filter(f => f.endsWith('.webp')))
         m.sheets[file.replace('.webp', '')] = pathToFileURL(path.join(dir, 'anim', file)).href;
+      m.videos = {};   // 2026-11-27 起 Claude 角色的动画只有视频
+      for (const file of fs.readdirSync(path.join(dir, 'anim')).filter(f => f.endsWith('.webm')))
+        m.videos[file.replace('.webm', '')] = pathToFileURL(path.join(dir, 'anim', file)).href;
       await page.evaluate(m => { init({ characters: { claude: m } }); setCharacter('claude', true); setBehavior({ idleEnabled: false, clickBounce: false }) }, m);
       await page.waitForTimeout(500);
       // 记下每次换图

@@ -71,6 +71,9 @@ const root = path.resolve(__dirname, '..');
     info.sheets = {};
     for (const file of fs.readdirSync(path.join(root, 'characters/claude/anim')).filter(f => f.endsWith('.webp')))
       info.sheets[file.replace('.webp', '')] = pathToFileURL(path.join(root, 'characters/claude/anim', file)).href;
+    info.videos = {};   // 2026-11-27 起 Claude 角色的动画只有视频
+    for (const file of fs.readdirSync(path.join(root, 'characters/claude/anim')).filter(f => f.endsWith('.webm')))
+      info.videos[file.replace('.webm', '')] = pathToFileURL(path.join(root, 'characters/claude/anim', file)).href;
     await page.setViewportSize({ width: 380, height: 362 });
     await page.evaluate(info => {
       init({ characters: { claude: info } }); setCharacter('claude', true);
