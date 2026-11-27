@@ -39,7 +39,7 @@ namespace Claudia
     // - 每只正常走之前跟负责人说一声 bye。没说就断了的（崩溃、被杀）负责人 3 秒后把它叫回来；新负责人接手时也把名单上
     //   没在跑的（比如崩溃的上一任）叫回来。同一只 10 分钟内最多叫回 3 次，免得反复崩溃一直重开。
     // 一行一条 JSON：
-    //   别的 → 负责人：hello {id, name, mode, join}；state {name, mode}；done {rid}；bye {}
+    //   别的 → 负责人：hello {id, name, mode, join}；state {name, mode}；done {rid}；bye {}；req 的 op 还有 checkUpdate（现在检查更新）
     //                  req {rid, op, id, action, value}，op：add | leave | pet | quitAll | hide | show | appSet（action = 哪一项）
     //   命令行 → 负责人：cli {cmd: show | toggle | quit}
     //   负责人 → 别的：roster {leader, pets: [{id, index, name, mode, online}]}；cmd {rid, action: mode | rename | dismiss, value}；
@@ -55,6 +55,7 @@ namespace Claudia
         void HubSignal(string what);              // 藏 / 出 / 一起走，负责人自己也走这里
         void HubAppChanged();                     // 共用设置变了，重读
         void HubSessions(List<Dictionary<string, object>> states);   // 别的几只用：负责人扫到的会话状态
+        void HubCheckUpdate();   // 负责人用：别的几只在设置里点了「现在检查」
         bool HubLaunch(string id, string mode, string join);   // 负责人用：叫出来了没有；join 是这次添加的标记（重新叫回来的没有）
         bool HubRunning(string id);               // 负责人用：这一只在不在跑
         bool HubLeaving();                        // 负责人用：自己是不是正要走
@@ -397,6 +398,9 @@ namespace Claudia
 
         public void Report() => BroadcastRoster();   // 负责人自己的名字 / 待在哪变了
 
+        /// <summary>共用的东西变了（app.json、检查更新的结果）：叫连着的几只重读</summary>
+        public void TellAppChanged() { foreach (var link in clients.Values.ToList()) link.Send(new Dictionary<string, object> { ["type"] = "app" }); }
+
         /// <summary>负责人扫到的会话状态变化：记下来（新报到的先拿到一份完整的），发给连着的几只。返回收下的（坏记录跳过）</summary>
         public List<Dictionary<string, object>> ShareSessions(List<Dictionary<string, object>> changed)
         {
@@ -529,9 +533,10 @@ namespace Claudia
                 case "hide": case "show": Signal(op); reply(true, ""); return;
                 case "appSet":   // 改一项共用设置：只有负责人写 app.json，写成了才叫大家重读
                     if (!Store.SetApp(action, value, out var appError)) { reply(false, appError); return; }
-                    foreach (var link in clients.Values.ToList()) link.Send(new Dictionary<string, object> { ["type"] = "app" });
+                    TellAppChanged();
                     host.HubAppChanged();
                     reply(true, ""); return;
+                case "checkUpdate": host.HubCheckUpdate(); reply(true, ""); return;   // 设置里「现在检查」：负责人去问（见 UpdateCheck.cs）
             }
             if (op != "pet" || !PetHubNames.Actions.Contains(action) || !ids.Contains(id)) { reply(false, "这一只已经不在了"); return; }
             if (adds.Contains(id))   // 还在出来的路上

@@ -112,7 +112,7 @@ namespace Claudia
         // ---- 所有桌宠共用的设置（2026-11-27）----
         // 隐藏快捷键、三项任务通知、鼠标穿透、待在桌面上时的层级不跟着某一只走：放在 app.json。第一次从原来第一只的设置里搬过来
         static string AppFile => Path.Combine(Data, "app.json");
-        static readonly string[] AppKeys = { "hideHotkey", "notifyResults", "notifyWaiting", "notifyBackgroundOnly", "clickThrough", "deskLayer" };
+        static readonly string[] AppKeys = { "hideHotkey", "notifyResults", "notifyWaiting", "notifyBackgroundOnly", "clickThrough", "deskLayer", "checkUpdates" };
         public static Dictionary<string, object> App = new Dictionary<string, object>();
         public static void LoadApp()
         {
@@ -135,7 +135,7 @@ namespace Claudia
         {
             object value;
             error = "这一项设置没认出来";
-            if (key == "notifyResults" || key == "notifyWaiting" || key == "notifyBackgroundOnly" || key == "clickThrough")
+            if (key == "notifyResults" || key == "notifyWaiting" || key == "notifyBackgroundOnly" || key == "clickThrough" || key == "checkUpdates")
             {
                 if (text != "true" && text != "false") return false;
                 value = text == "true";
@@ -148,7 +148,7 @@ namespace Claudia
             App = next; error = "";
             return true;
         }
-        /// <summary>没写过的开关：通知默认开，鼠标穿透默认关</summary>
+        /// <summary>没写过的开关：通知、检查更新默认开，鼠标穿透默认关</summary>
         public static bool AppOn(string key) => App.TryGetValue(key, out var v) && v is bool b ? b : key != "clickThrough";
 
         // ---- 设置 ----

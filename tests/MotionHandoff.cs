@@ -191,6 +191,8 @@ namespace Claudia
             public void HubNotice(string text) { }
             public void HubSignal(string what) { Signals.Add(what); if (what == "quit") Left = true; }
             public void HubAppChanged() => AppChanges++;
+            public int UpdateChecks;
+            public void HubCheckUpdate() => UpdateChecks++;
             public readonly List<List<string>> Sessions = new List<List<string>>();
             public void HubSessions(List<Dictionary<string, object>> states) => Sessions.Add(states.Select(x => (string)x["sid"]).ToList());
             public readonly Dictionary<string, string> Tokens = new Dictionary<string, string>();   // 编号 → 最近一次叫出来带的标记
@@ -442,6 +444,20 @@ namespace Claudia
             Console.WriteLine("PASS: session book keeps the newest valid state per session for 10 minutes; adds wait, confirm, end and hold numbers as they should");
         }
 
+        /// <summary>检查更新的两条规则：版本号怎么比、GitHub 的回答怎么认（不连网）</summary>
+        static void TestUpdateCheck()
+        {
+            var newer = new[] { ("v0.5.2", "0.5.1", true), ("0.10.0", "0.9.9", true), ("1.0", "0.9.9", true), ("0.5.1", "0.5.1", false),
+                ("0.5.1-beta", "0.5.1", false), ("0.4.2", "0.5.1", false), ("latest", "0.5.1", false), ("0.5.2", "dev", false) };
+            foreach (var (a, b, want) in newer) if (UpdateCheck.Newer(a, b) != want) throw new Exception($"Newer({a}, {b}) should be {want}");
+            var ok = UpdateCheck.Parse("{\"tag_name\": \"v0.6.0\", \"html_url\": \"https://github.com/kirito1207/claudia-pet/releases/tag/v0.6.0\"}");
+            if (ok?.version != "0.6.0" || ok?.url != "https://github.com/kirito1207/claudia-pet/releases/tag/v0.6.0") throw new Exception("Release not parsed");
+            if (UpdateCheck.Parse("{\"tag_name\": \"0.6.0\", \"html_url\": \"https://evil.example/x\"}")?.url != UpdateCheck.ReleasesPage) throw new Exception("A non-GitHub page was kept");
+            if (UpdateCheck.Parse("{\"message\": \"Not Found\"}") != null || UpdateCheck.Parse("not json") != null || UpdateCheck.Parse("{\"tag_name\": \"nightly\"}") != null)
+                throw new Exception("An unreadable answer was taken as a release");
+            Console.WriteLine("PASS: update check compares version numbers and only takes GitHub release pages");
+        }
+
         static void TestZOrder()
         {
             IntPtr claude = (IntPtr)100, other = (IntPtr)200, a = (IntPtr)1, b = (IntPtr)2, hidden = (IntPtr)9, app = (IntPtr)50;
@@ -469,7 +485,7 @@ namespace Claudia
             var data = Path.Combine(Path.GetTempPath(), "claudia-" + id);
             Environment.SetEnvironmentVariable("CLAUDIA_DATA_DIR", data);
             Environment.SetEnvironmentVariable("CLAUDIA_STATE_DIR", Path.Combine(data, "state"));
-            try { Pet.TestHandoff(); TestCharacterMigration(id); TestLegacyMirrorMigration(id + "-legacy"); TestZOrder(); TestPetParts(); TestPetHub(); return 0; }
+            try { Pet.TestHandoff(); TestCharacterMigration(id); TestLegacyMirrorMigration(id + "-legacy"); TestZOrder(); TestPetParts(); TestUpdateCheck(); TestPetHub(); return 0; }
             catch (Exception e) { Console.Error.WriteLine(e); return 1; }
             finally { if (Directory.Exists(data)) Directory.Delete(data, true); }
         }

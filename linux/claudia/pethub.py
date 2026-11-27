@@ -29,7 +29,7 @@
 
 一行一条 JSON：
   别的 → 负责人：hello {id, name, mode, join}；state {name, mode}；done {rid}；bye {}
-                 req {rid, op, id, action, value}，op：add | leave | pet | quitAll | hide | show | appSet（action = 哪一项）
+                 req {rid, op, id, action, value}，op：add | leave | pet | quitAll | hide | show | appSet（action = 哪一项）| checkUpdate
   命令行 → 负责人：cli {cmd: show | toggle | quit}
   负责人 → 别的：roster {leader, pets: [{id, index, name, mode, online}]}；cmd {rid, action: mode | rename | dismiss, value}；
                  signal {what: hide | show | quit}；app {}；handoff {next}；sessions {states}；reply {rid, ok, error}
@@ -37,7 +37,7 @@
 api 是桌宠（Pet）：hub_info() → {name, mode}；hub_apply(action, value)；hub_roster_changed()；hub_notice(text)；
 hub_signal(what)（藏 / 出 / 一起走，负责人自己也走这里）；hub_app_changed()（共用设置变了，重读）；
 别的几只还要 hub_sessions(states)（负责人扫到的会话状态）；
-负责人还要 hub_launch(id, mode, join)、hub_running(id)、hub_leaving()、hub_toggle()、hub_user_quit()（记下从菜单退出过）、hub_leave_self()；
+负责人还要 hub_check_update()（别的几只点了「现在检查」）、hub_launch(id, mode, join)、hub_running(id)、hub_leaving()、hub_toggle()、hub_user_quit()（记下从菜单退出过）、hub_leave_self()；
 别的几只还要 hub_try_lead()（抢负责人锁，抢到就当负责人，返回 True）、hub_main_lost()（没人负责了，跟着走）。
 """
 import itertools
@@ -390,6 +390,11 @@ class HubServer:
         """负责人自己的名字 / 待在哪变了"""
         self.broadcast_roster()
 
+    def tell_app_changed(self):
+        """共用的东西变了（app.json、检查更新的结果）：叫连着的几只重读"""
+        for link in list(self.clients.values()):
+            link.send({"type": "app"})
+
     def share_sessions(self, changed):
         """负责人扫到的会话状态变化：记下来（新报到的先拿到一份完整的），发给连着的几只。返回收下的（坏记录跳过）"""
         changed = self.sessions.merge(changed)
@@ -550,9 +555,11 @@ class HubServer:
             ok, error = store.set_app(action, value)
             if not ok:
                 return reply(False, error)
-            for link in list(self.clients.values()):
-                link.send({"type": "app"})
+            self.tell_app_changed()
             self.api.hub_app_changed()
+            return reply(True)
+        if op == "checkUpdate":   # 设置里「现在检查」：负责人去问（见 update.py）
+            self.api.hub_check_update()
             return reply(True)
         if op != "pet" or action not in ACTIONS or pid not in ids:
             return reply(False, "这一只已经不在了")

@@ -29,7 +29,7 @@ class FakePet:
         self.pid, self.family = pid, family
         self.name, self.mode = "", "claude"
         self.hub, self.applied, self.notices, self.signals = None, [], [], []
-        self.roster_changes, self.launched, self.app_changes = 0, [], 0
+        self.roster_changes, self.launched, self.app_changes, self.update_checks = 0, [], 0, 0
         self.lost = self.user_quit = self.left = False
         self.launch_ok = True
         self.tokens = {}   # id → the join token of the last launch
@@ -82,6 +82,9 @@ class FakePet:
 
     def hub_app_changed(self):
         self.app_changes += 1
+
+    def hub_check_update(self):
+        self.update_checks += 1
 
     def hub_user_quit(self):
         self.user_quit = True
@@ -308,6 +311,14 @@ class HubTests(unittest.TestCase):
         self.leader().hub.load_roster()   # the leader goes by its own copy; the file is only for next time
         self.leader().hub.request("add", value="claude")
         self.assertTrue(self.pets["main"].notices and "住不下" in self.pets["main"].notices[-1])
+
+    def test_check_update_now_goes_to_the_leader(self):
+        replies = []
+        self.pets["3"].hub.request("checkUpdate", reply=lambda ok, error="": replies.append(ok))
+        self.assertTrue(pump(lambda: replies))
+        self.assertEqual((replies, self.pets["main"].update_checks, self.pets["3"].update_checks), ([True], 1, 0))
+        self.leader().hub.tell_app_changed()   # the result is in: everyone rereads
+        self.assertTrue(pump(lambda: self.pets["2"].app_changes and self.pets["3"].app_changes))
 
     def test_hide_show_reach_everyone_including_the_leader(self):
         self.pets["3"].hub.request("hide")

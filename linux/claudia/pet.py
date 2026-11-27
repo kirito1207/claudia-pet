@@ -19,7 +19,7 @@ from PySide6.QtCore import QPoint, Qt  # noqa: E402
 from PySide6.QtGui import QAction, QCursor, QGuiApplication  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QWidget  # noqa: E402
 
-from . import actions, claude, pethub, store, system, web, xshape, xwin  # noqa: E402
+from . import actions, claude, pethub, store, system, update, web, xshape, xwin  # noqa: E402
 from .claude_window import ClaudeWindowWatch  # noqa: E402
 from .notices import TaskNoticePolicy, legacy_notice, pending_notices  # noqa: E402
 
@@ -135,6 +135,10 @@ class Pet:
         self.leaving = False
         self.hub = None
         self.is_leader = False   # 拿着负责人锁（托盘、快捷键、通知、名单都归它管，见 pethub.py）
+        self.leader_since = 0.0
+        self.update_checked_at = 0.0   # 检查更新：上次问的时间（秒），当上负责人时从 update.json 读
+        self.update_checking = False
+        self.update_to_say = None      # 有新版本、还没说：等她露着脸、网页好了再说
         self.leader_lock = None  # main.py 启动时抢到了就交进来；接手时自己抢
         self.crashes = []
         self.scale_timer = None
@@ -410,6 +414,9 @@ class Pet:
         """当负责人：开协调中心、托盘、隐藏快捷键（每 0.3 秒的活见 leader_tick）"""
         self.is_leader = True
         store.log("当负责人")
+        self.leader_since = time.time()
+        checked = update.load().get("checkedAt")
+        self.update_checked_at = checked if isinstance(checked, (int, float)) else 0
         try:
             store.STATE.mkdir(parents=True, exist_ok=True)
             (store.STATE / "pet.pid").write_text(str(os.getpid()))
@@ -456,6 +463,56 @@ class Pet:
         for notice in pending_notices(self.leader_stamps):
             self.task_notice(*notice)
         self.clean_stale_state()
+        self.update_tick()
+
+    # ---- 检查更新（规则见 update.py）：负责人一天最多问一次 GitHub，有新版本让她说一次 ----
+    def update_tick(self):
+        if self.update_to_say and self.ready and not self.concealed and not self.user_hidden:
+            v, self.update_to_say = self.update_to_say, None
+            self.js(f"say({store.dumps(f'有新版本 {v} 啦，去设置「关于」里看看～')})")
+            d = update.load()
+            d["notified"] = v   # 同一个版本只说一次
+            update.save(d)
+        if self.update_checking or not store.app_on("checkUpdates"):
+            return
+        if time.time() - self.leader_since < update.FIRST_DELAY_S:   # 刚启动先不抢网络
+            return
+        if time.time() - self.update_checked_at < update.INTERVAL_S:
+            return
+        self.check_update_now()
+
+    def check_update_now(self):
+        """现在问一次（到点了、或者设置里点了「现在检查」）。在后台线程问，问完回主线程记下结果"""
+        if self.update_checking:
+            return
+        self.update_checking = True
+        self.update_checked_at = time.time()   # 没问成也算问过：一天后再试，不每 0.3 秒重试
+        self.push_settings()
+        update.fetch(lambda release, error: GLib.idle_add(lambda: (self.update_done(release, error), False)[1]))
+
+    def update_done(self, release, error):
+        self.update_checking = False
+        d = update.load()
+        d["checkedAt"] = self.update_checked_at
+        if release:
+            v, url = release
+            d.update(latest=v, url=url)
+            d.pop("error", None)
+            is_new = update.newer(v, store.version())
+            store.log(f"有新版本 {v}（现在 {store.version()}）" if is_new else f"检查更新：已是最新（{v}）")
+            if is_new and d.get("notified") != v:
+                self.update_to_say = v
+        else:
+            d["error"] = error
+            store.log("检查更新没成：" + str(error))
+        update.save(d)
+        if isinstance(self.hub, pethub.HubServer):
+            self.hub.tell_app_changed()   # 别的几只的设置页也跟着显示
+        self.push_settings()
+
+    def hub_check_update(self):
+        if self.is_leader:
+            self.check_update_now()
 
     def scan_sessions(self):
         """各个 Claude Code 会话的状态：只有负责人扫目录，扫到的变化自己用、经 pethub 发给大家"""
@@ -1533,6 +1590,8 @@ class Pet:
             "pets": self.pet_list(), "maxPets": store.MAX_PETS,
             "deskLayer": self.desk_layer(), "deskLayers": list(self.DESK_LAYERS),
             "clickThrough": self.click_through(),   # 所有桌宠共用
+            "checkUpdates": store.app_on("checkUpdates"),   # 检查更新（update.py）
+            "update": update.for_page(self.is_leader and self.update_checking),
         }
 
     def handle_settings(self, msg):
@@ -1542,7 +1601,7 @@ class Pet:
             on = value is True
             if key in ("clickBounce", "tumbleActions", "idleEnabled", "idleFrequency"):
                 self.set_behavior(key, value)
-            elif key in ("notifyResults", "notifyWaiting", "notifyBackgroundOnly"):   # 共用设置
+            elif key in ("notifyResults", "notifyWaiting", "notifyBackgroundOnly", "checkUpdates"):   # 共用设置
                 if isinstance(value, bool):
                     self.set_app(key, value)
             elif key in ("physicsEnabled", "ceilingBounce") or key in PHYSICS_RANGES:
@@ -1621,6 +1680,14 @@ class Pet:
                       "openUpstream": "https://github.com/lokicorvus/crosspet",
                       "openDshPet": "https://github.com/PC2005-cloud/dsh-pet",
                       "openAboutmePets": "https://github.com/hunmer/aboutme-pets"}.get(name)
+            if name == "checkUpdate":   # 现在检查：负责人去问
+                if self.is_leader:
+                    self.check_update_now()
+                elif self.hub:
+                    self.hub.request("checkUpdate")
+            elif name == "openRelease":   # 下载页：只开 GitHub 上的地址
+                page = update.load().get("url")
+                target = page if isinstance(page, str) and page.startswith("https://github.com/") else update.RELEASES_PAGE
             if target:
                 self.open(target)
         self.push_settings()

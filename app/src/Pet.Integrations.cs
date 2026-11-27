@@ -44,6 +44,7 @@ namespace Claudia
                 ["pets"] = PetList(), ["maxPets"] = Store.MaxPets,
                 ["deskLayer"] = DeskLayer,
                 ["clickThrough"] = ClickThrough,   // 所有桌宠共用
+                ["checkUpdates"] = Store.AppOn("checkUpdates"), ["update"] = UpdateCheck.ForPage(isLeader && updateChecking),   // 检查更新（UpdateCheck.cs）
             };
         }
 
@@ -59,7 +60,7 @@ namespace Claudia
                     switch (key)
                     {
                         case "clickBounce": case "tumbleActions": case "idleEnabled": case "idleFrequency": SetBehavior(key, value); break;
-                        case "notifyResults": case "notifyWaiting": case "notifyBackgroundOnly":   // 共用设置
+                        case "notifyResults": case "notifyWaiting": case "notifyBackgroundOnly": case "checkUpdates":   // 共用设置
                             if (value is bool) SetApp(key, value); break;
                         case "physicsEnabled": case "ceilingBounce":
                         case "throwPower": case "gravity": case "restitution": case "groundFriction": case "elasticity":
@@ -119,6 +120,10 @@ namespace Claudia
                         case "openUpstream": Open("https://github.com/lokicorvus/crosspet"); break;
                         case "openDshPet": Open("https://github.com/PC2005-cloud/dsh-pet"); break;
                         case "openAboutmePets": Open("https://github.com/hunmer/aboutme-pets"); break;
+                        case "checkUpdate": if (isLeader) CheckUpdateNow(); else hub?.Request("checkUpdate"); break;   // 现在检查：负责人去问
+                        case "openRelease":   // 下载页：只开 GitHub 上的地址
+                            var page = UpdateCheck.Str(UpdateCheck.Load(), "url");
+                            Open(page != null && page.StartsWith("https://github.com/", StringComparison.Ordinal) ? page : UpdateCheck.ReleasesPage); break;
                     }
                     break;
             }

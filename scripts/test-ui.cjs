@@ -73,6 +73,21 @@ const root = path.resolve(__dirname, '..');
     await page.locator('#idleFrequency [data-v="lively"]').click();
     assert.ok(await page.evaluate(() => messages.some(m => m.key === 'idleFrequency' && m.value === 'lively')));
     assert.equal(await page.locator('[data-idle-action]').count(), 0);
+    // 检查更新（2026-11-28）：「关于」页显示新版本和下载页按钮，「现在检查」交给外壳，问完显示已是最新
+    await page.evaluate(s => { setState({ ...s, appVersion: '0.5.1', checkUpdates: true,
+      update: { latest: '0.6.0', newer: true, url: 'https://github.com/kirito1207/claudia-pet/releases/tag/v0.6.0', checkedAt: 1764300000, checking: false } }); showTab('about') }, state);
+    assert.equal(await page.locator('#openRelease').isVisible(), true, 'download button shows for a newer release');
+    assert.match(await page.locator('#updateNote').textContent(), /0\.6\.0/);
+    assert.equal(await page.locator('[data-key="checkUpdates"]').isChecked(), true);
+    await page.evaluate(() => { messages.length = 0 });
+    await page.locator('#checkNow').click();
+    assert.ok(await page.evaluate(() => messages.some(m => m.cmd === 'action' && m.name === 'checkUpdate')), 'check now goes to the shell');
+    assert.equal(await page.locator('#updateNote').textContent(), '正在检查…');
+    assert.equal(await page.locator('#checkNow').isDisabled(), true);
+    await page.evaluate(s => setState({ ...s, appVersion: '0.5.1', update: { latest: '0.5.1', newer: false, checkedAt: 1764300100 } }), state);
+    assert.match(await page.locator('#updateNote').textContent(), /已是最新/);
+    assert.equal(await page.locator('#openRelease').isVisible(), false);
+    assert.equal(await page.locator('#checkNow').isDisabled(), false);
     await page.goto(pathToFileURL(path.join(root, 'web/index.html')).href);
     const squashTable = JSON.parse(fs.readFileSync(path.join(root, 'web/physics.json'), 'utf8')).elasticity   // 外壳随 setBehavior 发的 Q 弹参考值、上限
     const squashRange = { squashBase: squashTable.default, squashMax: squashTable.max, squashAmount: squashTable.default }

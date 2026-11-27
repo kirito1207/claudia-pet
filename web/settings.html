@@ -173,8 +173,13 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
     <div class="ctl"><button data-action="openCharacters">角色</button><button data-action="openData">数据和日志</button></div></div>
 </div>
 
+<div class="card" data-tab="about">
+  <div class="item"><div class="label">自动检查更新<small>一天最多一次，只向 GitHub 问最新版本号；不上传任何数据，不自动下载</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="checkUpdates" aria-label="自动检查更新"><span></span></label></div></div>
+  <div class="item"><div class="label">当前版本 <span id="currentVersion"></span><small id="updateNote">还没检查过</small></div>
+    <div class="ctl"><button id="openRelease" class="hidden" data-action="openRelease">打开下载页</button><button id="checkNow">现在检查</button></div></div>
+</div>
 <div class="card about" data-tab="about">
-  <p><b>claudia-pet</b> · Claude 娘桌宠<small>桌宠 claudia 贴着 Claude 窗口陪你写代码、聊天。只认 Claude，不联网，不收集任何数据。</small></p>
+  <p><b>claudia-pet</b> · Claude 娘桌宠<small>桌宠 claudia 贴着 Claude 窗口陪你写代码、聊天。只认 Claude，只在检查更新时访问 GitHub（问最新版本号），不收集、不上传任何数据。</small></p>
   <p>基于 CrossPet 修改<small>claudia-pet 基于 lokicorvus 的 CrossPet 开发，沿用其基础代码与设计，遵循 MIT 协议。</small>
     <small><button class="srclink" data-action="openUpstream">github.com/lokicorvus/crosspet</button></small></p>
   <p>参考 dsh-pet<small>拖拽、抛掷的物理公式摘录自 PC2005-cloud 的 dsh-pet，右键动作菜单和菜单样式参照了 dsh-pet（MIT 协议）。</small>
@@ -211,6 +216,29 @@ function toast(text) {
   clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), 2200)
 }
 
+// 检查更新（外壳的 UpdateCheck.cs / update.py）：s.update = {latest, newer, url, checkedAt（秒）, error, checking}
+let checkClickedAt = 0, checkSeenAt = 0   // 点了「现在检查」：负责人问完（checkedAt 变了）或 20 秒后才不再显示「正在检查」
+function showUpdate(s) {
+  const u = s.update || {}, note = $('updateNote')
+  $('currentVersion').textContent = s.appVersion || ''
+  if (u.checkedAt !== checkSeenAt) checkClickedAt = 0
+  const checking = u.checking || (checkClickedAt && Date.now() - checkClickedAt < 20000)
+  const when = u.checkedAt ? new Date(u.checkedAt * 1000).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
+  note.textContent = checking ? '正在检查…'
+    : u.newer ? `有新版本 ${u.latest}，可以去下载页看看`
+    : u.error && u.checkedAt ? `上次检查没成（${when}）：${u.error}`
+    : u.latest ? `已是最新版本（${when} 检查）`
+    : '还没检查过'
+  note.classList.toggle('warn', !checking && !!u.newer)
+  $('openRelease').classList.toggle('hidden', !u.newer)
+  $('checkNow').disabled = !!checking
+}
+$('checkNow').onclick = () => {
+  checkClickedAt = Date.now(); checkSeenAt = state?.update?.checkedAt || 0
+  if (state) showUpdate(state)
+  post({ cmd: 'action', name: 'checkUpdate' })
+  setTimeout(() => { if (state) showUpdate(state) }, 20500)   // 一直没等到结果：恢复按钮
+}
 function setState(s) {
   state = s
   $('version').textContent = `版本 ${s.version}`
@@ -226,6 +254,7 @@ function setState(s) {
   $('textSizeVal').textContent = Math.round(text * 100) + '%'
   showLink(linked)
   for (const el of document.querySelectorAll('input[data-key]')) el.checked = !!s[el.dataset.key]
+  showUpdate(s)
   for (const el of document.querySelectorAll('[data-only]')) el.classList.toggle('hidden', s[el.dataset.only] === undefined || s[el.dataset.only] === null)
   for (const b of $('aura').children) b.classList.toggle('on', b.dataset.v === s.aura)
   for (const b of $('quotaStyle').children) b.classList.toggle('on', b.dataset.v === (s.quotaStyle || 'text'))

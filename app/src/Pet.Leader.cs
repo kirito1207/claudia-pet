@@ -27,6 +27,7 @@ namespace Claudia
         {
             isLeader = true;
             Store.Log("当负责人");
+            leaderSince = DateTime.UtcNow; updateCheckedAt = UpdateCheck.Num(UpdateCheck.Load(), "checkedAt");
             try { Directory.CreateDirectory(Store.State); File.WriteAllText(Path.Combine(Store.State, "pet.pid"), Process.GetCurrentProcess().Id.ToString()); } catch { }
             hub?.Close();
             hub = new PetHubServer(this, sessions: sessionBook);
@@ -71,7 +72,55 @@ namespace Claudia
             if (!Paused) ScanSessions();
             PollTaskNotices();
             CleanStaleState();
+            UpdateTick();
         }
+
+        // ---- 检查更新（规则见 UpdateCheck.cs）：负责人一天最多问一次 GitHub，有新版本让她说一次 ----
+        DateTime leaderSince;
+        double updateCheckedAt;   // 上次问的时间（秒），当上负责人时从 update.json 读
+        bool updateChecking;
+        string updateToSay;       // 有新版本、还没说：等她露着脸、网页好了再说
+        void UpdateTick()
+        {
+            if (updateToSay != null && ready && !concealed && !userHidden && !Paused)
+            {
+                var v = updateToSay; updateToSay = null;
+                Js($"say({Q($"有新版本 {v} 啦，去设置「关于」里看看～")})");
+                var d = UpdateCheck.Load(); d["notified"] = v; UpdateCheck.Save(d);   // 同一个版本只说一次
+            }
+            if (updateChecking || !Store.AppOn("checkUpdates")) return;
+            if ((DateTime.UtcNow - leaderSince).TotalSeconds < UpdateCheck.FirstDelayS) return;   // 刚启动先不抢网络
+            if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() - updateCheckedAt < UpdateCheck.IntervalS) return;
+            CheckUpdateNow();
+        }
+        /// <summary>现在问一次（到点了、或者设置里点了「现在检查」）。问的时候在后台，问完回界面线程记下结果</summary>
+        void CheckUpdateNow()
+        {
+            if (updateChecking) return;
+            updateChecking = true;
+            updateCheckedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();   // 没问成也算问过：一天后再试，不每 0.3 秒重试
+            PushSettings();
+            UpdateCheck.Fetch().ContinueWith(t => ui.BeginInvoke(new Action(() => UpdateDone(t.Result.release, t.Result.error))));
+        }
+        void UpdateDone((string version, string url)? release, string error)
+        {
+            updateChecking = false;
+            var d = UpdateCheck.Load();
+            d["checkedAt"] = updateCheckedAt;
+            if (release.HasValue)
+            {
+                var v = release.Value.version;
+                d["latest"] = v; d["url"] = release.Value.url; d.Remove("error");
+                var isNew = UpdateCheck.Newer(v, Store.Version);
+                Store.Log(isNew ? $"有新版本 {v}（现在 {Store.Version}）" : $"检查更新：已是最新（{v}）");
+                if (isNew && UpdateCheck.Str(d, "notified") != v) updateToSay = v;
+            }
+            else { d["error"] = error; Store.Log("检查更新没成：" + error); }
+            UpdateCheck.Save(d);
+            (hub as PetHubServer)?.TellAppChanged();   // 别的几只的设置页也跟着显示
+            PushSettings();
+        }
+        public void HubCheckUpdate() { if (isLeader) CheckUpdateNow(); }
 
         /// <summary>各个 Claude Code 会话的状态：只有负责人扫目录，扫到的变化自己用、经 PetHub 发给大家</summary>
         void ScanSessions()

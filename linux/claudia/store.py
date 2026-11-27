@@ -205,7 +205,7 @@ def free_pet_id(usable):
 # ---------------- 所有桌宠共用的设置（2026-11-27）----------------
 # 隐藏快捷键、三项任务通知、鼠标穿透、待在桌面上时的层级不跟着某一只走：放在 app.json。第一次从原来第一只的设置里搬过来
 APP_FILE = DATA / "app.json"
-APP_KEYS = ("hideHotkey", "notifyResults", "notifyWaiting", "notifyBackgroundOnly", "clickThrough", "deskLayer")
+APP_KEYS = ("hideHotkey", "notifyResults", "notifyWaiting", "notifyBackgroundOnly", "clickThrough", "deskLayer", "checkUpdates")
 app = {}
 
 
@@ -234,7 +234,7 @@ def save_app(d=None):
 def set_app(key, text):
     """负责人改一项共用设置（别的几只把「哪一项、改成什么」交给它，只有它写 app.json，免得互相盖掉）。
     值按文字传：开关是 true / false。返回 (成没成, 没成的原因)；文件先写成功才换内存里的，写不进去就保留旧设置"""
-    if key in ("notifyResults", "notifyWaiting", "notifyBackgroundOnly", "clickThrough"):
+    if key in ("notifyResults", "notifyWaiting", "notifyBackgroundOnly", "clickThrough", "checkUpdates"):
         if text not in ("true", "false"):
             return False, "这一项设置没认出来"
         value = text == "true"
@@ -251,7 +251,7 @@ def set_app(key, text):
 
 
 def app_on(key):
-    """没写过的开关：通知默认开，鼠标穿透默认关"""
+    """没写过的开关：通知、检查更新默认开，鼠标穿透默认关"""
     v = app.get(key)
     return v if isinstance(v, bool) else key != "clickThrough"
 

@@ -186,7 +186,7 @@ pwsh -NoProfile -File scripts/uninstall.ps1
 
 ## 本机数据
 
-Claude Code 插件只往本机的 `%USERPROFILE%\.claudia\state` 写几个小文件：当前动作、用到的工具名、会话编号、额度百分比和通知事件。不写对话内容、代码或文件路径。claudia-pet 不联网，不向任何模型 API 发请求，动作和台词都是预设的。
+Claude Code 插件只往本机的 `%USERPROFILE%\.claudia\state` 写几个小文件：当前动作、用到的工具名、会话编号、额度百分比和通知事件。不写对话内容、代码或文件路径。claudia-pet 不向任何模型 API 发请求，动作和台词都是预设的。唯一的联网是检查更新：一天最多一次向 GitHub 问最新版本号（`api.github.com` 的 releases/latest），不带任何用户信息、不上传数据、不自动下载，可以在设置「关于」里关掉。
 
 ## 已知限制
 
