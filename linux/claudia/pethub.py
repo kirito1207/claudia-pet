@@ -15,7 +15,7 @@
 - 「全部退出」时留一个记号（run/stopping），一直留到用户手动打开程序（见 main.py 的 choose_identity）：
   有它在，退出前就已经在启动、来晚了的那只不接手、不叫回别人，直接跟着走；负责人挥手那两秒里才来报到的，直接叫它走。
 - 加一只：新的那只报到了才写进名单、才算成功（2026-11-27 Codex 复审：原来先写名单，负责人换了、全部退出、
-  清理失败都可能留下一条没加成的，下次打开又被叫出来）。报到前它只在负责人的内存里（adding，名单上显示
+  清理失败都可能留下一条没加成的，下次打开又被叫出来）。报到前它只在负责人的内存里（PetAdds，名单上显示
   「还在出来的路上」、占一个名额）；每次添加有自己的编号，30 秒没报到只把这一次去掉。起不来就马上说没成。
   新的那只启动时拿到这次添加的标记（--join），报到时带回来；对不上的（取消前叫出来、来晚了的旧进程）叫它走。
   刚取消的编号 30 秒内先不再用（旧进程可能还在启动、还没拿到这个编号的锁）。
@@ -42,6 +42,7 @@ hub_signal(what)（藏 / 出 / 一起走，负责人自己也走这里）；hub_
 """
 import itertools
 import json
+import math
 import os
 import secrets
 import socket
@@ -72,6 +73,88 @@ def clear_stopping():
         os.unlink(stop_path())
     except OSError:
         pass
+
+
+def valid_session(s):
+    """一条会话状态能不能用：会话编号是非空字符串、时间戳是有限的数字（不是 True / False，也不是 NaN、Infinity——
+    Python 读 JSON 会把它们当数字收下，跟谁比都不对，既淘汰不掉也分不出新旧）。坏记录只跳过那一条，不拖累整批"""
+    ts = s.get("ts") if isinstance(s, dict) else None
+    return (isinstance(s, dict) and isinstance(s.get("sid"), str) and s["sid"] != ""
+            and isinstance(ts, (int, float)) and not isinstance(ts, bool) and math.isfinite(ts))
+
+
+class SessionBook:
+    """会话编号 → 最近的状态，只留 10 分钟内的。负责人用它给新报到的补一份完整的，每只桌宠用它在网页重新加载时重放
+    （2026-11-27 收拢：原来负责人、桌宠各写了一份同样的合并 / 过期）"""
+
+    KEEP_S = 600
+
+    def __init__(self):
+        self.by_sid = {}
+
+    def merge(self, states):
+        """收下一批：坏记录跳过，同一个会话留新的，过期的扔掉。返回收下的（原样顺序）"""
+        good = [s for s in states if valid_session(s)]
+        for st in good:
+            old = self.by_sid.get(st["sid"])
+            if not old or old["ts"] <= st["ts"]:
+                self.by_sid[st["sid"]] = st
+        cutoff = time.time() - self.KEEP_S
+        self.by_sid = {k: v for k, v in self.by_sid.items() if v["ts"] >= cutoff}
+        return good
+
+    def values(self):
+        return list(self.by_sid.values())
+
+    def __iter__(self):
+        return iter(self.by_sid)
+
+    def __len__(self):
+        return len(self.by_sid)
+
+
+class PetAdds:
+    """新加桌宠的几种情况都在这一处（2026-11-27 收拢：原来散在 adding / cancelled 两张表和好几处判断里）。
+    一个编号要么空着，要么是下面两种之一：
+      等报到：叫出来了，手上有这次添加的暗号和回话。报到、暗号对上 → confirm 交出回话，负责人这时才写名单；
+              暗号对不上（取消前叫出来、来晚了的旧进程）→ 叫它走，这一次照旧等着
+      暂留：叫出来过但没加成（等不到、取消），旧进程可能还在启动、还没拿到这个编号的锁，hold 秒内先不再用，过了自然空出来
+    等报到 → 没成（起不来 / 等不到 / 取消）：end 交出回话；起不来的根本没有进程，不用暂留。
+    每次添加的暗号不同：超时只去掉自己那一次，同一个编号后来又加的一次不受影响"""
+
+    def __init__(self):
+        self.waiting = {}   # 编号 → (暗号, 回话)
+        self.held = {}      # 编号 → 什么时候没加成（monotonic 秒）
+
+    def __contains__(self, pid):
+        return pid in self.waiting
+
+    def ids(self):
+        return list(self.waiting)
+
+    def free(self, pid, now, hold):
+        return pid not in self.waiting and now - self.held.get(pid, -1e9) >= hold
+
+    def begin(self, pid, reply):
+        token = secrets.token_hex(6)   # 随机的：换了负责人也不会和旧进程手上的撞上
+        self.waiting[pid] = (token, reply)
+        return token
+
+    def token(self, pid):
+        return self.waiting[pid][0] if pid in self.waiting else None
+
+    def confirm(self, pid):
+        return self.waiting.pop(pid)[1]
+
+    def end(self, pid, token, hold, now):
+        """这一次没成：交出回话。token 不是现在这一次的（编号又被加了一次）返回 None，什么都不动"""
+        current = self.waiting.get(pid)
+        if not current or current[0] != token:
+            return None
+        del self.waiting[pid]
+        if hold:
+            self.held[pid] = now
+        return current[1]
 
 
 def send_cli(cmd, path=None):
@@ -170,9 +253,8 @@ class HubServer:
         self.srv = None
         self.closed = False
         self.stopping = False   # 全部退出了：再来报到的叫它走
-        self.sessions = {}      # 会话编号 → 最近的状态（只留 10 分钟内的），新报到的先拿到一份完整的
-        self.adding = {}        # 新加、还没报到的编号 → {"token", "reply"}；报到了才写进名单
-        self.cancelled = {}     # 刚没加成的编号 → 什么时候（秒）：旧进程可能还在启动，先不再用
+        self.sessions = SessionBook()   # 新报到的先拿到一份完整的
+        self.adds = PetAdds()           # 新加、还没报到的；报到了才写进名单
         self._broadcasting = self._again = False
 
     def start(self):
@@ -223,7 +305,7 @@ class HubServer:
     def members(self):
         """名单上的，加上新加、还没报到的（排在后面）"""
         ids = store.roster()
-        return ids + [i for i in self.adding if i not in ids]
+        return ids + [i for i in self.adds.ids() if i not in ids]
 
     def roster(self, self_id=None):
         self_id = self_id or self.self_id
@@ -268,15 +350,7 @@ class HubServer:
 
     def share_sessions(self, changed):
         """负责人扫到的会话状态变化：记下来（新报到的先拿到一份完整的），发给连着的几只"""
-        cutoff = time.time() - 600
-        for st in changed:
-            sid = st.get("sid") if isinstance(st, dict) else None
-            if isinstance(sid, str) and sid:
-                old = self.sessions.get(sid)
-                if not old or (old.get("ts") or 0) <= (st.get("ts") or 0):
-                    self.sessions[sid] = st
-        for sid in [k for k, v in self.sessions.items() if not isinstance(v.get("ts"), (int, float)) or v["ts"] < cutoff]:
-            del self.sessions[sid]
+        changed = self.sessions.merge(changed)
         if changed:
             for link in list(self.clients.values()):
                 link.send({"type": "sessions", "states": changed})
@@ -298,8 +372,8 @@ class HubServer:
             if self.stopping:   # 大家正在一起走：晚到的也跟着走
                 link.send({"type": "signal", "what": "quit"})
                 return
-            if pid in self.adding:
-                if msg.get("join") != self.adding[pid]["token"]:   # 取消前叫出来的旧进程来晚了：不是这一次的，叫它走
+            if pid in self.adds:
+                if msg.get("join") != self.adds.token(pid):   # 取消前叫出来的旧进程来晚了：不是这一次的，叫它走
                     link.send({"type": "cmd", "rid": 0, "action": "dismiss", "value": ""})
                     return
                 if not self._confirm_add(pid, link):
@@ -394,7 +468,7 @@ class HubServer:
             now = time.monotonic()
             free = [i for i in ["main"] + [str(n) for n in range(2, store.MAX_PETS + 2)]
                     if i not in ids and not self.api.hub_running(i)
-                    and now - self.cancelled.get(i, -1e9) >= self.ADD_WAIT_MS / 1000]
+                    and self.adds.free(i, now, self.ADD_WAIT_MS / 1000)]
             if not free:
                 return reply(False, "刚送走的那只还在挥手，等它走了再试")
             new = free[0]
@@ -404,8 +478,7 @@ class HubServer:
                 except OSError:
                     pass
             mode = "desktop" if value == "desktop" else "claude"
-            token = secrets.token_hex(6)   # 随机的：换了负责人也不会和旧进程手上的撞上
-            self.adding[new] = {"token": token, "reply": reply, "mode": mode}
+            token = self.adds.begin(new, reply)   # 报到了才写进名单、才回话
             # 它连上来报到之前名单就先按要它待的地方显示（不然先显示成默认的 Claude 窗口里，报到后才跳成桌面上）
             self.info[new] = _info("", mode)
             if not self.api.hub_launch(new, mode, token):
@@ -438,10 +511,10 @@ class HubServer:
             return reply(True)
         if op != "pet" or action not in ACTIONS or pid not in ids:
             return reply(False, "这一只已经不在了")
-        if pid in self.adding:   # 还在出来的路上
+        if pid in self.adds:   # 还在出来的路上
             if action != "dismiss":
                 return reply(False, "那一只还没出来，等一下再试")
-            self._end_add(pid, self.adding[pid]["token"], "这次添加取消了")
+            self._end_add(pid, self.adds.token(pid), "这次添加取消了")
             return reply(True)
         if action == "dismiss":
             return reply(True) if self.leave([pid]) else reply(False, "没能记下名单，先没送走")
@@ -465,31 +538,28 @@ class HubServer:
     def _end_add(self, pid, token, error, reserve=True):
         """这一次添加没成（起不来、等不到、取消）：去掉、回话；不是这一次（编号又被加了一次）就不碰。没写过名单，不用改文件。
         reserve：叫出来过的（取消、等不到）编号先空一阵——那个进程可能还在启动；根本没起来的不用留（2026-11-27 Codex 复审）"""
-        current = self.adding.get(pid)
-        if not current or current["token"] != token:
+        reply = self.adds.end(pid, token, reserve, time.monotonic())
+        if not reply:
             return
-        del self.adding[pid]
-        if reserve:
-            self.cancelled[pid] = time.monotonic()
         if pid not in self.clients:
             self.info.pop(pid, None)
         store.log(f"{pid} 号没加成：{error}")
-        current["reply"](False, error)
+        reply(False, error)
         self.broadcast_roster()
 
     def _confirm_add(self, pid, link):
         """新加的那只报到了：这时才写进名单、才回成功。写不进去就说没成，叫它走"""
-        current = self.adding.pop(pid)
+        reply = self.adds.confirm(pid)
         try:
             store.save_roster([i for i in store.roster() if i != pid] + [pid])
         except OSError as e:
             store.log("保存多开名单失败: " + str(e))
             link.send({"type": "cmd", "rid": 0, "action": "dismiss", "value": ""})
             self.info.pop(pid, None)
-            current["reply"](False, "没能记下名单，新的一只先走了")
+            reply(False, "没能记下名单，新的一只先走了")
             self.broadcast_roster()
             return False
-        current["reply"](True)
+        reply(True)
         return True
 
     def leave(self, pids):

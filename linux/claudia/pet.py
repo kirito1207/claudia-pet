@@ -95,7 +95,8 @@ class Pet:
         self.characters = []
         self.manifest_json = "{}"
         self.stamps = {}
-        self.session_cache = {}   # 不是负责人时：负责人发来的会话状态（会话编号 → 最近的），网页重新加载时重放
+        self.session_book = pethub.SessionBook()   # 各个会话最近的状态（负责人自己扫的、别的几只收到的都记在这），网页重新加载时重放
+        self.leader_stamps = {}   # 负责人扫会话 / 通知文件用的，和网页那份分开：网页重新加载不用整份重扫、重发给大家
         self.page_w, self.page_h, self.page_foot = BASE_W, BASE_H, 62.0
         self.shown_foot = 0.0
         self.shown_scale = 0.0
@@ -254,8 +255,8 @@ class Pet:
         self.apply_sizes(anchor="corner")
         self.stamps.clear()
         self.poll()
-        if not self.is_leader and self.session_cache:   # 网页重新加载了：把负责人发来过的会话状态重放一遍
-            self.js(f"setSessionStates('claude', {store.dumps(list(self.session_cache.values()))})")
+        if len(self.session_book):   # 网页重新加载了：会话状态重放一遍
+            self.js(f"setSessionStates('claude', {store.dumps(self.session_book.values())})")
         GLib.timeout_add(3000, self.reveal)
 
     def on_web_crash(self, reason):
@@ -381,6 +382,7 @@ class Pet:
 
     # ================= 读 Claude Code 插件写的状态 =================
     def poll(self):
+        self.leader_tick()   # 负责人的活不看自己的网页好没好：别的几只的卡片不能跟着停更（2026-11-27 Codex 复审）
         if not self.ready:
             return
         cid = "claude"
@@ -403,16 +405,85 @@ class Pet:
                 self.js(f"applyCharState({store.dumps(cid)}, {data})")
             else:
                 self.js(f"setQuota({store.dumps(cid)}, {data}, {int(modified)})")
-        self.poll_session_states(cid, cutoff)
-        if self.is_leader:
-            for notice in pending_notices(self.stamps):
-                self.task_notice(*notice)
+
+    # ================= 负责人的活 =================
+    # 系统里只能有一份的事都在这一段（2026-11-27 收拢：原来散在 poll / tick / 好几个函数里各自判断 is_leader）：
+    # become_leader 一次开齐（协调中心、托盘、快捷键），give_up_leading 一次关掉；每 0.3 秒的活都从 leader_tick 进
+    # （扫会话发给大家、弹任务通知、每小时清旧状态文件），不看自己的网页好没好。别的地方只剩几处看 is_leader：
+    # 快捷键注册、通知和托盘刷新（托盘在负责人这儿）、设置页显示快捷键占用
+    def become_leader(self):
+        """当负责人：开协调中心、托盘、隐藏快捷键（每 0.3 秒的活见 leader_tick）"""
+        self.is_leader = True
+        store.log("当负责人")
+        try:
+            store.STATE.mkdir(parents=True, exist_ok=True)
+            (store.STATE / "pet.pid").write_text(str(os.getpid()))
+        except OSError:
+            pass
+        if self.hub:
+            self.hub.close()
+        self.hub = pethub.HubServer(self)
+        self.hub.start()
+        self.tray = system.make_tray(self.build_tray_menu, self.show_again)
+        self.register_hotkey(startup=True)
+        self.push_settings()
+
+    def give_up_leading(self):
+        """不当负责人了（要走了）：马上放开锁、关掉托盘，下一任才能立刻接手"""
+        if not self.is_leader:
+            return
+        self.is_leader = False
+        if self.tray:
+            self.tray.remove()
+            self.tray = None
+        if self.hub:
+            self.hub.close()
+        if self.leader_lock is not None:
+            try:
+                os.close(self.leader_lock)
+            except OSError:
+                pass
+            self.leader_lock = None
+
+    def hub_try_lead(self):
+        fd = claude.take_lock("leader")
+        if fd is None:
+            return False
+        self.leader_lock = fd
+        self.become_leader()
+        self.hub.adopt()   # 崩溃的上一任、没在跑的几只叫回来
+        return True
+
+    def leader_tick(self):
+        if not self.is_leader:
+            return
+        self.scan_sessions()
+        for notice in pending_notices(self.leader_stamps):
+            self.task_notice(*notice)
+        self.clean_stale_state()
+
+    def scan_sessions(self):
+        """各个 Claude Code 会话的状态：只有负责人扫目录，扫到的变化自己用、经 pethub 发给大家"""
+        cutoff = time.time() - pethub.SessionBook.KEEP_S
+        changed = []
+        for f in store.STATE.glob("claude-session-*.json"):
+            result = store.changed_state(f, self.leader_stamps, max_bytes=65536, not_before=cutoff)
+            if result:
+                changed.append(result[0])
+        self.receive_sessions(changed)
+        self.hub.share_sessions(changed)
+
+    def receive_sessions(self, states):
+        """会话状态（负责人自己扫到的，或者负责人发来的）：记下来，网页好了就交给它。坏记录只跳过那一条"""
+        good = self.session_book.merge(states)
+        if good and self.ready:
+            self.js(f"setSessionStates('claude', {store.dumps(good)})")
 
     def clean_stale_state(self):
         """插件每个会话写一个 claude-session-<sid>.json、一个 claude-notify-<sid>.json，自己从不删。这两种只认最近 10 分钟 / 2 分钟的，
-        超过一天的由第一只删掉（启动时一次、之后每小时一次）。Windows 版见 Pet.Web.cs 的 CleanStaleState"""
+        超过一天的由负责人删掉（当上负责人时一次、之后每小时一次；几只一起删会抢）。Windows 版见 Pet.Leader.cs 的 CleanStaleState"""
         now = time.time()
-        if not self.is_leader or now - self.state_cleaned_at < 3600:
+        if now - self.state_cleaned_at < 3600:
             return
         self.state_cleaned_at = now
         n = 0
@@ -426,20 +497,6 @@ class Pet:
                     pass
         if n:
             store.log(f"清掉 {n} 个一天前的会话状态文件")
-
-    def poll_session_states(self, cid, cutoff):
-        """各个 Claude Code 会话的状态：只有负责人扫目录，扫到的变化经 pethub 发给大家（不是负责人的什么都不做，等它发来）"""
-        if self.hub and not self.is_leader:
-            return
-        changed = []
-        for f in store.STATE.glob("claude-session-*.json"):
-            result = store.changed_state(f, self.stamps, max_bytes=65536, not_before=cutoff)
-            if result:
-                changed.append(result[0])
-        if changed:
-            self.js(f"setSessionStates({store.dumps(cid)}, {store.dumps(changed)})")
-            if self.hub:
-                self.hub.share_sessions(changed)
 
     # ---- 任务通知（只从第一只弹） ----
     def task_notice(self, nid, kind, ts):
@@ -473,7 +530,6 @@ class Pet:
                 return
         self.follow_place()
         self.update_yield()
-        self.clean_stale_state()
 
     def claude_found(self):
         st = self.claude_watch.state if self.claude_watch else None
@@ -1611,40 +1667,6 @@ class Pet:
         return r.startswith("已打开")
 
     # ---- 多开：每只平级，都经过 pethub（谁是负责人、怎么交接见 pethub.py 开头）----
-    def become_leader(self):
-        """当负责人：开协调中心、托盘、隐藏快捷键；任务通知、清理旧状态文件也归它（poll / tick 里看 is_leader）"""
-        self.is_leader = True
-        store.log("当负责人")
-        try:
-            store.STATE.mkdir(parents=True, exist_ok=True)
-            (store.STATE / "pet.pid").write_text(str(os.getpid()))
-        except OSError:
-            pass
-        if self.hub:
-            self.hub.close()
-        self.hub = pethub.HubServer(self)
-        self.hub.start()
-        self.tray = system.make_tray(self.build_tray_menu, self.show_again)
-        self.register_hotkey(startup=True)
-        self.push_settings()
-
-    def give_up_leading(self):
-        """不当负责人了（要走了）：马上放开锁、关掉托盘，下一任才能立刻接手"""
-        if not self.is_leader:
-            return
-        self.is_leader = False
-        if self.tray:
-            self.tray.remove()
-            self.tray = None
-        if self.hub:
-            self.hub.close()
-        if self.leader_lock is not None:
-            try:
-                os.close(self.leader_lock)
-            except OSError:
-                pass
-            self.leader_lock = None
-
     def leave(self):
         """挥手再走（退出、被送走、大家一起走）"""
         if self.leaving:
@@ -1725,15 +1747,7 @@ class Pet:
 
     def hub_sessions(self, states):
         """负责人发来的会话状态（变化，或者刚连上时的完整一份）"""
-        for st in states:
-            sid = st.get("sid")
-            old = self.session_cache.get(sid)
-            if isinstance(sid, str) and (not old or (old.get("ts") or 0) <= (st.get("ts") or 0)):
-                self.session_cache[sid] = st
-        cutoff = time.time() - 600
-        self.session_cache = {k: v for k, v in self.session_cache.items() if (v.get("ts") or 0) >= cutoff}
-        if self.ready:
-            self.js(f"setSessionStates('claude', {store.dumps(states)})")
+        self.receive_sessions(states)
 
     def hub_toggle(self):
         self.set_user_hidden(not self.user_hidden)
@@ -1761,15 +1775,6 @@ class Pet:
         """负责人自己要走：先交出去，再挥手"""
         self.give_up_leading()
         self.leave()
-
-    def hub_try_lead(self):
-        fd = claude.take_lock("leader")
-        if fd is None:
-            return False
-        self.leader_lock = fd
-        self.become_leader()
-        self.hub.adopt()   # 崩溃的上一任、没在跑的几只叫回来
-        return True
 
     def hub_running(self, pid):
         return claude.pet_running(pid)

@@ -38,10 +38,10 @@ namespace Claudia
                     var fi = new FileInfo(file);
                     if (fi.Length > 100000 || (DateTime.UtcNow - fi.LastWriteTimeUtc).TotalMinutes > 2) continue;
                     var key = "notice:" + file; var stamp = fi.LastWriteTimeUtc.Ticks + ":" + fi.Length;
-                    if (stamps.TryGetValue(key, out var previous) && previous == stamp) continue;
+                    if (leaderStamps.TryGetValue(key, out var previous) && previous == stamp) continue;
                     var data = Store.ReadJson(file);
                     if (data == null || !data.TryGetValue("events", out var raw) || !(raw is object[] events)) continue;
-                    stamps[key] = stamp;
+                    leaderStamps[key] = stamp;
                     foreach (var value in events.OfType<Dictionary<string, object>>()) {
                         if (value.TryGetValue("id", out var id) && value.TryGetValue("kind", out var kind) && value.TryGetValue("ts", out var ts))
                             TaskNotice(id as string, kind as string, Convert.ToDouble(ts));

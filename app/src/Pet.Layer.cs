@@ -35,6 +35,7 @@ namespace Claudia
             // DirectHost 平时又按鼠标位置切穿透，所以交给它一直穿着
             Host.ForcePassThrough = c || ClickThrough;   // 开着鼠标穿透时露出来也照样穿（Pet.Fullscreen）
             if (!c) UpdateDeskLayer();   // 桌面模式：出来后马上按层级设置摆好
+            UpdateFollowMark();   // 藏起来就不算排在 Claude 上面那一组里了
             UpdatePageHidden();
         }
         void UpdatePageHidden() => Js($"setPageHidden({(concealed || sessionLocked || !shownInClaude ? "true" : "false")})");

@@ -22,6 +22,7 @@ namespace Claudia
         public void Quit()
         {
             StopMotion();
+            if (hwnd != IntPtr.Zero) FollowNative.Mark(hwnd, IntPtr.Zero);   // 窗口销毁前撕掉标记
             GiveUpLeading();
             hub?.Close();
             UnregisterAppBar();

@@ -273,7 +273,11 @@ namespace Claudia
                 var leader = (PetHubServer)two.Hub;
                 leader.ShareSessions(new List<Dictionary<string, object>> {
                     new Dictionary<string, object> { ["sid"] = "a", ["pose"] = "reading", ["ts"] = now },
-                    new Dictionary<string, object> { ["sid"] = "old", ["pose"] = "thinking", ["ts"] = now - 900 } });
+                    new Dictionary<string, object> { ["sid"] = "old", ["pose"] = "thinking", ["ts"] = now - 900 },
+                    new Dictionary<string, object> { ["sid"] = new object[] { "x" }, ["ts"] = now },   // 坏记录：只跳过这一条
+                    new Dictionary<string, object> { ["sid"] = "bad-ts", ["ts"] = "soon" },
+                    new Dictionary<string, object> { ["sid"] = "nan", ["ts"] = double.NaN },
+                    new Dictionary<string, object> { ["sid"] = "inf", ["ts"] = double.PositiveInfinity } });
                 if (!Pump(f, () => three.Sessions.Count == 1) || !three.Sessions[0].SequenceEqual(new[] { "a", "old" })) throw new Exception("Session changes did not reach the other pet");
                 if (!leader.SessionIds.SequenceEqual(new[] { "a" })) throw new Exception("Expired sessions were kept for newcomers");
                 Store.SaveRoster(Store.Roster().Concat(new[] { "5" }));
@@ -408,6 +412,55 @@ namespace Claudia
             finally { CloseFamily(f); PetHubNames.ClearStopping(); }
         }
 
+        // 跟同一个 Claude 窗口的桌宠排成一组（ZOrderRule.InClaudeStack，2026-11-27）：只看从 Claude 往上的窗口序列，不碰真窗口
+        /// <summary>协调中心拆出来的两个小类，不连管道直接测</summary>
+        static void TestPetParts()
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            Dictionary<string, object> S(object sid, object ts, string pose = "") => new Dictionary<string, object> { ["sid"] = sid, ["ts"] = ts, ["pose"] = pose };
+            var book = new SessionBook();
+            var got = book.Merge(new[] { S("a", now - 5, "old"), S("a", now, "new"), S("b", now - 900), S("c", double.NaN), S("", now) });
+            if (string.Join(",", got.Select(x => x["sid"])) != "a,a,b") throw new Exception("Session book kept bad records: " + string.Join(",", got.Select(x => x["sid"])));
+            if (!book.Ids.SequenceEqual(new[] { "a" })) throw new Exception("Session book kept an expired session");
+            book.Merge(new[] { S("a", now - 1, "late") });
+            if ((string)book.Values[0]["pose"] != "new") throw new Exception("An older session state arriving late won");
+
+            var adds = new PetAdds();
+            var replies = new List<string>();
+            var t1 = adds.Begin("2", (ok, e) => replies.Add("first:" + ok));
+            if (!adds.Contains("2") || adds.Free("2", 0, 30000)) throw new Exception("A number waiting to report in was free");
+            if (adds.End("2", "someone-else", true, 0) != null) throw new Exception("Another add's timeout touched this one");
+            adds.End("2", t1, true, 100000)(false, "");
+            if (adds.Free("2", 110000, 30000) || !adds.Free("2", 131000, 30000)) throw new Exception("A cancelled number was not held back for exactly the hold time");
+            adds.Begin("3", null);
+            adds.End("3", adds.Token("3"), false, 100000);
+            if (!adds.Free("3", 100000, 30000)) throw new Exception("A launch that never started was held back");
+            adds.Begin("4", (ok, e) => replies.Add("four:" + ok));
+            adds.Confirm("4")(true, "");
+            if (adds.Contains("4") || string.Join(",", replies) != "first:False,four:True") throw new Exception("Add replies went wrong: " + string.Join(",", replies));
+            Console.WriteLine("PASS: session book keeps the newest valid state per session for 10 minutes; adds wait, confirm, end and hold numbers as they should");
+        }
+
+        static void TestZOrder()
+        {
+            IntPtr claude = (IntPtr)100, other = (IntPtr)200, a = (IntPtr)1, b = (IntPtr)2, hidden = (IntPtr)9, app = (IntPtr)50;
+            (IntPtr, bool, IntPtr) P(IntPtr h, IntPtr following) => (h, true, following);   // 一只看得见的桌宠，跟着 following
+            var checks = new (string what, (IntPtr, bool, IntPtr)[] above, IntPtr pet, bool expected)[]
+            {
+                ("A right above Claude", new[] { P(a, claude) }, a, true),
+                ("A → B → Claude: both stay", new[] { P(b, claude), P(a, claude) }, a, true),
+                ("A → B → Claude: B stays", new[] { P(b, claude), P(a, claude) }, b, true),
+                ("invisible windows in between do not count", new[] { (hidden, false, IntPtr.Zero), P(a, claude) }, a, true),
+                ("an app covering Claude below A: A fell out", new[] { (app, true, IntPtr.Zero), P(a, claude) }, a, false),
+                ("B in place even if A fell out above an app", new[] { P(b, claude), (app, true, IntPtr.Zero), P(a, claude) }, b, true),
+                ("a pet following another Claude is not in the group", new[] { P(b, other), P(a, claude) }, a, false),
+                ("nothing above Claude", new (IntPtr, bool, IntPtr)[0], a, false),
+            };
+            foreach (var (what, above, pet, expected) in checks)
+                if (ZOrderRule.InClaudeStack(above, pet, claude) != expected) throw new Exception("Z-order rule failed: " + what);
+            Console.WriteLine("PASS: pets following the same Claude window form one group and stay put once stacked; a pet that fell out goes back");
+        }
+
         [STAThread]
         static int Main()
         {
@@ -415,7 +468,7 @@ namespace Claudia
             var data = Path.Combine(Path.GetTempPath(), "claudia-" + id);
             Environment.SetEnvironmentVariable("CLAUDIA_DATA_DIR", data);
             Environment.SetEnvironmentVariable("CLAUDIA_STATE_DIR", Path.Combine(data, "state"));
-            try { Pet.TestHandoff(); TestCharacterMigration(id); TestLegacyMirrorMigration(id + "-legacy"); TestPetHub(); return 0; }
+            try { Pet.TestHandoff(); TestCharacterMigration(id); TestLegacyMirrorMigration(id + "-legacy"); TestZOrder(); TestPetParts(); TestPetHub(); return 0; }
             catch (Exception e) { Console.Error.WriteLine(e); return 1; }
             finally { if (Directory.Exists(data)) Directory.Delete(data, true); }
         }

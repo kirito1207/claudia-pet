@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
-using Forms = System.Windows.Forms;
 
 namespace Claudia
 {
@@ -36,6 +35,7 @@ namespace Claudia
                 Native.SetWindowPos(hwnd, Native.HWND_NOTOPMOST, 0, 0, 0, 0, Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
             }
             PlaceHome();
+            UpdateFollowMark();   // 切到桌面上就撕掉「跟着 Claude」的标记
             UpdatePageHidden();
         }
 
@@ -78,45 +78,6 @@ namespace Claudia
             if (mine) return m;
             m.Dispose(); return null;
         }
-        /// <summary>抢负责人锁（就是原来的单实例互斥量，插件 / MCP 看它判断在不在跑）；抢不到返回 null</summary>
-        public static Mutex TakeLeaderLock()
-        {
-            var m = new Mutex(false, Ensure.MutexName);
-            try { if (m.WaitOne(0)) return m; }
-            catch (AbandonedMutexException) { return m; }   // 上一任崩溃没放：等于放了
-            m.Dispose(); return null;
-        }
-
-        /// <summary>当负责人：开协调中心、托盘、隐藏快捷键；任务通知、清理旧状态文件也归它（Poll 里看 isLeader）</summary>
-        void BecomeLeader()
-        {
-            isLeader = true;
-            Store.Log("当负责人");
-            try { Directory.CreateDirectory(Store.State); File.WriteAllText(Path.Combine(Store.State, "pet.pid"), Process.GetCurrentProcess().Id.ToString()); } catch { }
-            hub?.Close();
-            hub = new PetHubServer(this);
-            hub.Start();
-            tray = new Forms.NotifyIcon { Text = Store.AppName, Visible = true };
-            try { tray.Icon = new System.Drawing.Icon(Path.Combine(Store.Install, "AppIcon.ico")); } catch { tray.Icon = System.Drawing.SystemIcons.Application; }
-            var trayMenu = new Forms.ContextMenuStrip();
-            trayMenu.Opening += (_, e) => { FillTrayMenu(trayMenu); e.Cancel = false; };
-            tray.ContextMenuStrip = trayMenu;
-            tray.DoubleClick += (_, __) => ShowAgain();   // 只叫出来、不挪位置（2026-11-07 用户定）；要回默认位置用菜单
-            RegisterHideHotKey();
-            PushSettings();
-        }
-
-        /// <summary>不当负责人了（要走了）：马上放开锁、关掉托盘和快捷键，下一任才能立刻接手</summary>
-        void GiveUpLeading()
-        {
-            if (!isLeader) return;
-            isLeader = false;
-            if (hwnd != IntPtr.Zero) UnregisterHotKey(hwnd, HotKeyId);
-            if (tray != null) { tray.Visible = false; tray.Dispose(); tray = null; }
-            hub?.Close();
-            if (LeaderLock != null) { try { LeaderLock.ReleaseMutex(); } catch { } LeaderLock.Dispose(); LeaderLock = null; }
-        }
-
         /// <summary>挥手再走（退出、被送走、大家一起走）</summary>
         void Leave()
         {
@@ -185,21 +146,8 @@ namespace Claudia
             if (isLeader) RegisterHideHotKey();
             PushSettings();
         }
-        /// <summary>不是负责人时：负责人发来的会话状态（会话编号 → 最近的），网页重新加载时重放</summary>
-        readonly Dictionary<string, Dictionary<string, object>> sessionCache = new Dictionary<string, Dictionary<string, object>>();
-        static double SessionTs(Dictionary<string, object> s) { try { return s.TryGetValue("ts", out var t) && t != null ? Convert.ToDouble(t) : 0; } catch { return 0; } }
-        public void HubSessions(List<Dictionary<string, object>> states)
-        {
-            foreach (var st in states)
-            {
-                var sid = st.TryGetValue("sid", out var v) ? v as string : null;
-                if (string.IsNullOrEmpty(sid)) continue;
-                if (!sessionCache.TryGetValue(sid, out var old) || SessionTs(old) <= SessionTs(st)) sessionCache[sid] = st;
-            }
-            var cutoff = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 600;
-            foreach (var sid in sessionCache.Where(kv => SessionTs(kv.Value) < cutoff).Select(kv => kv.Key).ToList()) sessionCache.Remove(sid);
-            if (ready) Js($"setSessionStates('claude', {Store.Json.Serialize(states)})");
-        }
+        /// <summary>不是负责人时：负责人发来的会话状态（变化，或者刚连上时的完整一份）</summary>
+        public void HubSessions(List<Dictionary<string, object>> states) => ReceiveSessions(states);
         public bool HubLaunch(string id, string mode, string join) => LaunchPet(id, mode, join);
         public bool HubRunning(string id) => PetRunning(id);
         public bool HubLeaving() => leaving;
@@ -208,15 +156,6 @@ namespace Claudia
         public void HubUserQuit() { try { File.WriteAllText(UserQuitFlag, ""); } catch { } }
         /// <summary>负责人自己要走：先交出去，再挥手</summary>
         public void HubLeaveSelf() { GiveUpLeading(); Leave(); }
-        public bool HubTryLead()
-        {
-            var m = TakeLeaderLock();
-            if (m == null) return false;
-            LeaderLock = m;
-            BecomeLeader();
-            ((PetHubServer)hub).Adopt();   // 崩溃的上一任、没在跑的几只叫回来
-            return true;
-        }
         public void HubMainLost() { leaving = true; Quit(); }
         public void Post(Action a) => System.Windows.Application.Current?.Dispatcher.BeginInvoke(a);
         public void Later(int ms, Action a) => After(ms, a);

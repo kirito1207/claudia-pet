@@ -121,6 +121,37 @@ def ids(roster):
     return [(p["index"], p["id"]) for p in roster]
 
 
+class PartsTests(unittest.TestCase):
+    """The two small pieces the hub is built from, without any sockets"""
+
+    def test_session_book_keeps_newest_skips_bad_and_expires(self):
+        book, now = pethub.SessionBook(), time.time()
+        got = book.merge([{"sid": "a", "ts": now - 5, "pose": "old"}, {"sid": "a", "ts": now, "pose": "new"},
+                          {"sid": "b", "ts": now - 900}, {"sid": "c", "ts": float("nan")}, {"sid": "", "ts": now}])
+        self.assertEqual([s["sid"] for s in got], ["a", "a", "b"], "bad records are dropped, good ones kept in order")
+        self.assertEqual(list(book), ["a"], "expired ones are not kept")
+        book.merge([{"sid": "a", "ts": now - 1, "pose": "late"}])
+        self.assertEqual(book.values()[0]["pose"], "new", "an older state arriving late does not win")
+
+    def test_pet_adds_states(self):
+        adds = pethub.PetAdds()
+        replies = []
+        t1 = adds.begin("2", lambda ok, e="": replies.append(("first", ok)))
+        self.assertIn("2", adds)
+        self.assertFalse(adds.free("2", 0, 30), "a number waiting to report in is taken")
+        self.assertIsNone(adds.end("2", "someone-else", True, 0), "another add's timeout does not touch this one")
+        adds.end("2", t1, True, 100)(False, "")
+        self.assertFalse(adds.free("2", 110, 30), "a number just cancelled is held back")
+        self.assertTrue(adds.free("2", 131, 30), "and freed after the hold")
+        adds.begin("3", None)
+        adds.end("3", adds.token("3"), False, 100)
+        self.assertTrue(adds.free("3", 100, 30), "a launch that never started is not held back")
+        adds.begin("4", lambda ok, e="": replies.append(("four", ok)))
+        adds.confirm("4")(True)
+        self.assertNotIn("4", adds)
+        self.assertEqual(replies, [("first", False), ("four", True)])
+
+
 class HubTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -384,6 +415,16 @@ class HubTests(unittest.TestCase):
         newcomer = self.join("4")
         self.assertTrue(pump(lambda: newcomer.sessions))
         self.assertEqual(sorted(newcomer.sessions[0]), ["a", "b"], "a pet that reports in gets the full current list first")
+
+    def test_bad_session_records_are_skipped_one_by_one(self):
+        now = time.time()
+        hub = self.leader().hub
+        hub.share_sessions([{"sid": ["x"], "ts": now}, {"sid": "s", "ts": "soon"}, {"sid": "t", "ts": True}, "junk",
+                            {"sid": "nan", "ts": float("nan")}, {"sid": "inf", "ts": float("inf")},
+                            {"sid": "good", "pose": "reading", "ts": now}])
+        self.assertTrue(pump(lambda: self.pets["2"].sessions))
+        self.assertEqual(self.pets["2"].sessions[0], ["good"], "the good record still goes out")
+        self.assertEqual(list(hub.sessions), ["good"])
 
     def test_pet_dismissed_before_it_connected_is_told_to_leave(self):
         late = self.join("5")   # not in the roster

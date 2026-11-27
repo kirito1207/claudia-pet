@@ -37,6 +37,7 @@ namespace Claudia
         /// <summary>读取 Claude 插件写入 state 目录的状态和额度，有变化就交给网页</summary>
         void Poll()
         {
+            LeaderTick();   // 负责人的活不看自己的网页好没好：别的几只的卡片不能跟着停更（2026-11-27 Codex 复审）
             if (!ready) return;
             // Claudia 只有 Claude 一个角色：插件写 claude-state.json（当前动作）、claude-quota.json（额度）、
             // claude-sessions.json 是仍在运行的旧插件写的多会话状态。
@@ -63,59 +64,7 @@ namespace Claudia
                 }
                 else Js($"setQuota({Q(id)}, {json}, {new DateTimeOffset(fi.LastWriteTimeUtc).ToUnixTimeSeconds()})");   // 带上修改时间：网页据此标「多久前的数据」
             }
-            if (!Paused) PollSessionStates(id);
-            CleanStaleState();
-            if (isLeader) PollTaskNotices();   // 只有负责人弹通知，别的几只不用扫
             ApplyLayer();
-        }
-
-        // 插件每个会话写一个 claude-session-<sid>.json、一个 claude-notify-<sid>.json，自己从不删：会话多了 state 目录一直攒小文件。
-        // 这两种只认最近 10 分钟 / 2 分钟的，超过一天的由负责人删掉（当上负责人时一次、之后每小时一次；几只一起删会抢）
-        DateTime stateCleanedAt = DateTime.MinValue;
-        void CleanStaleState()
-        {
-            if (!isLeader || (DateTime.UtcNow - stateCleanedAt).TotalHours < 1) return;
-            stateCleanedAt = DateTime.UtcNow;
-            int n = 0;
-            try
-            {
-                var cutoff = DateTime.UtcNow.AddDays(-1);
-                foreach (var pattern in new[] { "claude-session-*.json", "claude-notify-*.json" })
-                    foreach (var file in new DirectoryInfo(Store.State).EnumerateFiles(pattern))
-                        try { if (file.LastWriteTimeUtc < cutoff) { file.Delete(); n++; } } catch { }
-            }
-            catch (Exception e) { Store.Log("清理旧会话状态出错: " + e.Message); }
-            if (n > 0) Store.Log($"清掉 {n} 个一天前的会话状态文件");
-        }
-
-        /// <summary>各个 Claude Code 会话的状态：只有负责人扫目录，扫到的变化经 PetHub 发给大家（不是负责人的什么都不做，等它发来）</summary>
-        void PollSessionStates(string id)
-        {
-            if (hub != null && !isLeader) return;
-            var cutoff = DateTime.UtcNow.AddMinutes(-10);
-            var changed = new List<Dictionary<string, object>>();
-            try
-            {
-                foreach (var file in new DirectoryInfo(Store.State).EnumerateFiles("claude-session-*.json"))
-                {
-                    var path = file.FullName;
-                    if (!file.Exists || file.LastWriteTimeUtc < cutoff || file.Length > 65536)
-                    {
-                        stamps.Remove(path);
-                        continue;
-                    }
-                    var stamp = file.LastWriteTimeUtc.Ticks + ":" + file.Length;
-                    if (stamps.TryGetValue(path, out var old) && old == stamp) continue;
-                    var state = Store.ReadJson(path);
-                    if (state == null) continue;
-                    stamps[path] = stamp;
-                    changed.Add(state);
-                }
-            }
-            catch (IOException) { }   // 下次轮询重试。
-            catch (UnauthorizedAccessException) { }
-            if (changed.Count != 0) Js($"setSessionStates({Q(id)}, {Store.Json.Serialize(changed)})");
-            (hub as PetHubServer)?.ShareSessions(changed);
         }
     }
 }

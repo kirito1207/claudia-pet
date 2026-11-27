@@ -151,8 +151,8 @@ namespace Claudia
                     ApplySizes(anchor: Anchor.Corner);   // 解锁过文字大小的：按画布重设窗口，左上角不动（锁着的尺寸不变）
                     stamps.Clear();
                     Poll();
-                    // 网页重新加载了：不是负责人的把负责人发来过的会话状态重放一遍
-                    if (!isLeader && sessionCache.Count > 0) Js($"setSessionStates('claude', {Store.Json.Serialize(sessionCache.Values.ToList())})");
+                    // 网页重新加载了：会话状态重放一遍（负责人自己扫的、别的几只收到的都在 sessionBook 里）
+                    if (sessionBook.Count > 0) Js($"setSessionStates('claude', {Store.Json.Serialize(sessionBook.Values)})");
                 };
                 // 立绘加载失败时网页发消息过来：记进日志（每次启动最多 5 条），便于定位加载问题
                 core.WebMessageReceived += (_, a) =>

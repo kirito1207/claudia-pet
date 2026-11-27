@@ -123,6 +123,19 @@ namespace Claudia
 
             WatchClaudeMoves();
             FollowPlace();
+            UpdateFollowMark();
+        }
+
+        /// <summary>窗口上贴「我跟着哪个 Claude 窗口」：跟同一个 Claude 的桌宠认得彼此，排成一组（见 ZOrderRule.InClaudeStack）。
+        /// 藏起来、不在 Claude 里（挪到屏幕外、切到桌面上）就撕掉，换了 Claude 窗口就换。只在变了的时候动</summary>
+        IntPtr markedFor;
+        void UpdateFollowMark()
+        {
+            if (hwnd == IntPtr.Zero) return;
+            var want = shownInClaude && !concealed && !desktopMode ? claudeHwnd : IntPtr.Zero;
+            if (want == markedFor) return;
+            markedFor = want;
+            FollowNative.Mark(hwnd, want);
         }
 
         // Claude 窗口被拖动、改大小时，系统每挪一下就发一次「位置变了」。原来只靠每 0.1 秒查一次，
@@ -167,7 +180,9 @@ namespace Claudia
             var wasShown = shownInClaude;
             shownInClaude = true;
             if (!wasShown) UpdatePageHidden();
-            FollowNative.PlaceAbove(hwnd, claudeHwnd);
+            // 藏起来时不排层级：窗口只是全透明，系统仍当它看得见，几只一起藏着时会互相当成「别的窗口」来回插队
+            // （2026-11-27 Codex 复审）。藏着时看不见也点不到，不用排；出来后下一次照常排
+            if (!concealed) FollowNative.PlaceAbove(hwnd, claudeHwnd);
         }
 
         static bool Same(Native.RECT a, Native.RECT b) => a.Left == b.Left && a.Top == b.Top && a.Right == b.Right && a.Bottom == b.Bottom;
@@ -195,7 +210,7 @@ namespace Claudia
             ClampToArea(c, w, h, ref x, ref y);
             Native.MoveTo(hwnd, x, y);
             lastClaude = c; shownInClaude = true;
-            FollowNative.PlaceAbove(hwnd, claudeHwnd);
+            if (!concealed) FollowNative.PlaceAbove(hwnd, claudeHwnd);
         }
 
         /// <summary>拖完松手：拖出 Claude 窗口就推回来，并记下离右下角多远（下次启动、Claude 窗口挪了都按这个位置）</summary>
@@ -353,6 +368,20 @@ namespace Claudia
             [DllImport("user32.dll")] static extern bool UnhookWinEvent(IntPtr hook);
             public static void Unhook(IntPtr hook) { try { UnhookWinEvent(hook); } catch { } }
             [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd);
+            // 窗口标记：贴在自己窗口上的「我跟着哪个 Claude 窗口」，别的进程（同组的桌宠）也读得到
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SetProp(IntPtr h, string name, IntPtr data);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetProp(IntPtr h, string name);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr RemoveProp(IntPtr h, string name);
+            const string FollowMark = "ClaudiaFollowing";
+            public static void Mark(IntPtr pet, IntPtr claude) { if (claude == IntPtr.Zero) RemoveProp(pet, FollowMark); else SetProp(pet, FollowMark, claude); }
+
+            /// <summary>从紧挨 Claude 的那个窗口往上，依次给出 (窗口, 看不看得见, 标记)；最多看 64 个，够用了</summary>
+            static IEnumerable<(IntPtr, bool, IntPtr)> Above(IntPtr claude)
+            {
+                var h = GetWindow(claude, 3);   // GW_HWNDPREV：紧挨在上面的那个
+                for (var n = 0; h != IntPtr.Zero && n < 64; n++, h = GetWindow(h, 3))
+                    yield return (h, Native.IsWindowVisible(h), GetProp(h, FollowMark));
+            }
             [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder s, int n);
             [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowTextLength(IntPtr h);
             [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int attr, out Native.RECT r, int size);
@@ -406,18 +435,16 @@ namespace Claudia
                 return best;
             }
 
-            /// <summary>把她放在 Claude 窗口正上方一层（不置顶）：Claude 上面已经是她就不动，免得每 0.1 秒都重排一次</summary>
+            /// <summary>把她放在 Claude 窗口上方（不置顶）：已经在 Claude 上面连着的那一段里（中间只隔着看不见的窗口、同组的桌宠）就不动，
+            /// 免得每 0.1 秒都重排一次；掉出队伍了才插回 Claude 正上方。规则见 ZOrderRule.InClaudeStack</summary>
             /// <param name="async">从后台线程调时用 SWP_ASYNCWINDOWPOS：交给窗口所在线程去处理，不在这里等</param>
             public static void PlaceAbove(IntPtr pet, IntPtr claude, bool async = false)
             {
                 if (claude == IntPtr.Zero) return;
+                // 看不见的窗口不算：WPF 给她配的隐形属主窗口总夹在她和 Claude 之间，只比紧挨着的那个就永远不成立，
+                // 右键菜单（同一个界面线程）的三级盖住一级时会一闪一闪露出一级。同组的另一只也不算：不然两只来回插队
+                if (ZOrderRule.InClaudeStack(Above(claude), pet, claude)) return;
                 var prev = GetWindow(claude, 3);   // GW_HWNDPREV：紧挨在 Claude 上面的那个窗口
-                // 中间隔着的看不见的窗口不算：WPF 给她配的隐形属主窗口（Hidden Window）总夹在她和 Claude 之间
-                // （属主跟着被拥有的窗口一起挪），只比紧挨着的那个就永远不成立，平时每 0.1 秒、切窗口后每 1 毫秒重排一次，
-                // 右键菜单（同一个界面线程）的三级盖住一级时会一闪一闪露出一级
-                var h = prev;
-                while (h != IntPtr.Zero && h != pet && !Native.IsWindowVisible(h)) h = GetWindow(h, 3);
-                if (h == pet) return;
                 var after = IntPtr.Zero;           // HWND_TOP：普通窗口里的最上面
                 if (prev != IntPtr.Zero && (Native.GetWindowLong(prev, -20) & 0x8) == 0) after = prev;   // 0x8 = WS_EX_TOPMOST
                 Native.SetWindowPos(pet, after, 0, 0, 0, 0, 0x1 | 0x2 | 0x10 | (async ? 0x4000u : 0));   // NOSIZE | NOMOVE | NOACTIVATE (| ASYNCWINDOWPOS)
