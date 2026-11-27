@@ -118,6 +118,7 @@ class Pet:
         self.down = (0, 0)
         self.motion_id = 0
         self.drag_t0 = 0.0
+        self.last_held = (0, 0, 0.0)   # 拖动中最后一次看到左键还按着时：鼠标在哪、什么时候（_ms），松手按它算
         self.drag_timer = None
         self.last_bounds = None
         self.last_pos = None
@@ -992,6 +993,7 @@ class Pet:
         self.dragging = True
         p = self.motion_packet()
         self.drag_t0 = _ms()
+        self.last_held = (px, py, self.drag_t0)
         p.update(x=self.x, y=self.y, downX=down_x, downY=down_y, px=px, py=py, time=0)
         self.last_bounds = store.dumps(p["bounds"])
         self.js(f"setMotionActive(true); petMotion.begin({store.dumps(p)})")
@@ -1009,21 +1011,25 @@ class Pet:
         px, py, held = self.pointer_state()
         if not held:
             self.drag_timer = None   # 返回 False 后 GLib 自己删掉这个计时器；不清空的话 stop_motion 会拿旧编号再删一次
-            self.end_drag(px, py)
+            self.end_drag()
             self.pressed = False
             self.update_hit_rects()
             return False
+        now = _ms()
+        self.last_held = (px, py, now)
         if (px, py) != self.last_ptr:
             self.last_ptr = (px, py)
-            self.js(f"petMotion.pointer({{id:{self.motion_id},px:{px},py:{py},time:{round(_ms() - self.drag_t0, 1)}}})")
+            self.js(f"petMotion.pointer({{id:{self.motion_id},px:{px},py:{py},time:{round(now - self.drag_t0, 1)}}})")
         return True
 
-    def end_drag(self, px=None, py=None):
+    def end_drag(self):
+        """松手：按最后一次看到左键还按着时的位置和时刻收尾（2026-11-27）。原来用「发现松开那一刻」的鼠标位置和时间，
+        松手后鼠标往回带的那一小段也被算成松手前的移动，会往反方向飞、或者算出来太慢就停住（Windows 上用户实测出来的，
+        见 Pet.Physics.cs / DragHook.cs；这里每 16 毫秒看一次，最多少算松手前 16 毫秒的移动）"""
         if not self.dragging:
             return
-        if px is None:
-            px, py = self.pointer()
-        t = round(_ms() - self.drag_t0, 1)
+        px, py, at = self.last_held
+        t = round(at - self.drag_t0, 1)
         self.dragging = False
         self.flying = True
         self.js(f"petMotion.pointer({{id:{self.motion_id},px:{px},py:{py},time:{t}}}); "
