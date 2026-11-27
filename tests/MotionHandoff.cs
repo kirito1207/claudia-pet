@@ -281,6 +281,7 @@ namespace Claudia
                 if (!Pump(f, () => three.Sessions.Count == 1) || !three.Sessions[0].SequenceEqual(new[] { "a", "old" })) throw new Exception("Session changes did not reach the other pet");
                 if (!leader.SessionIds.SequenceEqual(new[] { "a" })) throw new Exception("Expired sessions were kept for newcomers");
                 Store.SaveRoster(Store.Roster().Concat(new[] { "5" }));
+                leader.LoadRoster();   // 负责人以自己内存里的为准，文件只是下次用的
                 var newcomer = JoinLate(f, "5");
                 if (!Pump(f, () => newcomer.Sessions.Count >= 1) || !newcomer.Sessions[0].SequenceEqual(new[] { "a" })) throw new Exception("A pet reporting in did not get the full session list");
                 Console.WriteLine("PASS: multi-pet hub forwards commands in order with replies, signals reach everyone, leader handoff goes to the next pet and numbers shift");

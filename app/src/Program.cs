@@ -48,7 +48,7 @@ namespace Claudia
                     var free = ids.Where(x => !Pet.PetRunning(x)).ToList();
                     if (free.Count > 0 || ids.Count == 0)
                     {
-                        var id = free.Count > 0 ? free[0] : Store.FreePetId(new string[0]);
+                        var id = free.Count > 0 ? free[0] : Store.FreePetId(x => !ids.Contains(x));
                         if (!ids.Contains(id)) Store.SaveRoster(ids.Concat(new[] { id }));
                         return (id, lead);
                     }

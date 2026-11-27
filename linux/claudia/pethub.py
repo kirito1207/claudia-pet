@@ -242,7 +242,7 @@ class HubServer:
     RELAUNCH_MS, RELAUNCH_LIMIT, RELAUNCH_WINDOW_S = 3000, 3, 600
     ADD_WAIT_MS = 30000   # 新加的那只多久没报到就算没成
 
-    def __init__(self, api, path=None, self_id=None):
+    def __init__(self, api, path=None, self_id=None, sessions=None):
         self.api, self.path = api, path or hub_path()
         self.self_id = self_id or store.pet_id
         self.relaunched = {}   # 编号 → 最近几次叫回来的时间（秒）
@@ -253,9 +253,26 @@ class HubServer:
         self.srv = None
         self.closed = False
         self.stopping = False   # 全部退出了：再来报到的叫它走
-        self.sessions = SessionBook()   # 新报到的先拿到一份完整的
+        self.sessions = sessions if sessions is not None else SessionBook()   # 桌宠自己那一份（一个进程只留一份）：新报到的先拿到一份完整的
         self.adds = PetAdds()           # 新加、还没报到的；报到了才写进名单
         self._broadcasting = self._again = False
+        # 名单：负责人是它唯一的主人，以内存里这份为准，pets.json 只是存下来下次用的。存成功了才换（2026-11-27 Codex 复审：
+        # 原来一次操作里读好几次文件，前后读到的不一定是同一份）
+        self.pets = []
+        self.load_roster()
+
+    def load_roster(self):
+        """从 pets.json 读名单：当上负责人时一次（上一任走之前已经存好）；测试里改了文件后也用它"""
+        self.pets = store.roster()
+
+    def save_roster(self, pets):
+        try:
+            store.save_roster(pets)
+        except OSError as e:
+            store.log("保存多开名单失败: " + str(e))
+            return False
+        self.pets = pets
+        return True
 
     def start(self):
         store.RUN.mkdir(parents=True, exist_ok=True)
@@ -304,8 +321,7 @@ class HubServer:
     # ---- 名单 ----
     def members(self):
         """名单上的，加上新加、还没报到的（排在后面）"""
-        ids = store.roster()
-        return ids + [i for i in self.adds.ids() if i not in ids]
+        return self.pets + [i for i in self.adds.ids() if i not in self.pets]
 
     def roster(self, self_id=None):
         self_id = self_id or self.self_id
@@ -349,11 +365,12 @@ class HubServer:
         self.broadcast_roster()
 
     def share_sessions(self, changed):
-        """负责人扫到的会话状态变化：记下来（新报到的先拿到一份完整的），发给连着的几只"""
+        """负责人扫到的会话状态变化：记下来（新报到的先拿到一份完整的），发给连着的几只。返回收下的（坏记录跳过）"""
         changed = self.sessions.merge(changed)
         if changed:
             for link in list(self.clients.values()):
                 link.send({"type": "sessions", "states": changed})
+        return changed
 
     # ---- 连着的那几只、命令行发来的 ----
     def _on_msg(self, link, msg):
@@ -378,7 +395,7 @@ class HubServer:
                     return
                 if not self._confirm_add(pid, link):
                     return
-            if pid not in store.roster():   # 已经被送走（还没出来时就送走了）：叫它走
+            if pid not in self.pets:   # 已经被送走（还没出来时就送走了）：叫它走
                 link.send({"type": "cmd", "rid": 0, "action": "dismiss", "value": ""})
                 return
             old = self.clients.get(pid)
@@ -418,14 +435,14 @@ class HubServer:
 
     def adopt(self):
         """刚接手：名单上没在跑的（比如崩溃的上一任）叫回来"""
-        for pid in store.roster():
+        for pid in self.pets:
             if pid != self.self_id:
                 self.relaunch_later(pid)
 
     def relaunch_later(self, pid):
         def go():
             if (self.closed or self.stopping or stopping() or self.api.hub_leaving()
-                    or pid not in store.roster() or self.api.hub_running(pid)):
+                    or pid not in self.pets or self.api.hub_running(pid)):
                 return False
             now = GLib.get_monotonic_time() / 1e6
             recent = [t for t in self.relaunched.get(pid, []) if now - t < self.RELAUNCH_WINDOW_S]
@@ -466,12 +483,10 @@ class HubServer:
                 return reply(False, f"已经有 {len(ids)} 只了，家里住不下啦")
             # 刚送走的那只还在挥手、占着它的编号：跳过还在跑的编号，不然新进程拿不到锁、起不来；都被占着就先不加
             now = time.monotonic()
-            free = [i for i in ["main"] + [str(n) for n in range(2, store.MAX_PETS + 2)]
-                    if i not in ids and not self.api.hub_running(i)
-                    and self.adds.free(i, now, self.ADD_WAIT_MS / 1000)]
-            if not free:
+            new = store.free_pet_id(lambda i: i not in ids and not self.api.hub_running(i)
+                                    and self.adds.free(i, now, self.ADD_WAIT_MS / 1000))
+            if not new:
                 return reply(False, "刚送走的那只还在挥手，等它走了再试")
-            new = free[0]
             if new != "main":   # 这个编号以前用过、又送走了：旧设置不留给新来的（main 的设置在最上层，不删）
                 try:
                     (store.DATA / "pets" / new / "settings.json").unlink()
@@ -550,10 +565,7 @@ class HubServer:
     def _confirm_add(self, pid, link):
         """新加的那只报到了：这时才写进名单、才回成功。写不进去就说没成，叫它走"""
         reply = self.adds.confirm(pid)
-        try:
-            store.save_roster([i for i in store.roster() if i != pid] + [pid])
-        except OSError as e:
-            store.log("保存多开名单失败: " + str(e))
+        if not self.save_roster([i for i in self.pets if i != pid] + [pid]):
             link.send({"type": "cmd", "rid": 0, "action": "dismiss", "value": ""})
             self.info.pop(pid, None)
             reply(False, "没能记下名单，新的一只先走了")
@@ -564,11 +576,8 @@ class HubServer:
 
     def leave(self, pids):
         """这几只从名单里去掉并挥手走（连着的告诉它，没连着的等它报到时再叫它走）。负责人自己也在里面：交给名单上的下一只"""
-        keep = [i for i in store.roster() if i not in pids]
-        try:
-            store.save_roster(keep)
-        except OSError as e:   # 没记下来就先不走：不然下次打开又会把它叫回来
-            store.log("保存多开名单失败: " + str(e))
+        keep = [i for i in self.pets if i not in pids]
+        if not self.save_roster(keep):   # 没记下来就先不走：不然下次打开又会把它叫回来
             return False
         if not keep:   # 最后一只也走了：之后 Claude 先不把她叫出来
             self.api.hub_user_quit()

@@ -119,16 +119,16 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
 <div class="card" data-tab="physics">
   <h2>Q 弹</h2>
   <div class="item"><div class="label">Q 弹<small>点她、落地时贴着地面往下压扁再弹回来，只上下压；落得越快压得越深</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="clickBounce" aria-label="Q 弹"><span></span></label></div></div>
-  <div class="item physics-row"><div class="label"><label for="elasticity">Q 弹幅度</label><small>点击和落地一起变；100% 和 dsh-pet 一样，0 不压</small></div><div class="ctl"><input type="range" id="elasticity" data-physics="elasticity" min="0" max="0.25" step="0.01"><output class="val" id="elasticityVal" for="elasticity"></output></div></div>
+  <div class="item physics-row"><div class="label"><label for="elasticity">Q 弹幅度</label><small>点击和落地一起变；100% 和 dsh-pet 一样，0 不压</small></div><div class="ctl"><input type="range" id="elasticity" data-physics="elasticity"><output class="val" id="elasticityVal" for="elasticity"></output></div></div>
   <div class="item"><div class="label">碰边动作<small>扔出去撞到边框时偶尔撞头、摔倒或趴地；点她会扶她起来</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="tumbleActions" aria-label="碰边动作"><span></span></label></div></div>
 </div>
 <div class="card" data-tab="physics">
   <h2>拖拽和抛掷</h2>
   <div class="item"><div class="label">弹性跟手<small>快速松手能把她扔出去；关闭后直接跟手</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="physicsEnabled" aria-label="拖拽与抛掷"><span></span></label></div></div>
-  <div class="item physics-row"><div class="label"><label for="throwPower">力度</label><small>越大跟得越紧、飞得越快</small></div><div class="ctl"><input type="range" id="throwPower" data-physics="throwPower" min="0.2" max="2.5" step="0.05"><output class="val" id="throwPowerVal" for="throwPower"></output></div></div>
-  <div class="item physics-row"><div class="label"><label for="gravity">重力</label><small>0 为无重力</small></div><div class="ctl"><input type="range" id="gravity" data-physics="gravity" min="0" max="3000" step="50"><output class="val" id="gravityVal" for="gravity"></output></div></div>
-  <div class="item physics-row"><div class="label"><label for="restitution">反弹</label><small>碰到边框后保留多少速度</small></div><div class="ctl"><input type="range" id="restitution" data-physics="restitution" min="0" max="0.95" step="0.01"><output class="val" id="restitutionVal" for="restitution"></output></div></div>
-  <div class="item physics-row"><div class="label"><label for="groundFriction">地面摩擦</label><small>落地后多快停下</small></div><div class="ctl"><input type="range" id="groundFriction" data-physics="groundFriction" min="0.5" max="12" step="0.1"><output class="val" id="groundFrictionVal" for="groundFriction"></output></div></div>
+  <div class="item physics-row"><div class="label"><label for="throwPower">力度</label><small>越大跟得越紧、飞得越快</small></div><div class="ctl"><input type="range" id="throwPower" data-physics="throwPower"><output class="val" id="throwPowerVal" for="throwPower"></output></div></div>
+  <div class="item physics-row"><div class="label"><label for="gravity">重力</label><small>0 为无重力</small></div><div class="ctl"><input type="range" id="gravity" data-physics="gravity"><output class="val" id="gravityVal" for="gravity"></output></div></div>
+  <div class="item physics-row"><div class="label"><label for="restitution">反弹</label><small>碰到边框后保留多少速度</small></div><div class="ctl"><input type="range" id="restitution" data-physics="restitution"><output class="val" id="restitutionVal" for="restitution"></output></div></div>
+  <div class="item physics-row"><div class="label"><label for="groundFriction">地面摩擦</label><small>落地后多快停下</small></div><div class="ctl"><input type="range" id="groundFriction" data-physics="groundFriction"><output class="val" id="groundFrictionVal" for="groundFriction"></output></div></div>
   <div class="item"><div class="label">顶部反弹<small>关闭后碰顶就停住、自然落下</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="ceilingBounce" aria-label="顶部反弹"><span></span></label></div></div>
   <div class="item"><div class="label">恢复默认手感<small>这一组全部还原（不含 Q 弹幅度）</small></div><div class="ctl"><button id="resetPhysics">恢复默认</button></div></div>
 </div>
@@ -197,7 +197,8 @@ let state = null
 const deskLayerSeg = $('deskLayer')   // 「待在桌面上时」2026-11-27 起所有桌宠共用，单独一行放在名单外面
 function physicsLabel(el) {
   const n = +el.value
-  $(el.id + 'Val').textContent = el.id === 'gravity' ? n : el.id === 'elasticity' ? Math.round(n / .12 * 100) + '%' : n.toFixed(el.id === 'groundFriction' ? 1 : 2)
+  const base = state?.physicsRanges?.elasticity?.default   // Q 弹幅度按默认值算百分比：默认就是 100%
+  $(el.id + 'Val').textContent = el.id === 'gravity' ? n : el.id === 'elasticity' ? (base ? Math.round(n / base * 100) + '%' : n.toFixed(2)) : n.toFixed(el.id === 'groundFriction' ? 1 : 2)
 }
 for (const el of document.querySelectorAll('[data-physics]')) {
   el.oninput = () => physicsLabel(el)
@@ -243,6 +244,8 @@ function setState(s) {
     n.classList.toggle('warn', !!s.hotkeyFailed)
   }
   for (const el of document.querySelectorAll('[data-physics]')) {
+    const range = s.physicsRanges?.[el.id]   // 范围、步长由后端发来（三端共用 web/physics.json），要先于数值设好
+    if (range) { el.min = range.min; el.max = range.max; el.step = range.step }
     const value = s.physics?.[el.id]
     if (document.activeElement !== el && value != null) el.value = value
     physicsLabel(el)

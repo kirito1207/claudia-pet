@@ -21,19 +21,20 @@ namespace Claudia
                 ["clickBounce"] = SettingOn("clickBounce"), ["tumbleActions"] = SettingOn("tumbleActions"), ["idleEnabled"] = SettingOn("idleEnabled"), ["idleFrequency"] = IdleFrequency,
                 ["notifyResults"] = Store.AppOn("notifyResults"), ["notifyWaiting"] = Store.AppOn("notifyWaiting"), ["notifyBackgroundOnly"] = Store.AppOn("notifyBackgroundOnly"),
                 ["physicsEnabled"] = PhysicsEnabled, ["ceilingBounce"] = CeilingBounce,
-                ["physics"] = PhysicsRanges.ToDictionary(k => k.Key, k => PhysicsValue(k.Key)),
+                ["physics"] = PhysicsRanges.ToDictionary(k => k.Key, k => PhysicsValue(k.Key)), ["physicsRanges"] = PhysicsRangesForPage(),
                 ["hideHotkey"] = HideHotkey, ["hotkeyFailed"] = hotkeyFailed && isLeader,
                 ["hotkeys"] = new[] { new Dictionary<string, object> { ["id"] = "off", ["label"] = "不用快捷键" } }
                     .Concat(HotkeyChoices.Select(h => new Dictionary<string, object> { ["id"] = h.id, ["label"] = h.label })).ToList(),
                 ["character"] = current,
                 ["characters"] = Characters().Select(c =>
                 {
-                    var info = Store.ReadJson(Path.Combine(Store.CharacterDir(c.id), "character.json"));
+                    // 默认名、配色用内存里的角色清单（LoadCharacters 扫过一遍了），不再每次读 character.json
+                    var info = manifest?["characters"] is Dictionary<string, object> all && all.TryGetValue(c.id, out var v) ? v as Dictionary<string, object> : null;
                     var d = new Dictionary<string, object>
                     {
                         ["id"] = c.id, ["name"] = c.name,
-                        ["defaultName"] = info?["name"] as string ?? c.id,
-                        ["accent"] = info?["accent"] as string,
+                        ["defaultName"] = info != null && info.TryGetValue("defaultName", out var dn) && dn is string dns ? dns : c.id,
+                        ["accent"] = info != null && info.TryGetValue("accent", out var ac) ? ac as string : null,
                         ["custom"] = Store.Names.TryGetValue(c.id, out var n) ? n as string ?? "" : "",
                     };
                     return d;

@@ -1,0 +1,7 @@
+{
+  "throwPower":     { "min": 0.2, "max": 2.5,  "default": 1.0,  "step": 0.05 },
+  "gravity":        { "min": 0,   "max": 3000, "default": 1400, "step": 50 },
+  "restitution":    { "min": 0,   "max": 0.95, "default": 0.78, "step": 0.01 },
+  "groundFriction": { "min": 0.5, "max": 12,   "default": 2.5,  "step": 0.1 },
+  "elasticity":     { "min": 0,   "max": 0.25, "default": 0.12, "step": 0.01 }
+}

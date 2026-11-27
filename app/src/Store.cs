@@ -97,9 +97,10 @@ namespace Claudia
         /// <summary>只有负责人写</summary>
         public static void SaveRoster(IEnumerable<string> ids) =>
             WriteJson(PetsFile, new Dictionary<string, object> { ["pets"] = ids.ToArray() });
-        /// <summary>新来的一只用哪个编号：main 空着就用 main（它的设置在最上层），不然最小的空号</summary>
-        public static string FreePetId(IEnumerable<string> taken) =>
-            new[] { "main" }.Concat(Enumerable.Range(2, MaxPets).Select(n => n.ToString())).First(i => !taken.Contains(i));
+        /// <summary>所有可用的编号，按先用谁排：main（它的设置在最上层），再 2、3……比名额多一个：刚送走的那只挥手时占着编号也能再加</summary>
+        public static readonly string[] PetIds = new[] { "main" }.Concat(Enumerable.Range(2, MaxPets).Select(n => n.ToString())).ToArray();
+        /// <summary>新来的一只用哪个编号：按 PetIds 的顺序第一个 usable 的；都不行返回 null。启动时和「再来一只」都走这里</summary>
+        public static string FreePetId(Func<string, bool> usable) => PetIds.FirstOrDefault(usable);
 
         // ---- 所有桌宠共用的设置（2026-11-27）----
         // 隐藏快捷键、三项任务通知、鼠标穿透、待在桌面上时的层级不跟着某一只走：放在 app.json。第一次从原来第一只的设置里搬过来

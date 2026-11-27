@@ -1,6 +1,7 @@
 """Multi-pet hub with leader handoff (linux/claudia/pethub.py): real Unix sockets, one process.
 Run with python -B tests/test_pethub.py."""
 
+import json
 import sys
 import tempfile
 import time
@@ -132,6 +133,18 @@ class PartsTests(unittest.TestCase):
         self.assertEqual(list(book), ["a"], "expired ones are not kept")
         book.merge([{"sid": "a", "ts": now - 1, "pose": "late"}])
         self.assertEqual(book.values()[0]["pose"], "new", "an older state arriving late does not win")
+
+    def test_shared_physics_table_is_complete(self):
+        # web/physics.json is the one table for Windows, Linux and the settings page
+        table = json.loads((Path(__file__).resolve().parent.parent / "web" / "physics.json").read_text(encoding="utf-8"))
+        self.assertEqual(set(table), {"throwPower", "gravity", "restitution", "groundFriction", "elasticity"})
+        for key, r in table.items():
+            self.assertTrue(r["min"] <= r["default"] <= r["max"] and r["step"] > 0, key)
+
+    def test_free_pet_id_goes_in_order_and_says_none_when_full(self):
+        self.assertEqual(pethub.store.free_pet_id(lambda i: True), "main")
+        self.assertEqual(pethub.store.free_pet_id(lambda i: i not in ("main", "2")), "3")
+        self.assertIsNone(pethub.store.free_pet_id(lambda i: False))
 
     def test_pet_adds_states(self):
         adds = pethub.PetAdds()
@@ -272,6 +285,7 @@ class HubTests(unittest.TestCase):
         self.assertFalse(replies[0][0])
         self.assertEqual(store.roster(), ["main", "2", "3"])
         store.save_roster(["main", "2", "3", "4", "5"])
+        self.leader().hub.load_roster()   # the leader goes by its own copy; the file is only for next time
         self.leader().hub.request("add", value="claude")
         self.assertTrue(self.pets["main"].notices and "住不下" in self.pets["main"].notices[-1])
 
@@ -411,6 +425,7 @@ class HubTests(unittest.TestCase):
         self.assertEqual(sorted(hub.sessions), ["a", "b"], "only the last 10 minutes are kept for newcomers")
         late = self.join("4")
         store.save_roster(["main", "2", "3", "4"])
+        hub.load_roster()
         late.hub.close()
         newcomer = self.join("4")
         self.assertTrue(pump(lambda: newcomer.sessions))

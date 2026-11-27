@@ -29,13 +29,7 @@ HOME_OFF_RIGHT = 40
 DEFAULT_OFF_BOTTOM = 100   # 待在 Claude 窗口里：默认离 Claude 窗口右下角多远（同 Windows 版）
 WALK_MIN_ROOM = 24
 
-PHYSICS_RANGES = {
-    "throwPower": (0.2, 2.5, 1.0),
-    "gravity": (0.0, 3000.0, 1400.0),
-    "restitution": (0.0, 0.95, 0.78),
-    "groundFriction": (0.5, 12.0, 2.5),
-    "elasticity": (0.0, 0.25, 0.12),
-}
+PHYSICS_RANGES = store.physics_ranges()   # 编号 → {min, max, default, step}，三端共用 web/physics.json
 
 
 def num(v):
@@ -422,7 +416,7 @@ class Pet:
             pass
         if self.hub:
             self.hub.close()
-        self.hub = pethub.HubServer(self)
+        self.hub = pethub.HubServer(self, sessions=self.session_book)
         self.hub.start()
         self.tray = system.make_tray(self.build_tray_menu, self.show_again)
         self.register_hotkey(startup=True)
@@ -470,12 +464,14 @@ class Pet:
             result = store.changed_state(f, self.leader_stamps, max_bytes=65536, not_before=cutoff)
             if result:
                 changed.append(result[0])
-        self.receive_sessions(changed)
-        self.hub.share_sessions(changed)
+        # 记进 session_book（协调中心拿的是同一份）、发给大家，再交给自己的网页
+        self.show_sessions(self.hub.share_sessions(changed))
 
     def receive_sessions(self, states):
-        """会话状态（负责人自己扫到的，或者负责人发来的）：记下来，网页好了就交给它。坏记录只跳过那一条"""
-        good = self.session_book.merge(states)
+        """负责人发来的会话状态：记下来，网页好了就交给它。坏记录只跳过那一条"""
+        self.show_sessions(self.session_book.merge(states))
+
+    def show_sessions(self, good):
         if good and self.ready:
             self.js(f"setSessionStates('claude', {store.dumps(good)})")
 
@@ -964,11 +960,13 @@ class Pet:
 
     # ---- 拖动和飞行：网页的帧循环算位置（pet-motion.js），这里只交鼠标轨迹、按回来的位置挪窗口 ----
     def physics_value(self, key):
-        lo, hi, default = PHYSICS_RANGES[key]
+        r = PHYSICS_RANGES.get(key)
+        if not r:   # 只有参数表读不到时
+            return 0.0
         v = store.settings.get(key)
         if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
-            return _clamp(float(v), lo, hi)
-        return default
+            return _clamp(float(v), r["min"], r["max"])
+        return r["default"]
 
     def physics_enabled(self):
         return store.setting_on("physicsEnabled")
@@ -1087,8 +1085,8 @@ class Pet:
         else:
             if key not in PHYSICS_RANGES or isinstance(value, bool) or not isinstance(value, (int, float)):
                 return
-            lo, hi, _ = PHYSICS_RANGES[key]
-            if not math.isfinite(value) or not lo <= value <= hi:
+            r = PHYSICS_RANGES[key]
+            if not math.isfinite(value) or not r["min"] <= value <= r["max"]:
                 return
             store.settings[key] = float(value)
         store.save_settings()
@@ -1500,9 +1498,10 @@ class Pet:
 
     def settings_state(self):
         chars = []
-        for cid, name in self.characters:
-            info = store.read_json(store.character_dir(cid) / "character.json") or {}
-            chars.append({"id": cid, "name": name, "defaultName": info.get("name") or cid, "accent": info.get("accent"),
+        known = (getattr(self, "manifest", None) or {}).get("characters", {})
+        for cid, name in self.characters:   # 默认名、配色用内存里的角色清单（load_characters 扫过一遍了），不再每次读 character.json
+            info = known.get(cid) if isinstance(known.get(cid), dict) else {}
+            chars.append({"id": cid, "name": name, "defaultName": info.get("defaultName") or cid, "accent": info.get("accent"),
                           "custom": store.names().get(cid) or ""})
         hotkeys = [{"id": "off", "label": "不用快捷键"}] + [{"id": i, "label": label} for i, label, _ in system.CHOICES]
         return {
@@ -1515,7 +1514,7 @@ class Pet:
             "notifyResults": store.app_on("notifyResults"), "notifyWaiting": store.app_on("notifyWaiting"),
             "notifyBackgroundOnly": store.app_on("notifyBackgroundOnly"),
             "physicsEnabled": self.physics_enabled(), "ceilingBounce": store.setting_on("ceilingBounce"),
-            "physics": {k: self.physics_value(k) for k in PHYSICS_RANGES},
+            "physics": {k: self.physics_value(k) for k in PHYSICS_RANGES}, "physicsRanges": PHYSICS_RANGES,
             "hideHotkey": self.hide_hotkey(), "hotkeyFailed": self.hotkey_failed and self.is_leader, "hotkeys": hotkeys,
             "hotkeyHint": "按一下藏起来，再按一下出来（加在 GNOME 设置的「自定义快捷键」里）；也可以从托盘菜单叫她出来",
             "character": self.current, "characters": chars,

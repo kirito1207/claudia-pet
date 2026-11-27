@@ -20,7 +20,8 @@ const root = path.resolve(__dirname, '..');
       idleEnabled: true, idleFrequency: 'normal',
       clickBounce: true,
       notifyResults: true, notifyWaiting: true, notifyBackgroundOnly: true,
-      ceilingBounce: true, physics: { gravity: 1400, throwPower: 1, restitution: .72, groundFriction: 3, elasticity: .12 } };
+      ceilingBounce: true, physics: { gravity: 1400, throwPower: 1, restitution: .72, groundFriction: 3, elasticity: .12 },
+      physicsRanges: JSON.parse(fs.readFileSync(path.join(root, 'web/physics.json'), 'utf8')) };
     await page.evaluate(s => { setState(s); showTab('physics'); }, state);
     for (const width of [388, 420, 528, 760]) {
       await page.setViewportSize({ width, height: 660 });

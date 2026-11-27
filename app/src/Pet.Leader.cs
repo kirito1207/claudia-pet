@@ -29,7 +29,7 @@ namespace Claudia
             Store.Log("当负责人");
             try { Directory.CreateDirectory(Store.State); File.WriteAllText(Path.Combine(Store.State, "pet.pid"), Process.GetCurrentProcess().Id.ToString()); } catch { }
             hub?.Close();
-            hub = new PetHubServer(this);
+            hub = new PetHubServer(this, sessions: sessionBook);
             hub.Start();
             tray = new Forms.NotifyIcon { Text = Store.AppName, Visible = true };
             try { tray.Icon = new System.Drawing.Icon(Path.Combine(Store.Install, "AppIcon.ico")); } catch { tray.Icon = System.Drawing.SystemIcons.Application; }
@@ -98,16 +98,16 @@ namespace Claudia
             }
             catch (IOException) { }   // 下次轮询重试。
             catch (UnauthorizedAccessException) { }
-            ReceiveSessions(changed);
-            (hub as PetHubServer)?.ShareSessions(changed);
+            // 记进 sessionBook（协调中心拿的是同一份）、发给大家，再交给自己的网页
+            ShowSessions(((PetHubServer)hub).ShareSessions(changed));
         }
 
         /// <summary>各个会话最近的状态（负责人自己扫的、别的几只收到的都记在这），网页重新加载时重放</summary>
         readonly SessionBook sessionBook = new SessionBook();
         /// <summary>会话状态（负责人自己扫到的，或者负责人发来的）：记下来，网页好了就交给它。坏记录只跳过那一条</summary>
-        void ReceiveSessions(List<Dictionary<string, object>> states)
+        void ReceiveSessions(List<Dictionary<string, object>> states) => ShowSessions(sessionBook.Merge(states));
+        void ShowSessions(List<Dictionary<string, object>> good)
         {
-            var good = sessionBook.Merge(states);
             if (good.Count != 0 && ready) Js($"setSessionStates('claude', {Store.Json.Serialize(good)})");
         }
 

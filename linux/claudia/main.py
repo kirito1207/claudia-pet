@@ -213,7 +213,7 @@ def choose_identity():
             ids = store.roster()
             free = [i for i in ids if not claude.pet_running(i)]
             if free or not ids:
-                pid = free[0] if free else store.free_pet_id([])
+                pid = free[0] if free else store.free_pet_id(lambda i: i not in ids)
                 if pid not in ids:
                     store.save_roster(ids + [pid])
                 return pid, fd

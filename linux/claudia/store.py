@@ -161,9 +161,34 @@ def save_roster(ids):
     write_json(PETS_FILE, {"pets": list(ids)})
 
 
-def free_pet_id(taken):
-    """新来的一只用哪个编号：main 空着就用 main（它的设置在最上层），不然最小的空号"""
-    return next(i for i in ["main"] + [str(n) for n in range(2, MAX_PETS + 2)] if i not in taken)
+_physics_ranges = None
+
+
+def physics_ranges():
+    """物理参数的范围、默认值、步长：三端共用 web/physics.json（2026-11-27 Codex 复审：原来 Windows、Linux、设置页各写一份）。
+    编号 → {min, max, default, step}；读不到的项跳过"""
+    global _physics_ranges
+    if _physics_ranges is None:
+        raw = read_json(INSTALL / "web" / "physics.json")
+        table = {}
+        for k, r in (raw.items() if isinstance(raw, dict) else ()):
+            try:
+                table[k] = {f: float(r[f]) for f in ("min", "max", "default", "step")}
+            except (TypeError, KeyError, ValueError):
+                log(f"web/physics.json 里 {k} 这一项不对，跳过")
+        if not table:
+            log("读不到 web/physics.json，物理参数都按 0 算（安装不完整？）")
+        _physics_ranges = table
+    return _physics_ranges
+
+
+# 所有可用的编号，按先用谁排：main（它的设置在最上层），再 2、3……比名额多一个：刚送走的那只挥手时占着编号也能再加
+PET_IDS = ["main"] + [str(n) for n in range(2, MAX_PETS + 2)]
+
+
+def free_pet_id(usable):
+    """新来的一只用哪个编号：按 PET_IDS 的顺序第一个 usable 的；都不行返回 None。启动时和「再来一只」都走这里"""
+    return next((i for i in PET_IDS if usable(i)), None)
 
 
 # ---------------- 所有桌宠共用的设置（2026-11-27）----------------

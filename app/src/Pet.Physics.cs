@@ -18,19 +18,37 @@ namespace Claudia
             t.Tick += (_, __) => { t.Stop(); a(); }; t.Start();
         }
 
-        static readonly Dictionary<string, double[]> PhysicsRanges = new Dictionary<string, double[]>
+        // 物理参数的范围、默认值、步长：三端共用 web/physics.json（2026-11-27 Codex 复审：原来 Windows、Linux、设置页各写一份）。
+        // 每项 [最小, 最大, 默认, 步长]；设置页的滑块范围也从这里发过去（physicsRanges）
+        static Dictionary<string, double[]> physicsRanges;
+        static Dictionary<string, double[]> PhysicsRanges => physicsRanges ?? (physicsRanges = LoadPhysicsRanges());
+        static Dictionary<string, double[]> LoadPhysicsRanges()
         {
-            ["throwPower"] = new[] { 0.2, 2.5, 1.0 },
-            ["gravity"] = new[] { 0.0, 3000.0, 1400.0 },
-            ["restitution"] = new[] { 0.0, 0.95, 0.78 },
-            ["groundFriction"] = new[] { 0.5, 12.0, 2.5 },
-            ["elasticity"] = new[] { 0.0, 0.25, 0.12 },
-        };
+            var table = new Dictionary<string, double[]>();
+            foreach (var kv in Store.ReadJson(System.IO.Path.Combine(Store.Install, "web", "physics.json")) ?? new Dictionary<string, object>())
+            {
+                try
+                {
+                    var r = (Dictionary<string, object>)kv.Value;
+                    table[kv.Key] = new[] { Convert.ToDouble(r["min"]), Convert.ToDouble(r["max"]), Convert.ToDouble(r["default"]), Convert.ToDouble(r["step"]) };
+                }
+                catch { Store.Log($"web/physics.json 里 {kv.Key} 这一项不对，跳过"); }
+            }
+            if (table.Count == 0) Store.Log("读不到 web/physics.json，物理参数都按 0 算（安装不完整？）");
+            return table;
+        }
+        static Dictionary<string, object> PhysicsRangesForPage()
+        {
+            var page = new Dictionary<string, object>();
+            foreach (var kv in PhysicsRanges)
+                page[kv.Key] = new Dictionary<string, object> { ["min"] = kv.Value[0], ["max"] = kv.Value[1], ["default"] = kv.Value[2], ["step"] = kv.Value[3] };
+            return page;
+        }
         static bool PhysicsEnabled => !Store.Settings.TryGetValue("physicsEnabled", out var v) || !(v is bool b) || b;
         static bool CeilingBounce => !Store.Settings.TryGetValue("ceilingBounce", out var v) || !(v is bool b) || b;
         static double PhysicsValue(string key)
         {
-            var r = PhysicsRanges[key];
+            if (!PhysicsRanges.TryGetValue(key, out var r)) return 0;   // 只有参数表读不到时
             if (Store.Settings.TryGetValue(key, out var v) && (v is int || v is double || v is decimal))
             {
                 var n = Convert.ToDouble(v);

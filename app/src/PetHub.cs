@@ -252,16 +252,32 @@ namespace Claudia
         int nextRid;
         volatile bool closed;
         bool stopping;   // 全部退出了：再来报到的叫它走
-        readonly PetAdds adds = new PetAdds();               // 新加、还没报到的；报到了才写进名单
-        readonly SessionBook sessions = new SessionBook();   // 新报到的先拿到一份完整的
+        readonly PetAdds adds = new PetAdds();   // 新加、还没报到的；报到了才写进名单
+        readonly SessionBook sessions;           // 桌宠自己那一份（一个进程只留一份）：新报到的先拿到一份完整的
+        /// <summary>名单：负责人是它唯一的主人，以内存里这份为准，pets.json 只是存下来下次用的。存成功了才换（2026-11-27 Codex 复审：
+        /// 原来一次操作里读好几次文件，前后读到的不一定是同一份）</summary>
+        List<string> roster;
         bool broadcasting, again;
         NamedPipeServerStream listening;
         public bool Closed => closed;
         public IEnumerable<string> Connected => clients.Keys;
 
-        public PetHubServer(IPetHubHost host, string pipeName = null, string selfId = null)
+        public PetHubServer(IPetHubHost host, string pipeName = null, string selfId = null, SessionBook sessions = null)
         {
             this.host = host; this.pipeName = pipeName ?? PetHubNames.Pipe; this.selfId = selfId ?? Store.PetId;
+            this.sessions = sessions ?? new SessionBook();
+            LoadRoster();
+        }
+
+        /// <summary>从 pets.json 读名单：当上负责人时一次（上一任走之前已经存好）；测试里改了文件后也用它</summary>
+        public void LoadRoster() => roster = Store.Roster();
+
+        bool SaveRoster(List<string> next)
+        {
+            try { Store.SaveRoster(next); }
+            catch (Exception e) { Store.Log("保存多开名单失败: " + e.Message); return false; }
+            roster = next;
+            return true;
         }
 
         public void Start()
@@ -326,7 +342,7 @@ namespace Claudia
         }
 
         /// <summary>名单上的，加上新加、还没报到的（排在后面）</summary>
-        List<string> Members() { var ids = Store.Roster(); return ids.Concat(adds.Ids.Where(i => !ids.Contains(i))).ToList(); }
+        List<string> Members() => roster.Concat(adds.Ids.Where(i => !roster.Contains(i))).ToList();
 
         void BroadcastRoster()
         {
@@ -356,23 +372,24 @@ namespace Claudia
 
         public void Report() => BroadcastRoster();   // 负责人自己的名字 / 待在哪变了
 
-        /// <summary>负责人扫到的会话状态变化：记下来（新报到的先拿到一份完整的），发给连着的几只</summary>
-        public void ShareSessions(List<Dictionary<string, object>> changed)
+        /// <summary>负责人扫到的会话状态变化：记下来（新报到的先拿到一份完整的），发给连着的几只。返回收下的（坏记录跳过）</summary>
+        public List<Dictionary<string, object>> ShareSessions(List<Dictionary<string, object>> changed)
         {
             changed = sessions.Merge(changed);
-            if (changed.Count == 0) return;
-            foreach (var link in clients.Values.ToList()) link.Send(new Dictionary<string, object> { ["type"] = "sessions", ["states"] = changed.ToArray() });
+            if (changed.Count != 0)
+                foreach (var link in clients.Values.ToList()) link.Send(new Dictionary<string, object> { ["type"] = "sessions", ["states"] = changed.ToArray() });
+            return changed;
         }
         public IEnumerable<string> SessionIds => sessions.Ids;
 
         /// <summary>刚接手：名单上没在跑的（比如崩溃的上一任）叫回来</summary>
-        public void Adopt() { foreach (var id in Store.Roster()) if (id != selfId) RelaunchLater(id); }
+        public void Adopt() { foreach (var id in roster) if (id != selfId) RelaunchLater(id); }
 
         void RelaunchLater(string id)
         {
             host.Later(RelaunchMs, () =>
             {
-                if (closed || stopping || PetHubNames.Stopping() || host.HubLeaving() || !Store.Roster().Contains(id) || host.HubRunning(id)) return;
+                if (closed || stopping || PetHubNames.Stopping() || host.HubLeaving() || !roster.Contains(id) || host.HubRunning(id)) return;
                 var now = Environment.TickCount / 1000;
                 var recent = (relaunched.TryGetValue(id, out var r) ? r : new List<int>()).Where(t => now - t < RelaunchWindowS).ToList();
                 if (recent.Count >= RelaunchLimit) { Store.Log($"{id} 号最近反复退出，先不叫它回来"); return; }
@@ -401,7 +418,7 @@ namespace Claudia
                         if (PetHubNames.S(msg, "join") != adds.Token(id)) { Cmd(link, 0, "dismiss", ""); return; }
                         if (!ConfirmAdd(id, link)) return;
                     }
-                    if (!Store.Roster().Contains(id)) { Cmd(link, 0, "dismiss", ""); return; }   // 还没出来时就被送走了：叫它走
+                    if (!roster.Contains(id)) { Cmd(link, 0, "dismiss", ""); return; }   // 还没出来时就被送走了：叫它走
                     if (clients.TryGetValue(id, out var old) && old != link) old.Close();
                     link.Id = id; clients[id] = link;
                     info[id] = PetHubNames.Info(PetHubNames.S(msg, "name"), PetHubNames.S(msg, "mode"));
@@ -466,8 +483,7 @@ namespace Claudia
                     if (ids.Count >= Store.MaxPets) { reply(false, $"已经有 {ids.Count} 只了，家里住不下啦"); return; }
                     // 刚送走的那只还在挥手、占着它的编号：跳过还在跑的编号，不然新进程拿不到锁、起不来；都被占着就先不加
                     var now = Environment.TickCount;
-                    var fresh = new[] { "main" }.Concat(Enumerable.Range(2, Store.MaxPets).Select(n => n.ToString()))
-                        .FirstOrDefault(i => !ids.Contains(i) && !host.HubRunning(i) && adds.Free(i, now, AddWaitMs));
+                    var fresh = Store.FreePetId(i => !ids.Contains(i) && !host.HubRunning(i) && adds.Free(i, now, AddWaitMs));
                     if (fresh == null) { reply(false, "刚送走的那只还在挥手，等它走了再试"); return; }
                     // 这个编号以前用过、又送走了：旧设置不留给新来的（main 的设置在最上层，不删）
                     if (fresh != "main") try { var old = Path.Combine(Store.Data, "pets", fresh, "settings.json"); if (File.Exists(old)) File.Delete(old); } catch { }
@@ -522,10 +538,8 @@ namespace Claudia
         bool ConfirmAdd(string id, PetLink link)
         {
             var answer = adds.Confirm(id);
-            try { Store.SaveRoster(Store.Roster().Where(i => i != id).Concat(new[] { id })); }
-            catch (Exception e)
+            if (!SaveRoster(roster.Where(i => i != id).Concat(new[] { id }).ToList()))
             {
-                Store.Log("保存多开名单失败: " + e.Message);
                 Cmd(link, 0, "dismiss", "");
                 info.Remove(id);
                 answer(false, "没能记下名单，新的一只先走了");
@@ -539,9 +553,8 @@ namespace Claudia
         /// <summary>这几只从名单里去掉并挥手走（连着的告诉它，没连着的等它报到时再叫它走）。负责人自己也在里面：交给名单上的下一只</summary>
         bool Leave(List<string> ids)
         {
-            var keep = Store.Roster().Where(i => !ids.Contains(i)).ToList();
-            // 没记下来就先不走：不然下次打开又会把它叫回来
-            try { Store.SaveRoster(keep); } catch (Exception e) { Store.Log("保存多开名单失败: " + e.Message); return false; }
+            var keep = roster.Where(i => !ids.Contains(i)).ToList();
+            if (!SaveRoster(keep)) return false;   // 没记下来就先不走：不然下次打开又会把它叫回来
             if (keep.Count == 0) host.HubUserQuit();   // 最后一只也走了：之后 Claude 先不把她叫出来
             foreach (var id in ids) if (clients.TryGetValue(id, out var link)) Cmd(link, 0, "dismiss", "");
             BroadcastRoster();
