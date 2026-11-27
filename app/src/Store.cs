@@ -75,26 +75,53 @@ namespace Claudia
             catch { }
         }
 
-        // ---- 多开 ----
-        // 每只桌宠是一个独立的进程：第一只叫 main（Claude 拉起的就是它），多开的那几只由它带起来（claudia-pet.exe --pet 2）。
-        // 各有各的设置文件和网页数据目录，所以名字、大小、待在哪、闲着做什么都互不影响；额度和工作状态读的是同一份
+        // ---- 多开（2026-11-27 起每只平级）----
+        // 每只桌宠是一个独立进程，编号只用来找它自己的设置和网页数据（main 的在数据目录最上层——原来第一只的，不用搬；
+        // 别的在 pets\<编号>\）。界面上的「第几只」是它在名单里的位置；谁是负责人见 PetHub.cs
         public static string PetId = "main";
-        public static bool IsMain => PetId == "main";
-        public const int MaxExtraPets = 4;
+        public static bool IsMain => PetId == "main";   // 只表示「设置放在最上层」，不再有别的特权
+        public const int MaxPets = 5;
         public static string PetDir => IsMain ? Data : Path.Combine(Data, "pets", PetId);
         public static string WebViewDir => Path.Combine(PetDir, "webview2");
-        public static bool ValidPetId(string id) => id != null && id.Length >= 1 && id.Length <= 8 && id != "main"
-            && id.All(c => c >= '0' && c <= '9' || c >= 'a' && c <= 'z');
+        public static bool ValidPetId(string id) => id == "main" || (id != null && id.Length >= 1 && id.Length <= 8 && id.All(c => c >= '0' && c <= '9'));
         static string PetsFile => Path.Combine(Data, "pets.json");
-        /// <summary>除了第一只之外还开着哪几只（按编号）</summary>
-        public static List<string> ExtraPets()
+        /// <summary>名单：现在有哪几只、按什么顺序（第几只）。旧格式 {ids: [多开的几只]} 前面补上原来的第一只</summary>
+        public static List<string> Roster()
         {
-            var d = ReadJson(PetsFile);
-            return d != null && d.TryGetValue("ids", out var v) && v is object[] a
-                ? a.OfType<string>().Where(ValidPetId).Distinct().Take(MaxExtraPets).ToList() : new List<string>();
+            var d = ReadJson(PetsFile) ?? new Dictionary<string, object>();
+            var ids = d.TryGetValue("pets", out var p) && p is object[] pets ? pets.OfType<string>()
+                : d.TryGetValue("ids", out var v) && v is object[] old ? new[] { "main" }.Concat(old.OfType<string>()) : Enumerable.Empty<string>();
+            return ids.Where(ValidPetId).Distinct().Take(MaxPets).ToList();
         }
-        public static void SaveExtraPets(IEnumerable<string> ids) =>
-            WriteJson(PetsFile, new Dictionary<string, object> { ["ids"] = ids.ToArray() });
+        /// <summary>只有负责人写</summary>
+        public static void SaveRoster(IEnumerable<string> ids) =>
+            WriteJson(PetsFile, new Dictionary<string, object> { ["pets"] = ids.ToArray() });
+        /// <summary>新来的一只用哪个编号：main 空着就用 main（它的设置在最上层），不然最小的空号</summary>
+        public static string FreePetId(IEnumerable<string> taken) =>
+            new[] { "main" }.Concat(Enumerable.Range(2, MaxPets).Select(n => n.ToString())).First(i => !taken.Contains(i));
+
+        // ---- 所有桌宠共用的设置（2026-11-27）----
+        // 隐藏快捷键、三项任务通知、鼠标穿透、待在桌面上时的层级不跟着某一只走：放在 app.json。第一次从原来第一只的设置里搬过来
+        static string AppFile => Path.Combine(Data, "app.json");
+        static readonly string[] AppKeys = { "hideHotkey", "notifyResults", "notifyWaiting", "notifyBackgroundOnly", "clickThrough", "deskLayer" };
+        public static Dictionary<string, object> App = new Dictionary<string, object>();
+        public static void LoadApp()
+        {
+            var d = ReadJson(AppFile);
+            if (d == null)
+            {
+                var old = ReadJson(Path.Combine(Data, "settings.json")) ?? new Dictionary<string, object>();
+                d = AppKeys.Where(old.ContainsKey).ToDictionary(k => k, k => old[k]);
+                SaveApp(d);
+            }
+            App = d;
+        }
+        public static void SaveApp(Dictionary<string, object> d = null)
+        {
+            try { WriteJson(AppFile, d ?? App); } catch (Exception e) { Log("保存共用设置失败: " + e.Message); }
+        }
+        /// <summary>没写过的开关：通知默认开，鼠标穿透默认关</summary>
+        public static bool AppOn(string key) => App.TryGetValue(key, out var v) && v is bool b ? b : key != "clickThrough";
 
         // ---- 设置 ----
         public static Dictionary<string, object> Settings = new Dictionary<string, object>();
@@ -111,7 +138,24 @@ namespace Claudia
             Settings = own ?? new Dictionary<string, object>();
             if (!(Settings.TryGetValue("names", out var n) && n is Dictionary<string, object>)) Settings["names"] = new Dictionary<string, object>();
         }
-        public static void SaveSettings() { try { WriteJson(SettingsFile, Settings); } catch (Exception e) { Log("保存设置失败: " + e.Message); } }
+        public static void SaveSettings()
+        {
+            saveTimer?.Stop();
+            try { WriteJson(SettingsFile, Settings); } catch (Exception e) { Log("保存设置失败: " + e.Message); }
+        }
+        // 拖大小滑块、缩放动画每一帧都会改设置（大小、相对位置）：内存里马上改，文件等停下 0.4 秒再写一次（2026-11-27）。
+        // 计时器在界面线程上跑，和改设置的代码同一个线程，不会写到一半被改；退出前 FlushSettings 补写
+        static System.Windows.Threading.DispatcherTimer saveTimer;
+        public static void SaveSettingsSoon()
+        {
+            if (saveTimer == null)
+            {
+                saveTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+                saveTimer.Tick += (_, __) => SaveSettings();
+            }
+            saveTimer.Stop(); saveTimer.Start();
+        }
+        public static void FlushSettings() { if (saveTimer?.IsEnabled == true) SaveSettings(); }
         public static bool Flag(string key) => Settings.TryGetValue(key, out var v) && v is bool b && b;
         public static Dictionary<string, object> Names => (Dictionary<string, object>)Settings["names"];
 

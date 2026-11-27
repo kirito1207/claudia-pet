@@ -14,10 +14,10 @@ namespace Claudia
         // 不定时去查：把自己登记成 AppBar，有程序全屏打开 / 关闭时系统发 ABN_FULLSCREENAPP 过来（任务栏就是这么知道的），
         // 再用 SHQueryUserNotificationState 看是不是独占全屏 / 演示模式（系统决定要不要弹通知也看它）。
         // 前台窗口换了（Pet.Follow 的前台钩子）也重排一次：被别的置顶窗口挤下去时由它钉回来，替掉原来每 5 秒一次的 KeepOnTop（登记全屏通知失败时才退回每 5 秒查一次，见 DesktopPlace）。
-        static string DeskLayer => Store.Settings.TryGetValue("deskLayer", out var v) && v is string s &&
+        static string DeskLayer => Store.App.TryGetValue("deskLayer", out var v) && v is string s &&   // 所有桌宠共用（2026-11-27）
             (s == "top" || s == "yield" || s == "normal") ? s : "yield";
         /// <summary>鼠标穿透（settings 的 clickThrough，默认关）：整个人点不到，点击落到后面的窗口；只能从托盘菜单 / 设置页关</summary>
-        static bool ClickThrough => Store.Settings.TryGetValue("clickThrough", out var v) && v is bool b && b;
+        static bool ClickThrough => Store.AppOn("clickThrough");   // 所有桌宠一起开关（共用设置，2026-11-27）
 
         uint appBarMsg;
         bool appBarOn, yielding;
@@ -83,17 +83,23 @@ namespace Claudia
         void SetDeskLayer(object value)
         {
             if (!(value is string s) || (s != "top" && s != "yield" && s != "normal")) return;
-            Store.Settings["deskLayer"] = s; Store.SaveSettings();
+            Store.App["deskLayer"] = s; Store.SaveApp();
             Store.Log("桌面上的层级：" + (s == "top" ? "始终在最上面" : s == "yield" ? "全屏时让开" : "不置顶"));
-            UpdateDeskLayer(); PushSettings();
+            AppChanged();   // 大家一起换
         }
 
         void SetClickThrough(bool on)
         {
-            Store.Settings["clickThrough"] = on; Store.SaveSettings();
+            Store.App["clickThrough"] = on; Store.SaveApp();
             Store.Log(on ? "鼠标穿透：开" : "鼠标穿透：关");
-            if (Host != null) Host.ForcePassThrough = concealed || on;
-            PushSettings();
+            AppChanged();
+        }
+
+        /// <summary>共用设置（app.json）改了：自己马上照新的来，再请负责人叫大家重读</summary>
+        void AppChanged()
+        {
+            HubAppChanged();
+            hub?.Request("app");
         }
     }
 

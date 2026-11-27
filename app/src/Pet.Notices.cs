@@ -12,9 +12,10 @@ namespace Claudia
         readonly TaskNoticePolicy taskNotices = new TaskNoticePolicy(NoticeNow);
         void TaskNotice(string id, string kind, double timestamp)
         {
-            var enabled = SettingOn(kind == "waiting" ? "notifyWaiting" : "notifyResults");
+            if (!isLeader) return;   // 只从负责人这里弹（托盘也在它那儿）
+            var enabled = Store.AppOn(kind == "waiting" ? "notifyWaiting" : "notifyResults");
             if (!taskNotices.Accept(id, kind, timestamp, NoticeNow, enabled,
-                claudePids.Contains(Native.ForegroundPid()), SettingOn("notifyBackgroundOnly"))) return;
+                claudePids.Contains(Native.ForegroundPid()), Store.AppOn("notifyBackgroundOnly"))) return;
             var title = kind == "waiting" ? "Claude 需要你确认" : kind == "error" ? "Claude 任务出错" : "Claude 任务已完成";
             var text = kind == "waiting" ? "有授权申请或问题等待你处理，回到 Claude 看一下吧。" :
                 kind == "error" ? "这一轮未能正常完成，请回到 Claude 查看。" : "这一轮工作已结束，可以回到 Claude 查看结果。";

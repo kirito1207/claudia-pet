@@ -43,16 +43,31 @@ namespace Claudia
             menu.Items.Add(Item("多开和位置…", () => OpenSettings("pets")));
             menu.Items.Add(Item("设置…", () => OpenSettings()));
             menu.Items.Add(Item("回到默认位置", Recenter));
-            menu.Items.Add(Item(Store.IsMain && HotkeyLabel != null ? $"暂时隐藏（{HotkeyLabel}）" : "暂时隐藏", () => SetUserHidden(true)));
-            // 鼠标穿透只给第一只：开了以后点不到她、右键不出菜单，只能从托盘图标（只有第一只有）关
-            if (Store.IsMain) menu.Items.Add(Item("鼠标穿透（点击落到后面的窗口）", () => SetClickThrough(!ClickThrough), ClickThrough));
+            menu.Items.Add(Item(HotkeyLabel != null ? $"暂时隐藏（{HotkeyLabel}）" : "暂时隐藏", () => SetUserHidden(true)));
+            // 鼠标穿透所有桌宠一起开关：开了以后点不到她们、右键不出菜单，要从托盘图标关
+            menu.Items.Add(Item("鼠标穿透（点击落到后面的窗口）", () => SetClickThrough(!ClickThrough), ClickThrough));
             Sep();
-            if (Store.IsMain) menu.Items.Add(Item("退出 " + Store.AppName, UserQuit));
-            else
+            menu.Items.Add(Item("退出", QuitSelf));   // 只走这一只（2026-11-27 用户定：每只平级，菜单一样）
+            SoftMenu.Apply(menu);
+        }
+
+        /// <summary>托盘（负责人才有）是整个程序的入口：管的是所有桌宠</summary>
+        void FillTrayMenu(Forms.ContextMenuStrip menu)
+        {
+            menu.Items.Clear();
+            Forms.ToolStripMenuItem Item(string text, Action click, bool? check = null)
             {
-                menu.Items.Add(Item("送走这一只", DismissPet));
-                menu.Items.Add(Item("送走所有新加的", DismissExtras));
+                var i = new Forms.ToolStripMenuItem(text);
+                if (check.HasValue) i.Checked = check.Value;
+                i.Click += (_, __) => { try { click(); } catch (Exception e) { Store.Log("托盘菜单出错: " + e); } };
+                return i;
             }
+            menu.Items.Add(Item("叫她们出来", ShowAgain));
+            menu.Items.Add(Item(HotkeyLabel != null ? $"暂时隐藏（{HotkeyLabel}）" : "暂时隐藏", () => SetUserHidden(true)));
+            menu.Items.Add(Item("鼠标穿透（点击落到后面的窗口）", () => SetClickThrough(!ClickThrough), ClickThrough));
+            menu.Items.Add(Item("设置…", () => OpenSettings()));
+            menu.Items.Add(new Forms.ToolStripSeparator());
+            menu.Items.Add(Item("全部退出", () => hub?.Request("quitAll")));
             SoftMenu.Apply(menu);
         }
 

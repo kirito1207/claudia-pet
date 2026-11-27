@@ -106,7 +106,6 @@ namespace Claudia
                 pidsAt = now;
                 claudePids = FollowNative.ClaudeAppPids();
                 claudeHwnd = claudePids.Count > 0 ? FollowNative.FindClaudeMain(claudePids) : IntPtr.Zero;
-                PetTick();
                 CheckRunMode();
             }
             if (claudePids.Count > 0) claudeSeenAt = now;
@@ -211,7 +210,7 @@ namespace Claudia
             offRight = c.Right - (x + w); offBottom = c.Bottom - (y + h);
             lastClaude = c;
             Store.Settings["follow"] = new Dictionary<string, object> { ["right"] = offRight, ["bottom"] = offBottom };
-            Store.SaveSettings();
+            Store.SaveSettingsSoon();   // 缩放动画每一帧都会来，停下再写
         }
 
         void ResetFollowOffsets()
@@ -325,7 +324,7 @@ namespace Claudia
             ClampToArea(a, w, h, ref x, ref y);
             if (x != pr.Left || y != pr.Top) Native.MoveTo(hwnd, x, y);
             Store.Settings["desk"] = new Dictionary<string, object> { ["x"] = x, ["y"] = y };
-            Store.SaveSettings();
+            Store.SaveSettingsSoon();   // 缩放动画每一帧都会来，停下再写
         }
 
         static class FollowNative

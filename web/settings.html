@@ -76,7 +76,6 @@ input[type=checkbox] { accent-color: var(--accent); }
 .pet-line .k { width: 72px; flex-shrink: 0; color: var(--muted); font-size: 12px; }
 .pet-line input[type=text] { width: 140px; }
 .pet-line .push { margin-left: auto; }
-.pet-note { flex-basis: 100%; padding-left: 80px; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
 .pet-other { color: var(--muted); font-size: 11.5px; font-weight: normal; }
 .physics-row input[type=range] { flex: 1; min-width: 70px; width: auto; }
 .physics-row .val { width: 58px; }
@@ -89,7 +88,6 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
   .item .label { flex-basis: 100%; }
   .item .ctl { max-width: 100%; }
   .physics-row .ctl { width: 100%; }
-  .pet-note { padding-left: 0; }
 }
 </style></head>
 <body>
@@ -146,13 +144,12 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
     <div class="ctl"><button data-add-pet="claude">放在 Claude 窗口里</button><button data-add-pet="desktop">放在桌面上</button></div></div>
 </div>
 <div class="card" data-tab="pets">
-  <div class="item"><div class="label">说明<small>每只各管各的：名字、大小、闲着做什么都分开，右键哪只打开的就是哪只的设置。托盘、系统通知和隐藏快捷键归第 1 只管。</small></div></div>
+  <div class="item hidden" data-only="deskLayer"><div class="label">待在桌面上时<small>所有桌宠一起；有东西全屏（视频、放映、游戏）时让开，退出全屏后回来</small></div>
+    <div class="ctl"><div class="seg" id="deskLayer"><button data-v="top">始终最上面</button><button data-v="yield">全屏时让开</button><button data-v="normal">不置顶</button></div></div></div>
 </div>
-<!-- 「在桌面上时」只管打开这个设置的这一只：renderPets 把这一行挪进「这一只」那一格 -->
-<div class="hidden"><div class="pet-line hidden" id="deskLayerLine" data-only="deskLayer"><span class="k">在桌面上时</span>
-  <div class="seg" id="deskLayer"><button data-v="top">始终最上面</button><button data-v="yield">全屏时让开</button><button data-v="normal">不置顶</button></div>
-  <small class="pet-note">有东西全屏（视频、放映、游戏）时让开，退出全屏后回来</small></div></div>
-
+<div class="card" data-tab="pets">
+  <div class="item"><div class="label">说明<small>每只都一样：名字、大小、待在哪、闲着做什么各管各的，右键哪只打开的就是哪只的设置；菜单里的「退出」只走那一只，托盘的「全部退出」大家一起走、下次一起回来。快捷键、系统通知、鼠标穿透和「待在桌面上时」所有桌宠共用。</small></div></div>
+</div>
 <div class="card" data-tab="claude">
   <h2>接入</h2>
   <div id="integrations"></div>
@@ -162,16 +159,16 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
     <div class="ctl"><div class="seg" id="runMode"><button data-v="claude">跟着 Claude</button><button data-v="standalone">独立运行</button></div></div></div>
 </div>
 <div class="card" data-tab="claude">
-  <h2>系统通知</h2>
+  <h2>系统通知 · 所有桌宠共用</h2>
   <div class="item"><div class="label">任务完成或出错<small>Claude Code 一轮干完时；中断不提醒</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="notifyResults" aria-label="任务完成或出错通知"><span></span></label></div></div>
   <div class="item"><div class="label">等你授权或回答</div><div class="ctl"><label class="switch"><input type="checkbox" data-key="notifyWaiting" aria-label="等待授权或回答通知"><span></span></label></div></div>
   <div class="item"><div class="label">只在 Claude 不在前台时<small>正用着 Claude 时不打扰；系统勿扰也会挡住通知</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="notifyBackgroundOnly" aria-label="仅在后台通知"><span></span></label></div></div>
 </div>
 
 <div class="card" data-tab="general">
-  <div class="item hidden" data-only="hotkeys"><div class="label">隐藏 / 显示的快捷键<small id="hotkeyNote">按一下藏起来，再按一下出来；也可以双击托盘图标叫她出来</small></div>
+  <div class="item hidden" data-only="hotkeys"><div class="label">隐藏 / 显示的快捷键（所有桌宠一起）<small id="hotkeyNote">按一下藏起来，再按一下出来；也可以双击托盘图标叫她出来</small></div>
     <div class="ctl"><select id="hideHotkey" aria-label="隐藏快捷键"></select></div></div>
-  <div class="item hidden" data-only="clickThrough"><div class="label">鼠标穿透<small>点击直接落到后面的窗口；开着时右键菜单也打不开，要从托盘菜单里关</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="clickThrough" aria-label="鼠标穿透"><span></span></label></div></div>
+  <div class="item hidden" data-only="clickThrough"><div class="label">鼠标穿透（所有桌宠一起）<small>点击直接落到后面的窗口；开着时右键菜单也打不开，要从托盘菜单里关</small></div><div class="ctl"><label class="switch"><input type="checkbox" data-key="clickThrough" aria-label="鼠标穿透"><span></span></label></div></div>
   <div class="item"><div class="label">文件夹<small>角色素材（动画视频、立绘）、设置和日志</small></div>
     <div class="ctl"><button data-action="openCharacters">角色</button><button data-action="openData">数据和日志</button></div></div>
 </div>
@@ -197,6 +194,7 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
 const post = msg => window.chrome?.webview?.postMessage(msg)
 const $ = id => document.getElementById(id)
 let state = null
+const deskLayerSeg = $('deskLayer')   // 「待在桌面上时」2026-11-27 起所有桌宠共用，单独一行放在名单外面
 function physicsLabel(el) {
   const n = +el.value
   $(el.id + 'Val').textContent = el.id === 'gravity' ? n : el.id === 'elasticity' ? Math.round(n / .12 * 100) + '%' : n.toFixed(el.id === 'groundFriction' ? 1 : 2)
@@ -231,7 +229,7 @@ function setState(s) {
   for (const b of $('aura').children) b.classList.toggle('on', b.dataset.v === s.aura)
   for (const b of $('quotaStyle').children) b.classList.toggle('on', b.dataset.v === (s.quotaStyle || 'text'))
   for (const b of $('runMode').children) b.classList.toggle('on', b.dataset.v === (s.runMode || 'claude'))
-  for (const b of $('deskLayer').children) {
+  for (const b of deskLayerSeg.children) {
     b.classList.toggle('on', b.dataset.v === (s.deskLayer || 'yield'))
     b.classList.toggle('hidden', !!s.deskLayers && !s.deskLayers.includes(b.dataset.v))   // Linux 没有「不置顶」
   }
@@ -275,6 +273,7 @@ function renderPets(list, max) {
     row.querySelector('.pet-head span').textContent = `第 ${p.index} 只`
     const tag = document.createElement('span')
     if (p.self) { tag.className = 'tag ok'; tag.textContent = '就是这一只' }
+    else if (p.online === false) { tag.className = 'pet-other'; tag.textContent = '还在出来的路上…' }   // 还没连上第一只（刚加的、正在启动）
     else { tag.className = 'pet-other'; tag.textContent = '它的其他设置在它自己的右键菜单里' }
     row.querySelector('.pet-head').appendChild(tag)
     const input = row.querySelector('input'); input.value = p.name || ''; input.dataset.petName = p.id
@@ -289,14 +288,10 @@ function renderPets(list, max) {
       b.onclick = () => { if (b.dataset.v !== p.mode) { send('mode', b.dataset.v); toast(b.dataset.v === 'desktop' ? '挪到桌面上' : '挪回 Claude 窗口里') } }
     }
     const bye = row.querySelector('[data-p=dismiss]')
-    if (p.id === 'main') { bye.disabled = true; bye.title = '第 1 只送不走：要全部退出请用右键菜单的「退出」' }
-    else bye.onclick = () => { bye.disabled = true; send('dismiss'); toast('已送走') }
+    bye.onclick = () => { bye.disabled = true; send('dismiss'); toast(p.self ? '那我先走啦' : '已送走') }   // 每只都能送走（2026-11-27 起平级）
     return row
   })
   $('pets').replaceChildren(...rows)
-  // 「在桌面上时」只管打开设置的这一只，放进它那一格（这一行是页面里固定的一个元素，每次挪过去，选中状态由 setState 管）
-  const self = rows.find(r => list.find(p => p.id === r.dataset.pet)?.self)
-  if (self && $('deskLayerLine').parentNode !== self) self.appendChild($('deskLayerLine'))
 }
 for (const b of document.querySelectorAll('[data-add-pet]')) b.onclick = () => { b.disabled = true; post({ cmd: 'pet', action: 'add', value: b.dataset.addPet }); toast('再来一只…') }
 
@@ -329,7 +324,7 @@ for (const el of document.querySelectorAll('input[data-key]')) el.onchange = () 
 for (const b of $('aura').children) b.onclick = () => post({ cmd: 'set', key: 'aura', value: b.dataset.v })
 for (const b of $('quotaStyle').children) b.onclick = () => post({ cmd: 'set', key: 'quotaStyle', value: b.dataset.v })
 for (const b of $('runMode').children) b.onclick = () => post({ cmd: 'set', key: 'runMode', value: b.dataset.v })
-for (const b of $('deskLayer').children) b.onclick = () => post({ cmd: 'set', key: 'deskLayer', value: b.dataset.v })
+for (const b of deskLayerSeg.children) b.onclick = () => post({ cmd: 'set', key: 'deskLayer', value: b.dataset.v })
 for (const b of document.querySelectorAll('[data-action]')) b.onclick = () => post({ cmd: 'action', name: b.dataset.action })
 // 锁链图标：锁着 = 两节扣在一起；解开 = 断开
 const LINK_ON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6.5 9.5l3-3M7 4.5l1-1a2.5 2.5 0 013.5 3.5l-1 1M9 11.5l-1 1a2.5 2.5 0 01-3.5-3.5l1-1"/></svg>'
@@ -353,9 +348,13 @@ $('textSize').oninput = () => {
   post({ cmd: 'set', key: 'textSize', value: v })
 }
 // 点锁：锁着时解开（文字先等于当前人物大小，看着不变）；解开时锁上（文字回到和人物一样）
-$('textLink').onclick = () => state?.textLinked === false
-  ? post({ cmd: 'set', key: 'textLinked', value: true })
-  : post({ cmd: 'set', key: 'textSize', value: +$('size').value })
+// 外壳收到大小、文字大小不再整页重推（拖滑块时每一下都会来，2026-11-27）：解锁这一下自己改图标
+$('textLink').onclick = () => {
+  if (state?.textLinked === false) return post({ cmd: 'set', key: 'textLinked', value: true })
+  if (state) state.textLinked = false
+  showLink(false)
+  post({ cmd: 'set', key: 'textSize', value: +$('size').value })
+}
 // 还原：人物、文字都回 100%，并锁上
 document.querySelector('[data-reset-size]').onclick = () => { post({ cmd: 'set', key: 'size', value: 1 }); post({ cmd: 'set', key: 'textLinked', value: true }) }
 for (const b of $('idleFrequency').children) b.onclick = () => post({ cmd: 'set', key: 'idleFrequency', value: b.dataset.v })

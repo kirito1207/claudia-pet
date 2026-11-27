@@ -11,6 +11,7 @@
 import faulthandler
 import os
 import sys
+import time
 
 # 进程被 C 层面的错误弄死时（段错误、glibc 报 corrupted double-linked list 后中止）把当时每个线程正在跑的
 # Python 调用栈打到 stderr（~/.claudia/stderr.log）。2026-11-22 拖动后崩过好几次，没留下别的线索
@@ -199,6 +200,28 @@ def wait_for_display(seconds=30):
         time.sleep(2)
 
 
+def choose_identity():
+    """直接打开（双击、Claude 叫出来）的这一只用哪个编号：已经有负责人在跑（或马上要有）就请它叫大家出来，返回 None；
+    不然抢负责人锁，用名单上第一个没在跑的编号（名单是空的就从 main 开始），返回 (编号, 负责人锁)"""
+    from claudia import pethub
+    for _ in range(25):   # 最多等约 5 秒：正在换负责人时锁会空一下
+        if pethub.send_cli("show"):
+            return None
+        fd = claude.take_lock("leader")
+        if fd is not None:
+            ids = store.roster()
+            free = [i for i in ids if not claude.pet_running(i)]
+            if free or not ids:
+                pid = free[0] if free else store.free_pet_id([])
+                if pid not in ids:
+                    store.save_roster(ids + [pid])
+                return pid, fd
+            os.close(fd)   # 名单上的几只都在跑、只是在换负责人：等新负责人
+        time.sleep(0.2)
+    store.log("等不到负责人，这次不打开")
+    return None
+
+
 def main(args):
     if "--ensure" in args or "--mcp" in args:
         # 这两个会把桌宠拉起来（子进程继承这里的环境）：先补好图形界面的变量。等桌宠自己再补时，
@@ -235,14 +258,16 @@ def main(args):
         return code
     for flag in ("--toggle", "--show", "--quit"):
         if flag in args:
-            if claude.send_command(flag[2:]):
+            from claudia import pethub
+            if pethub.send_cli(flag[2:]):   # 交给负责人（谁是负责人见 pethub.py）
                 return 0
             if flag != "--show":
                 print(store.APP_NAME + " 没在运行", file=sys.stderr)
                 return 1
             break   # --show 而她没开：照常打开
 
-    first_mode = None
+    # 每只平级（2026-11-27）：--pet <编号> 是负责人叫出来的那几只；直接打开的那一只当负责人（见 choose_identity）
+    first_mode, leader = None, None
     if "--pet" in args:
         pid = arg_after(args, "--pet")
         if not store.valid_pet_id(pid):
@@ -250,15 +275,16 @@ def main(args):
         store.pet_id = pid
         if "--mode" in args and arg_after(args, "--mode") in ("desktop", "claude"):
             first_mode = arg_after(args, "--mode")
+    else:
+        picked = choose_identity()
+        if picked is None:
+            return 0
+        store.pet_id, leader = picked
 
-    main_pet = store.is_main()
     lock = claude.take_lock(store.pet_id)
-    if lock is None:
-        if main_pet:
-            claude.send_command("show")
-        return 0
-    if not main_pet and not claude.pet_running("main"):
-        store.log("第一只没在跑，不单独打开")
+    if lock is None:   # 这一只已经在跑
+        if leader is not None:
+            os.close(leader)
         return 0
 
     os.environ.setdefault("GDK_BACKEND", "x11")   # Wayland 下普通窗口摆不了位置、置不了顶：走 XWayland
@@ -291,22 +317,20 @@ def main(args):
     from claudia.pet import Pet
 
     store.pet_dir().mkdir(parents=True, exist_ok=True)
-    if main_pet:
+    if leader is not None:
         try:
-            claude.USER_QUIT_FLAG.unlink()   # 自己打开了：恢复跟着 Claude 出现
+            claude.USER_QUIT_FLAG.unlink()   # 打开了：恢复跟着 Claude 出现
         except OSError:
             pass
-        store.STATE.mkdir(parents=True, exist_ok=True)
-        (store.STATE / "pet.pid").write_text(str(os.getpid()))
-        Pet.clear_signal()
     store.log(f"启动 {store.version()}，{os.uname().sysname} {os.uname().release}，"
               f"会话 {os.environ.get('XDG_SESSION_TYPE', '?')}，Qt {os.environ.get('QT_QPA_PLATFORM')}")
-    fresh = main_pet and not (store.DATA / "settings.json").exists()
+    fresh = leader is not None and not (store.DATA / "settings.json").exists()
     store.load_settings()
+    store.load_app()   # 所有桌宠共用的设置；第一次从原来第一只的设置里搬过来
     if first_mode and "mode" not in store.settings:
         store.settings["mode"] = first_mode
         store.save_settings()
-    if main_pet and not store.has_run_mode():
+    if leader is not None and not store.has_run_mode():
         choose_run_mode(fresh, claude.BY_CLAUDE_ARG in args)
 
     web.register_scheme()   # claudia:// 要在 QApplication 之前注册
@@ -317,6 +341,7 @@ def main(args):
     app.setStyleSheet(MENU_QSS)
 
     pet = Pet()
+    pet.leader_lock = leader
     pet.start()
     srv = system.serve(claude.socket_path(store.pet_id), pet.on_command)
     # 注册退出信号的函数各版本叫法不一样：新的 GLib 在 GLibUnix 里叫 signal_add；Debian 13（GLib 2.84、PyGObject 3.50）
@@ -332,12 +357,17 @@ def main(args):
     signal_add = signal_add or getattr(GLib, "unix_signal_add", None) or getattr(GLibUnix, "signal_add_full", None)
     for sig in (2, 15):   # SIGINT、SIGTERM：好好退出
         signal_add(GLib.PRIORITY_DEFAULT, sig, lambda *_: (pet.quit(), False)[1])
-    if main_pet:
-        for pid in store.extra_pets():   # 把上次多开的几只也叫出来
-            GLib.timeout_add(1500, lambda p=pid: (Pet.launch_pet(p), False)[1])
+    if leader is not None:
+        for pid in store.roster():   # 把名单上别的几只也叫出来
+            if pid != store.pet_id and not claude.pet_running(pid):
+                GLib.timeout_add(1500, lambda p=pid: (Pet.launch_pet(p), False)[1])
     app.exec()
+    store.flush_settings()   # 还没写进文件的大小、位置（save_settings_soon）
+    pet.hub.close()
     srv.close()
-    for f in (claude.socket_path(store.pet_id), store.STATE / "pet.pid" if main_pet else None):
+    pid_file = store.STATE / "pet.pid"
+    mine = store.read_text(pid_file) == str(os.getpid())
+    for f in (claude.socket_path(store.pet_id), pid_file if mine else None):
         if f:
             try:
                 f.unlink()

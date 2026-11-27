@@ -42,9 +42,22 @@ const root = path.resolve(__dirname, '..');
     // 2026-11-27 重排成 6 页：额度并进外观、日常并进互动；旧名字（记住的上次那页）换到新位置
     assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('#tabs button')].map(b => b.dataset.tab)), ['look', 'physics', 'pets', 'claude', 'general', 'about']);
     assert.deepEqual(await page.evaluate(() => ['quota', 'daily', 'nope'].map(t => { showTab(t); return document.querySelector('#tabs .on').dataset.tab })), ['look', 'physics', 'look']);
-    // 多开：每只一格，「在桌面上时」只出现在这一只那格里；别的页看不到它
-    await page.evaluate(s => setState({ ...s, deskLayer: 'yield', pets: [{ id: 'main', index: 1, self: true, name: 'claudia', mode: 'claude' }, { id: 'p2', index: 2, name: '', mode: 'desktop' }], maxPets: 5 }), state);
-    assert.equal(await page.evaluate(() => $('deskLayerLine').closest('.pet-row')?.dataset.pet), 'main');
+    // 多开：每只一格；「待在桌面上时」所有桌宠共用（2026-11-27），单独一行放在名单外面，别的页看不到它
+    await page.evaluate(s => { setState({ ...s, deskLayer: 'yield', pets: [{ id: 'main', index: 1, self: true, name: 'claudia', mode: 'claude' }, { id: 'p2', index: 2, name: '', mode: 'desktop' }], maxPets: 5 }); showTab('pets') }, state);
+    assert.equal(await page.locator('#deskLayer').isVisible(), true);
+    assert.equal(await page.evaluate(() => !!deskLayerSeg.closest('.pet-row')), false, 'desk layer is shared and must sit outside the pet rows');
+    // 刷新好几次（加一只、送走两只）：列表要跟着变，共用的层级选中状态跟着最新的（2026-11-27：第二次刷新起整页出错、列表卡住）
+    const petRows = () => page.evaluate(() => [...document.querySelectorAll('#pets .pet-row')].map(r => r.dataset.pet))
+    const two = [{ id: 'main', index: 1, self: true, name: 'claudia', mode: 'claude' }, { id: 'p2', index: 2, name: '', mode: 'desktop' }]
+    await page.evaluate(([s, pets]) => setState({ ...s, deskLayer: 'yield', pets, maxPets: 5 }), [state, [...two, { id: 'p3', index: 3, name: '', mode: 'desktop', online: false }]])
+    assert.deepEqual(await petRows(), ['main', 'p2', 'p3'])
+    assert.ok((await page.locator('.pet-row[data-pet="p3"]').textContent()).includes('还在出来的路上'))
+    assert.equal(await page.locator('.pet-row[data-pet="p3"] .seg .on').textContent(), '桌面上', 'a pet added to the desktop shows the desktop before it reports in')
+    await page.evaluate(([s, pets]) => setState({ ...s, deskLayer: 'top', pets, maxPets: 5 }), [state, two.slice(0, 1)])
+    assert.deepEqual(await petRows(), ['main'])
+    assert.equal(await page.evaluate(() => deskLayerSeg.querySelector('.on')?.dataset.v), 'top', 'desk layer must follow later states')
+    await page.evaluate(s => setState({ ...s, pets: [{ id: 'p2', index: 1, self: true, name: '', mode: 'claude' }] }), state)
+    assert.deepEqual(await petRows(), ['p2'])
     await page.evaluate(() => showTab('look'));
     assert.equal(await page.locator('#deskLayer').isVisible(), false);
     for (const tab of ['look','pets','claude','general']) {

@@ -19,7 +19,7 @@ from PySide6.QtCore import QPoint, Qt  # noqa: E402
 from PySide6.QtGui import QAction, QCursor, QGuiApplication  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QWidget  # noqa: E402
 
-from . import actions, claude, store, system, web, xshape, xwin  # noqa: E402
+from . import actions, claude, pethub, store, system, web, xshape, xwin  # noqa: E402
 from .claude_window import ClaudeWindowWatch  # noqa: E402
 from .notices import TaskNoticePolicy, legacy_notice, pending_notices  # noqa: E402
 
@@ -136,15 +136,16 @@ class Pet:
         self.notices = TaskNoticePolicy(time.time())
         self.hotkey_failed = False
         self.leaving = False
-        self.main_missing = 0
-        self.seen_signal = None
+        self.hub = None
+        self.is_leader = False   # 拿着负责人锁（托盘、快捷键、通知、名单都归它管，见 pethub.py）
+        self.leader_lock = None  # main.py 启动时抢到了就交进来；接手时自己抢
         self.crashes = []
         self.scale_timer = None
         self.js_errors = self.image_errors = 0
 
     # ================= 启动 =================
     def start(self):
-        if store.is_main():
+        if self.leader_lock is not None:   # 启动时就是负责人：素材由它同步
             store.sync_resources()
         self.was_standalone = store.standalone()
         self.load_follow_offsets()
@@ -192,9 +193,11 @@ class Pet:
         store.log(f"窗口 0x{self.xid():x}")
         self.view.load_uri(store.page_url("index.html"))
 
-        if store.is_main():
-            self.tray = system.make_tray(self.build_menu, self.show_again)
-            self.register_hotkey(startup=True)
+        if self.leader_lock is not None:
+            self.become_leader()
+        else:
+            self.hub = pethub.HubClient(self)
+            self.hub.start()   # 回调都在主循环开始后才来
         system.watch_lock(self.on_lock)
         GLib.timeout_add(300, self._guard(self.poll))
         GLib.timeout_add(1000, self._guard(self.tick))
@@ -383,7 +386,7 @@ class Pet:
             else:
                 self.js(f"setQuota({store.dumps(cid)}, {data}, {int(modified)})")
         self.poll_session_states(cid, cutoff)
-        if store.is_main():
+        if self.is_leader:
             for notice in pending_notices(self.stamps):
                 self.task_notice(*notice)
 
@@ -391,7 +394,7 @@ class Pet:
         """插件每个会话写一个 claude-session-<sid>.json、一个 claude-notify-<sid>.json，自己从不删。这两种只认最近 10 分钟 / 2 分钟的，
         超过一天的由第一只删掉（启动时一次、之后每小时一次）。Windows 版见 Pet.Web.cs 的 CleanStaleState"""
         now = time.time()
-        if not store.is_main() or now - self.state_cleaned_at < 3600:
+        if not self.is_leader or now - self.state_cleaned_at < 3600:
             return
         self.state_cleaned_at = now
         n = 0
@@ -417,12 +420,12 @@ class Pet:
 
     # ---- 任务通知（只从第一只弹） ----
     def task_notice(self, nid, kind, ts):
-        if not store.is_main():
+        if not self.is_leader:
             return
-        enabled = store.setting_on("notifyWaiting" if kind == "waiting" else "notifyResults")
+        enabled = store.app_on("notifyWaiting" if kind == "waiting" else "notifyResults")
         window_state = self.claude_watch.state if self.claude_watch and self.claude_watch.available else None
         foreground = bool(window_state and window_state.get("focused") is True)
-        if not self.notices.accept(nid, kind, ts, time.time(), enabled, foreground, store.setting_on("notifyBackgroundOnly")):
+        if not self.notices.accept(nid, kind, ts, time.time(), enabled, foreground, store.app_on("notifyBackgroundOnly")):
             return
         title = {"waiting": "Claude 需要你确认", "error": "Claude 任务出错"}.get(kind, "Claude 任务已完成")
         text = {"waiting": "有授权申请或问题等待你处理，回到 Claude 看一下吧。",
@@ -431,7 +434,6 @@ class Pet:
 
     # ================= 每秒一次 =================
     def tick(self):
-        self.pet_tick()
         if self.leaving:
             return
         self.check_run_mode()
@@ -615,7 +617,7 @@ class Pet:
         self.off_right, self.off_bottom = c[2] - (x + self.w), c[3] - (y + self.h)
         self.last_claude = c
         store.settings["follow"] = {"right": self.off_right, "bottom": self.off_bottom}
-        store.save_settings()
+        store.save_settings_soon()   # 缩放动画每一帧都会来，停下再写
 
     # ================= 窗口位置 =================
     def move_to(self, x, y):
@@ -722,11 +724,11 @@ class Pet:
     DESK_LAYERS = ("top", "yield")
 
     def desk_layer(self):
-        v = store.settings.get("deskLayer")
+        v = store.app.get("deskLayer")   # 所有桌宠共用（2026-11-27）
         return v if v in self.DESK_LAYERS else "yield"   # Windows 的「不置顶」这里没有，按默认
 
     def click_through(self):
-        return store.is_main() and store.settings.get("clickThrough") is True
+        return store.app_on("clickThrough")   # 所有桌宠一起开关（共用设置，2026-11-27）
 
     def fullscreen_rect(self):
         st = self.claude_watch.state if self.claude_watch and self.claude_watch.available else None
@@ -762,23 +764,22 @@ class Pet:
     def set_desk_layer(self, value):
         if value not in self.DESK_LAYERS:
             return
-        store.settings["deskLayer"] = value
-        store.save_settings()
+        store.app["deskLayer"] = value
+        store.save_app()
         store.log("桌面上的层级：" + ("始终在最上面" if value == "top" else "全屏时让开"))
-        self.update_yield()
-        self.push_settings()
+        self.app_changed()   # 大家一起换
 
     def set_click_through(self, on):
-        if not store.is_main():
-            return
-        store.settings["clickThrough"] = bool(on)
-        store.save_settings()
+        store.app["clickThrough"] = bool(on)
+        store.save_app()
         store.log("鼠标穿透：" + ("开" if on else "关"))
-        self.applied_hit = None
-        self.apply_input_shape(force_empty=not self.on_screen())
-        self.push_settings()
-        if self.tray:   # 托盘菜单是事先做好的：勾选状态跟着变（从设置页改的时候）
-            GLib.idle_add(lambda: (self.tray.refresh(), False)[1])
+        self.app_changed()
+
+    def app_changed(self):
+        """共用设置（app.json）改了：自己马上照新的来，再请负责人叫大家重读"""
+        self.hub_app_changed()
+        if self.hub:
+            self.hub.request("app")
 
     def save_position(self):
         if not self.desktop_mode:
@@ -788,7 +789,7 @@ class Pet:
         x, y = _clamp(self.x, x0, x1), _clamp(self.y, y0, y1)
         self.move_to(x, y)
         store.settings["desk"] = {"x": x, "y": y}
-        store.save_settings()
+        store.save_settings_soon()   # 缩放动画每一帧都会来，停下再写
 
     def home_off_right(self):
         return HOME_OFF_RIGHT + self.pet_index() * STAGGER_X
@@ -1100,8 +1101,11 @@ class Pet:
     def apply_sizes(self, target=None, anchor="feet"):
         """人物 / 文字大小变了：交给网页算画布（规则在 web/text-size.js），按回来的尺寸设窗口"""
         self.stop_motion()
+        self.size_request = request = getattr(self, "size_request", 0) + 1   # 拖滑块时好几次在路上：只按最后一次的结果设窗口
 
         def got(o):
+            if request != self.size_request:
+                return
             if isinstance(o, dict):
                 try:
                     self.page_w, self.page_h, self.page_foot = float(o["w"]), float(o["h"]), float(o["foot"])
@@ -1179,15 +1183,20 @@ class Pet:
         self.update_page_hidden()
 
     def set_user_hidden(self, hidden):
+        """藏起来 / 叫出来是大家一起的：请负责人发给每一只（负责人自己也收到）"""
+        if self.hub:
+            self.hub.request("hide" if hidden else "show")
+        else:
+            self.apply_hidden(hidden)
+
+    def apply_hidden(self, hidden):
         self.user_hidden = hidden
         self.set_concealed(hidden)
-        self.write_signal("hide" if hidden else "show")
+        if not hidden:
+            self.set_concealed(False)
 
     def show_again(self):
-        if self.user_hidden:
-            self.set_user_hidden(False)
-        self.set_concealed(False)
-        self.write_signal("show")
+        self.set_user_hidden(False)
 
     def on_command(self, cmd):
         """控制 socket 收到的话（claudia-pet --toggle / --show / 再次打开）"""
@@ -1209,18 +1218,18 @@ class Pet:
         elif cmd == "show":
             self.recenter()
         elif cmd == "quit":
-            self.user_quit()
+            self.quit_self()
 
     # ================= 快捷键 =================
     def hide_hotkey(self):
-        v = store.settings.get("hideHotkey")
+        v = store.app.get("hideHotkey")
         return v if v in ("p", "h", "off") else "off"   # Linux 上默认不加：要往 GNOME 设置里写一条自定义快捷键，由你自己选
 
     def hotkey_label(self):
         return next((label for i, label, _ in system.CHOICES if i == self.hide_hotkey()), None)
 
     def register_hotkey(self, startup=False):
-        if not store.is_main():
+        if not self.is_leader:
             return
         choice = self.hide_hotkey()
         if startup and choice == "off":
@@ -1252,21 +1261,34 @@ class Pet:
         item("多开和位置…", lambda: self.open_settings("pets"))
         item("设置…", lambda: self.open_settings())
         item("回到默认位置", self.recenter)
-        label = self.hotkey_label() if store.is_main() else None
+        label = self.hotkey_label()
         item(f"暂时隐藏（{label}）" if label else "暂时隐藏", lambda: self.set_user_hidden(True))
-        if store.is_main():   # 鼠标穿透只给第一只：开了以后点不到她，只能从托盘关
+        if True:   # 鼠标穿透：所有桌宠一起开关；开了以后点不到她们，要从托盘关
             ct = QAction("鼠标穿透（点击落到后面的窗口）", menu)
             ct.setCheckable(True)
             ct.setChecked(self.click_through())
             ct.toggled.connect(lambda on: self._safe(lambda: self.set_click_through(on)))
             menu.addAction(ct)
         menu.addSeparator()
-        if store.is_main():
-            item("退出 " + store.APP_NAME, self.user_quit)
-        else:
-            item("送走这一只", self.dismiss_pet)
-            item("送走所有新加的", self.dismiss_extras)
+        item("退出", self.quit_self)   # 只走这一只（2026-11-27 用户定：每只平级，菜单一样）
         return menu
+
+    def build_tray_menu(self, menu):
+        """托盘（负责人才有）是整个程序的入口：管的是所有桌宠"""
+        def item(text, fn):
+            a = QAction(text, menu)
+            a.triggered.connect(lambda *_: self._safe(fn))
+            menu.addAction(a)
+        label = self.hotkey_label()
+        item(f"暂时隐藏（{label}）" if label else "暂时隐藏", lambda: self.set_user_hidden(True))
+        ct = QAction("鼠标穿透（点击落到后面的窗口）", menu)
+        ct.setCheckable(True)
+        ct.setChecked(self.click_through())
+        ct.toggled.connect(lambda on: self._safe(lambda: self.set_click_through(on)))
+        menu.addAction(ct)
+        item("设置…", lambda: self.open_settings())
+        menu.addSeparator()
+        item("全部退出", lambda: self.hub.request("quitAll"))
 
     @staticmethod
     def _safe(fn):
@@ -1337,19 +1359,12 @@ class Pet:
         self.menu.raise_()   # 桌宠自己是置顶的 override-redirect 窗口：菜单要压在她上面，不然顶上几项被她挡住
 
     # ================= 退出 =================
-    def user_quit(self):
-        try:
-            claude.USER_QUIT_FLAG.write_text("")
-        except OSError:
-            pass
-        self.write_signal("quit")
-        hint = not store.flag("quitHinted")
-        if hint:
-            store.settings["quitHinted"] = True
-            store.save_settings()
-        when = "下次打开我就回来" if store.standalone() else "下次打开 Claude 我再出来"
-        self.js(f"farewell('我先走啦～{when}', 5000)" if hint else "farewell(null, 2000)")
-        GLib.timeout_add(5000 if hint else 2000, lambda: (self.quit(), False)[1])
+    def quit_self(self):
+        """菜单里的「退出」：只走这一只（请负责人把我从名单去掉，它再叫我挥手走）"""
+        if self.hub:
+            self.hub.request("leave")
+        else:
+            self.leave()
 
     def quit(self):
         if getattr(self, "_quit_done", False):
@@ -1357,8 +1372,9 @@ class Pet:
         self._quit_done = True
         self.leaving = True
         self.stop_motion()
-        if self.tray:
-            self.tray.remove()
+        self.give_up_leading()
+        if self.hub:
+            self.hub.close()
         QApplication.quit()
 
     # ================= 设置 =================
@@ -1409,18 +1425,18 @@ class Pet:
             "aura": self.aura_mode(), "quotaStyle": self.quota_style(),
             "clickBounce": store.setting_on("clickBounce"), "tumbleActions": store.setting_on("tumbleActions"),
             "idleEnabled": store.setting_on("idleEnabled"), "idleFrequency": self.idle_frequency(),
-            "notifyResults": store.setting_on("notifyResults"), "notifyWaiting": store.setting_on("notifyWaiting"),
-            "notifyBackgroundOnly": store.setting_on("notifyBackgroundOnly"),
+            "notifyResults": store.app_on("notifyResults"), "notifyWaiting": store.app_on("notifyWaiting"),
+            "notifyBackgroundOnly": store.app_on("notifyBackgroundOnly"),
             "physicsEnabled": self.physics_enabled(), "ceilingBounce": store.setting_on("ceilingBounce"),
             "physics": {k: self.physics_value(k) for k in PHYSICS_RANGES},
-            "hideHotkey": self.hide_hotkey(), "hotkeyFailed": self.hotkey_failed, "hotkeys": hotkeys,
+            "hideHotkey": self.hide_hotkey(), "hotkeyFailed": self.hotkey_failed and self.is_leader, "hotkeys": hotkeys,
             "hotkeyHint": "按一下藏起来，再按一下出来（加在 GNOME 设置的「自定义快捷键」里）；也可以从托盘菜单叫她出来",
             "character": self.current, "characters": chars,
             "integrations": claude.integrations(bool(self.claude_watch and self.claude_watch.available)),
             "runMode": "standalone" if store.standalone() else "claude",
-            "pets": self.pet_list(), "maxPets": store.MAX_EXTRA_PETS + 1,
+            "pets": self.pet_list(), "maxPets": store.MAX_PETS,
             "deskLayer": self.desk_layer(), "deskLayers": list(self.DESK_LAYERS),
-            "clickThrough": self.click_through() if store.is_main() else None,   # 只有第一只有（关的入口在托盘）
+            "clickThrough": self.click_through(),   # 所有桌宠共用
         }
 
     def handle_settings(self, msg):
@@ -1430,22 +1446,26 @@ class Pet:
             on = value is True
             if key in ("clickBounce", "tumbleActions", "idleEnabled", "idleFrequency"):
                 self.set_behavior(key, value)
-            elif key in ("notifyResults", "notifyWaiting", "notifyBackgroundOnly"):
+            elif key in ("notifyResults", "notifyWaiting", "notifyBackgroundOnly"):   # 共用设置
                 if isinstance(value, bool):
-                    store.settings[key] = value
-                    store.save_settings()
+                    store.app[key] = value
+                    store.save_app()
+                    self.app_changed()
             elif key in ("physicsEnabled", "ceilingBounce") or key in PHYSICS_RANGES:
                 self.set_physics(key, value)
             elif key == "size":
+                # 拖滑块时每一下都会来：只改内存、跟着缩放，文件停下来再写；这一页自己已经显示了新值，不用整页重推
                 v = _clamp(round(float(value) * 100) / 100, 0.6, 1.6)
                 store.settings["size"] = v
-                store.save_settings()
+                store.save_settings_soon()
                 self.apply_sizes(v)
+                return
             elif key == "textSize":
                 store.settings["textSize"] = _clamp(round(float(value) * 100) / 100, 0.6, 1.6)
                 store.settings["textLinked"] = False
-                store.save_settings()
+                store.save_settings_soon()
                 self.apply_sizes()
+                return   # 同上；解锁状态这一页自己已经改了
             elif key == "textLinked":
                 store.settings["textLinked"] = value is not False
                 store.save_settings()
@@ -1455,10 +1475,10 @@ class Pet:
                 store.save_settings()
                 self.js(f"setShowName({'true' if on else 'false'})")
             elif key == "hideHotkey":
-                if value in ("p", "h", "off"):
-                    store.settings["hideHotkey"] = value
-                    store.save_settings()
-                    self.register_hotkey()
+                if value in ("p", "h", "off"):   # 共用设置：负责人重新注册
+                    store.app["hideHotkey"] = value
+                    store.save_app()
+                    self.app_changed()
             elif key == "quotaStyle":
                 if value in ("text", "bars"):
                     store.settings["quotaStyle"] = value
@@ -1495,6 +1515,8 @@ class Pet:
                 store.save_settings()
                 self.load_characters()
                 self.js(f"setName({store.dumps(cid)}, {store.dumps(dict(self.characters)[cid])})")
+                if self.hub:
+                    self.hub.report()   # 这个名字也是「位置与多开」里这一只的名字
         elif cmd == "pet":
             self.handle_pet_command(msg)
         elif cmd == "integrate":
@@ -1558,111 +1580,53 @@ class Pet:
     @staticmethod
     def launch_pet(pid, mode=None):
         r = claude.launch(["--pet", pid] + (["--mode", mode] if mode else []))
-        store.log(f"叫出第 {pid} 只：{r}")
+        store.log(f"叫出 {pid} 号：{r}")
 
-    def add_pet(self, desktop):
-        ids = store.extra_pets()
-        if len(ids) >= store.MAX_EXTRA_PETS:
-            self.js(f"say({store.dumps('家里住不下啦')})")
-            return
-        pid = next(str(n) for n in range(2, store.MAX_EXTRA_PETS + 2) if str(n) not in ids)
+    # ---- 多开：每只平级，都经过 pethub（谁是负责人、怎么交接见 pethub.py 开头）----
+    def become_leader(self):
+        """当负责人：开协调中心、托盘、隐藏快捷键；任务通知、清理旧状态文件也归它（poll / tick 里看 is_leader）"""
+        self.is_leader = True
+        store.log("当负责人")
         try:
-            (store.DATA / "pets" / pid / "settings.json").unlink()
+            store.STATE.mkdir(parents=True, exist_ok=True)
+            (store.STATE / "pet.pid").write_text(str(os.getpid()))
         except OSError:
             pass
-        ids.append(pid)
-        try:
-            store.save_extra_pets(ids)
-        except OSError as e:
-            store.log("保存多开名单失败: " + str(e))
-            return
-        self.launch_pet(pid, "desktop" if desktop else "claude")
+        if self.hub:
+            self.hub.close()
+        self.hub = pethub.HubServer(self)
+        self.hub.start()
+        self.tray = system.make_tray(self.build_tray_menu, self.show_again)
+        self.register_hotkey(startup=True)
+        self.push_settings()
 
-    def dismiss_pet(self):
-        if store.is_main():
+    def give_up_leading(self):
+        """不当负责人了（要走了）：马上放开锁、关掉托盘，下一任才能立刻接手"""
+        if not self.is_leader:
             return
-        try:
-            store.save_extra_pets([i for i in store.extra_pets() if i != store.pet_id])
-        except OSError as e:
-            store.log("保存多开名单失败: " + str(e))
+        self.is_leader = False
+        if self.tray:
+            self.tray.remove()
+            self.tray = None
+        if self.hub:
+            self.hub.close()
+        if self.leader_lock is not None:
+            try:
+                os.close(self.leader_lock)
+            except OSError:
+                pass
+            self.leader_lock = None
+
+    def leave(self):
+        """挥手再走（退出、被送走、大家一起走）"""
+        if self.leaving:
+            return
+        self.leaving = True
         self.js("farewell(null, 2000)")
         GLib.timeout_add(2000, lambda: (self.quit(), False)[1])
 
-    def dismiss_extras(self):
-        for pid in store.extra_pets():
-            if pid != store.pet_id:
-                try:
-                    store.write_json(self.command_file(pid), {"action": "dismiss", "value": ""})
-                except OSError as e:
-                    store.log(f"没能把指令交给第 {pid} 只: {e}")
-        self.dismiss_pet()
-
-    SIGNAL = store.DATA / "pets-signal"
-
-    def write_signal(self, what):
-        if not store.is_main():
-            return
-        try:
-            self.SIGNAL.write_text(f"{what} {time.time_ns()}")
-        except OSError:
-            pass
-
-    @classmethod
-    def clear_signal(cls):
-        try:
-            cls.SIGNAL.unlink()
-        except OSError:
-            pass
-
-    @staticmethod
-    def command_file(pid):
-        return store.DATA / "pets-cmd" / f"{pid}.json"
-
-    @staticmethod
-    def settings_file_of(pid):
-        return store.DATA / "settings.json" if pid == "main" else store.DATA / "pets" / pid / "settings.json"
-
-    def pet_tick(self):
-        """每秒一次：收设置页发来的指令；多开的那几只还要看第一只在不在、它让藏就藏、让走就走"""
-        if self.leaving:
-            return
-        self.poll_pet_command()
-        if store.is_main():
-            return
-        if claude.pet_running("main"):
-            self.main_missing = 0
-        else:
-            self.main_missing += 1
-            if self.main_missing >= 3:
-                store.log("第一只不在了，跟着退出")
-                self.quit()
-                return
-        s = store.read_text(self.SIGNAL) or ""
-        if self.seen_signal is None:
-            self.seen_signal = s
-            return
-        if s == self.seen_signal:
-            return
-        self.seen_signal = s
-        if s.startswith("hide"):
-            self.set_user_hidden(True)
-        elif s.startswith("show"):
-            self.set_user_hidden(False)
-            self.set_concealed(False)
-        elif s.startswith("quit"):
-            self.leaving = True
-            self.js("farewell(null, 2000)")
-            GLib.timeout_add(2000, lambda: (self.quit(), False)[1])
-
     def pet_list(self):
-        out = []
-        for n, pid in enumerate(["main"] + store.extra_pets(), 1):
-            me = pid == store.pet_id
-            s = store.settings if me else (store.read_json(self.settings_file_of(pid)) or {})
-            nm = s.get("names") if isinstance(s.get("names"), dict) else {}
-            out.append({"id": pid, "index": n, "self": me, "name": nm.get("claude") or "",
-                        "mode": "desktop" if s.get("mode") == "desktop" else "claude"})
-        return out
+        return self.hub.roster() if self.hub else []
 
     def rename_self(self, name):
         name = (name or "").strip()[:20]
@@ -1675,6 +1639,8 @@ class Pet:
         shown = dict(self.characters).get("claude")
         if shown:
             self.js(f"setName('claude', {store.dumps(shown)})")
+        if self.hub:
+            self.hub.report()
 
     def set_mode(self, desktop):
         if self.on_desktop() == desktop:
@@ -1683,46 +1649,92 @@ class Pet:
         store.save_settings()
         store.log("改成待在桌面上" if desktop else "改成待在 Claude 窗口里")
         self.check_area()
+        if self.hub:
+            self.hub.report()
 
     def handle_pet_command(self, msg):
-        action, value = msg.get("action"), msg.get("value")
+        """设置页「位置与多开」发来的 {cmd: pet, id, action, value}：改自己的名字 / 待在哪直接改，别的都交给负责人"""
+        action, value, pid = msg.get("action"), msg.get("value"), msg.get("id")
         if action == "add":
-            self.add_pet(value == "desktop")
-            GLib.timeout_add(1500, lambda: (self.push_settings(), False)[1])
-            GLib.timeout_add(4000, lambda: (self.push_settings(), False)[1])
-            return
-        pid = msg.get("id")
-        if pid != "main" and pid not in store.extra_pets():
-            return
-        if action not in ("mode", "rename", "dismiss"):
-            return
-        if pid == store.pet_id:
-            self.apply_pet_command(action, value)
-            return
-        try:
-            store.write_json(self.command_file(pid), {"action": action, "value": value or ""})
-        except OSError as e:
-            store.log(f"没能把指令交给第 {pid} 只: {e}")
-        GLib.timeout_add(1500, lambda: (self.push_settings(), False)[1])
-        GLib.timeout_add(3500, lambda: (self.push_settings(), False)[1])
+            self.hub.request("add", value="desktop" if value == "desktop" else "claude")
+        elif action in ("mode", "rename") and pid == store.pet_id:
+            self.hub_apply(action, value)
+        elif action in ("mode", "rename", "dismiss"):
+            self.hub.request("pet", pid, action, value)
 
-    def apply_pet_command(self, action, value):
+    # pethub 回调
+    def hub_info(self):
+        n = store.names().get("claude")
+        return {"name": n if isinstance(n, str) else "", "mode": "desktop" if self.on_desktop() else "claude"}
+
+    def hub_apply(self, action, value):
         if action == "mode":
             self.set_mode(value == "desktop")
         elif action == "rename":
-            self.rename_self(value)
+            self.rename_self(value if isinstance(value, str) else "")
         elif action == "dismiss":
-            self.dismiss_pet()
+            self.leave()
 
-    def poll_pet_command(self):
-        f = self.command_file(store.pet_id)
-        if not f.exists():
-            return
-        cmd = store.read_json(f)
+    def hub_roster_changed(self):
+        self.push_settings()
+
+    def hub_notice(self, text):
+        if self.settings_window:
+            web.run_js(self.settings_window.view, f"notice({store.dumps(text)})")
+
+    def hub_launch(self, pid, mode):
+        self.launch_pet(pid, mode)
+
+    def hub_signal(self, what):
+        if what == "hide":
+            self.apply_hidden(True)
+        elif what == "show":
+            self.apply_hidden(False)
+        elif what == "quit":
+            self.leave()
+
+    def hub_toggle(self):
+        self.set_user_hidden(not self.user_hidden)
+
+    def hub_app_changed(self):
+        """共用设置（快捷键、通知、鼠标穿透）重读一遍、照着来"""
+        store.load_app()
+        self.applied_hit = None
+        self.apply_input_shape(force_empty=not self.on_screen())
+        self.update_yield()   # 待在桌面上时的层级
+        if self.is_leader:
+            self.register_hotkey()
+            if self.tray:   # 托盘菜单是事先做好的：勾选状态跟着变
+                GLib.idle_add(lambda: (self.tray.refresh(), False)[1] if self.tray else False)
+        self.push_settings()
+
+    def hub_user_quit(self):
+        """从菜单退出过（最后一只也走了、全部退出）：之后 Claude 先不把她叫出来，见 claude.ensure"""
         try:
-            f.unlink()
+            claude.USER_QUIT_FLAG.write_text("")
         except OSError:
             pass
-        if cmd:
-            self.apply_pet_command(cmd.get("action"), cmd.get("value"))
-            self.push_settings()
+
+    def hub_leave_self(self):
+        """负责人自己要走：先交出去，再挥手"""
+        self.give_up_leading()
+        self.leave()
+
+    def hub_try_lead(self):
+        fd = claude.take_lock("leader")
+        if fd is None:
+            return False
+        self.leader_lock = fd
+        self.become_leader()
+        self.hub.adopt()   # 崩溃的上一任、没在跑的几只叫回来
+        return True
+
+    def hub_running(self, pid):
+        return claude.pet_running(pid)
+
+    def hub_leaving(self):
+        return self.leaving
+
+    def hub_main_lost(self):
+        self.leaving = True
+        self.quit()

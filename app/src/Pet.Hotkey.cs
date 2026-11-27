@@ -27,12 +27,12 @@ namespace Claudia
         [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr hWnd, int id);
         const int HotKeyId = 0x4350;
         static readonly (string id, string label, uint vk)[] HotkeyChoices = { ("p", "Ctrl+Alt+P", 0x50), ("h", "Ctrl+Alt+H", 0x48) };
-        static string HideHotkey => Store.Settings.TryGetValue("hideHotkey", out var v) && v is string s ? s : "p";
+        static string HideHotkey => Store.App.TryGetValue("hideHotkey", out var v) && v is string s ? s : "p";   // 所有桌宠共用
         static string HotkeyLabel => HotkeyChoices.FirstOrDefault(h => h.id == HideHotkey).label;
         bool userHidden, hotkeyFailed;
         void RegisterHideHotKey()
         {
-            if (hwnd == IntPtr.Zero || !Store.IsMain) return;   // 多开的几只不抢快捷键：第一只按了，它们跟着藏（见 Pet.Pets.cs）
+            if (hwnd == IntPtr.Zero || !isLeader) return;   // 只有负责人注册：按了经 PetHub 叫大家一起藏 / 出来
             UnregisterHotKey(hwnd, HotKeyId);
             hotkeyFailed = false;
             var choice = HotkeyChoices.FirstOrDefault(h => h.id == HideHotkey);
@@ -44,22 +44,25 @@ namespace Claudia
         bool HotKeyHook(int msg, IntPtr wParam)
         {
             if (msg != 0x0312 || wParam.ToInt32() != HotKeyId) return false;   // WM_HOTKEY
-            SetUserHidden(!userHidden);
+            HubToggle();
             return true;
         }
+        /// <summary>藏起来 / 叫出来是大家一起的：请负责人发给每一只（负责人自己也收到，见 HubSignal）</summary>
         void SetUserHidden(bool hidden)
+        {
+            if (hub != null) hub.Request(hidden ? "hide" : "show");
+            else ApplyHidden(hidden);
+        }
+        void ApplyHidden(bool hidden)
         {
             userHidden = hidden;
             SetConcealed(hidden);
-            WriteHiddenSignal(hidden);
         }
 
         /// <summary>双击托盘：藏着就叫出来，位置不动</summary>
         void ShowAgain()
         {
-            if (userHidden) SetUserHidden(false);
-            SetConcealed(false);
-            WriteHiddenSignal(false);   // 多开的几只也一起叫出来
+            SetUserHidden(false);   // 多开的几只也一起叫出来
         }
 
         public void Recenter()

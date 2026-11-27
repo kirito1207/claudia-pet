@@ -55,7 +55,7 @@ namespace Claudia
         // ---------------- 启动 ----------------
         public void Start()
         {
-            if (Store.IsMain) Store.SyncResources();   // 多开的几只用第一只同步好的素材
+            if (LeaderLock != null) Store.SyncResources();   // 启动时就是负责人：素材由它同步
             // 先看一眼 Claude 在不在：独立运行时 Claude 没开就从桌面上开始，开着就直接进窗口，不先在桌面上闪一下
             claudePids = FollowNative.ClaudeAppPids();
             claudeHwnd = claudePids.Count > 0 ? FollowNative.FindClaudeMain(claudePids) : IntPtr.Zero;
@@ -67,7 +67,7 @@ namespace Claudia
             // 先放屏幕外，拿到窗口句柄后按像素摆到保存的位置（大小在 HandleCreated 里按当时所在屏幕的缩放重设）
             Host = new DirectHost(Store.AppName, (int)Math.Round(BaseWidth * Scale), (int)Math.Round(BaseHeight * Scale));
             web = Host.Web;
-            Host.MessageHook = HotKeyHook;   // 快捷键只有第一只注册（RegisterHideHotKey），别的几只收不到 WM_HOTKEY
+            Host.MessageHook = HotKeyHook;   // 快捷键只有负责人注册（RegisterHideHotKey），别的几只收不到 WM_HOTKEY
             Host.RawMessage += AppBarMessage;   // 全屏打开 / 关闭的通知（Pet.Fullscreen）
             Host.HandleCreated += (_, __) =>
             {
@@ -90,15 +90,9 @@ namespace Claudia
             Host.Load += async (_, __) => await InitWeb();
             Host.Show();
 
-            if (Store.IsMain)   // 托盘图标只有第一只有；系统通知也只从它这里弹（Pet.Notices.cs 靠 tray）
-            {
-                tray = new Forms.NotifyIcon { Text = Store.AppName, Visible = true };
-                try { tray.Icon = new System.Drawing.Icon(Path.Combine(Store.Install, "AppIcon.ico")); } catch { tray.Icon = System.Drawing.SystemIcons.Application; }
-                var trayMenu = new Forms.ContextMenuStrip();
-                trayMenu.Opening += (_, e) => { FillMenu(trayMenu); e.Cancel = false; };
-                tray.ContextMenuStrip = trayMenu;
-                tray.DoubleClick += (_, __) => ShowAgain();   // 只叫出来、不挪位置（2026-11-07 用户定）；要回默认位置用菜单
-            }
+            // 负责人（托盘、快捷键、通知、多开名单都归它，见 PetHub.cs）：启动时抢到了锁就当，不然连上它
+            if (LeaderLock != null) BecomeLeader();
+            else { hub = new PetHubClient(this); hub.Start(); }
 
             Every(TimeSpan.FromMilliseconds(300), Poll);
             StartFollow();

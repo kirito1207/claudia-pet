@@ -62,6 +62,11 @@ namespace Claudia
 
         public void Show() { window.Show(); window.Activate(); }
         public Size Size => new Size(window.ActualWidth, window.ActualHeight);
+        /// <summary>页面底部的提示条（多开请求没成功时说原因）</summary>
+        public void Notice(string text)
+        {
+            try { web.CoreWebView2?.ExecuteScriptAsync($"notice({Store.Json.Serialize(text)})"); } catch { }
+        }
         public void Push()
         {
             try { web.CoreWebView2?.ExecuteScriptAsync($"setState({Store.Json.Serialize(pet.SettingsState())})"); } catch { }

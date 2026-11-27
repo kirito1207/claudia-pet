@@ -123,9 +123,10 @@ def log(text):
         print(text, file=sys.stderr)
 
 
-# ---------------- 多开 ----------------
-# 每只是一个独立进程：第一只叫 main，多开的由它带起来（claudia-pet --pet 2）。各有各的设置文件和网页数据目录
-MAX_EXTRA_PETS = 4
+# ---------------- 多开（2026-11-27 起每只平级）----------------
+# 每只是一个独立进程，编号只用来找它自己的设置和网页数据（main 的在数据目录最上层——原来第一只的，不用搬；别的在 pets/<编号>/）。
+# 界面上的「第几只」是它在名单里的位置；谁是负责人见 pethub.py
+MAX_PETS = 5
 
 
 def pet_dir():
@@ -137,24 +138,64 @@ def webview_dir():
 
 
 def valid_pet_id(i):
-    return bool(i) and 1 <= len(i) <= 8 and i != "main" and all(c.isdigit() or "a" <= c <= "z" for c in i)
+    return i == "main" or (isinstance(i, str) and 1 <= len(i) <= 8 and i.isdigit())
 
 
 PETS_FILE = DATA / "pets.json"
 
 
-def extra_pets():
-    d = read_json(PETS_FILE)
-    ids = d.get("ids") if d else None
+def roster():
+    """名单：现在有哪几只、按什么顺序（第几只）。旧格式 {ids: [多开的几只]} 前面补上原来的第一只"""
+    d = read_json(PETS_FILE) or {}
+    ids = d.get("pets") if isinstance(d.get("pets"), list) else (["main"] + d["ids"]) if isinstance(d.get("ids"), list) else []
     out = []
-    for i in ids if isinstance(ids, list) else []:
-        if isinstance(i, str) and valid_pet_id(i) and i not in out:
+    for i in ids:
+        if valid_pet_id(i) and i not in out:
             out.append(i)
-    return out[:MAX_EXTRA_PETS]
+    return out[:MAX_PETS]
 
 
-def save_extra_pets(ids):
-    write_json(PETS_FILE, {"ids": list(ids)})
+def save_roster(ids):
+    """只有负责人写"""
+    write_json(PETS_FILE, {"pets": list(ids)})
+
+
+def free_pet_id(taken):
+    """新来的一只用哪个编号：main 空着就用 main（它的设置在最上层），不然最小的空号"""
+    return next(i for i in ["main"] + [str(n) for n in range(2, MAX_PETS + 2)] if i not in taken)
+
+
+# ---------------- 所有桌宠共用的设置（2026-11-27）----------------
+# 隐藏快捷键、三项任务通知、鼠标穿透、待在桌面上时的层级不跟着某一只走：放在 app.json。第一次从原来第一只的设置里搬过来
+APP_FILE = DATA / "app.json"
+APP_KEYS = ("hideHotkey", "notifyResults", "notifyWaiting", "notifyBackgroundOnly", "clickThrough", "deskLayer")
+app = {}
+
+
+def load_app():
+    global app
+    d = read_json(APP_FILE)
+    if d is None:
+        old = read_json(DATA / "settings.json") or {}
+        d = {k: old[k] for k in APP_KEYS if k in old}
+        try:
+            write_json(APP_FILE, d)
+        except OSError as e:
+            log("保存共用设置失败: " + str(e))
+    app = d
+
+
+def save_app():
+    try:
+        write_json(APP_FILE, app)
+    except OSError as e:
+        log("保存共用设置失败: " + str(e))
+
+
+def app_on(key):
+    """没写过的开关：通知默认开，鼠标穿透默认关"""
+    v = app.get(key)
+    return v if isinstance(v, bool) else key != "clickThrough"
 
 
 # ---------------- 设置 ----------------
@@ -179,10 +220,40 @@ def load_settings():
 
 
 def save_settings():
+    global _save_timer
+    if _save_timer:
+        from gi.repository import GLib
+        GLib.source_remove(_save_timer)
+        _save_timer = None
     try:
         write_json(settings_file(), settings)
     except OSError as e:
         log("保存设置失败: " + str(e))
+
+
+# 拖大小滑块、缩放动画每一帧都会改设置（大小、相对位置）：内存里马上改，文件等停下 0.4 秒再写一次（2026-11-27）。
+# 计时器在主循环里跑，和改设置的代码同一个线程；退出前 flush_settings 补写
+_save_timer = None
+
+
+def save_settings_soon():
+    global _save_timer
+    from gi.repository import GLib
+    if _save_timer:
+        GLib.source_remove(_save_timer)
+
+    def due():
+        global _save_timer
+        _save_timer = None
+        save_settings()
+        return False
+
+    _save_timer = GLib.timeout_add(400, due)
+
+
+def flush_settings():
+    if _save_timer:
+        save_settings()
 
 
 def flag(key):

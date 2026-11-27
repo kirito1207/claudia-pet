@@ -352,7 +352,7 @@ def launch(args):
 
 def ensure():
     """Claude Code 插件、桌面端 MCP 用它把桌宠叫出来；返回这次的结果（写进日志）"""
-    if pet_running():
+    if pet_running("leader"):   # 有负责人就是在跑（每只平级，见 pethub.py）
         return "已经在跑"
     if USER_QUIT_FLAG.exists():
         quit_at = USER_QUIT_FLAG.stat().st_mtime

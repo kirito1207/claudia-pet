@@ -65,16 +65,16 @@ namespace Claudia
             }
             if (!Paused) PollSessionStates(id);
             CleanStaleState();
-            PollTaskNotices();
+            if (isLeader) PollTaskNotices();   // 只有负责人弹通知，别的几只不用扫
             ApplyLayer();
         }
 
         // 插件每个会话写一个 claude-session-<sid>.json、一个 claude-notify-<sid>.json，自己从不删：会话多了 state 目录一直攒小文件。
-        // 这两种只认最近 10 分钟 / 2 分钟的，超过一天的由第一只删掉（启动时一次、之后每小时一次；几只一起删会抢）
+        // 这两种只认最近 10 分钟 / 2 分钟的，超过一天的由负责人删掉（当上负责人时一次、之后每小时一次；几只一起删会抢）
         DateTime stateCleanedAt = DateTime.MinValue;
         void CleanStaleState()
         {
-            if (!Store.IsMain || (DateTime.UtcNow - stateCleanedAt).TotalHours < 1) return;
+            if (!isLeader || (DateTime.UtcNow - stateCleanedAt).TotalHours < 1) return;
             stateCleanedAt = DateTime.UtcNow;
             int n = 0;
             try

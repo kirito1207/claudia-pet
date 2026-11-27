@@ -4,10 +4,11 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using Forms = System.Windows.Forms;
 
 namespace Claudia
 {
-    sealed partial class Pet
+    sealed partial class Pet : IPetHubHost
     {
         // ---------------- 待在哪：Claude 窗口里 / 桌面上 ----------------
         // 照 dsh-pet 的桌面模式：桌面上的那只始终置顶，活动范围是所在显示器的工作区（不进任务栏）；「跟着 Claude」时 Claude 关了一样跟着退出。
@@ -20,6 +21,7 @@ namespace Claudia
             Store.Settings["mode"] = desktop ? "desktop" : "claude"; Store.SaveSettings();
             Store.Log(desktop ? "改成待在桌面上" : "改成待在 Claude 窗口里");
             SwitchArea(WantDesktop());   // 独立运行、Claude 又没开时，选了 Claude 窗口也先待在桌面上
+            hub?.Report();
         }
 
         /// <summary>真正换地方（不改设置）：SetMode 和 CheckRunMode 都走这里</summary>
@@ -38,7 +40,8 @@ namespace Claudia
         }
 
         // ---------------- 多开 ----------------
-        /// <summary>第几只（第一只是 0）：默认位置按这个错开，免得几只叠在一起</summary>
+        // 每只平级，都经过 PetHub（谁是负责人、怎么交接见 PetHub.cs 开头）
+        /// <summary>默认位置按编号错开，免得几只叠在一起（只是位置，和谁是负责人无关）</summary>
         static int PetIndex => Store.IsMain ? 0 : int.TryParse(Store.PetId, out var n) ? Math.Max(1, n - 1) : 1;
         const int StaggerX = 190;
 
@@ -50,97 +53,81 @@ namespace Claudia
                 Process.Start(new ProcessStartInfo(exe, "--pet " + id + (mode == null ? "" : " --mode " + mode))
                     { UseShellExecute = false, WorkingDirectory = Store.Install })?.Dispose();
             }
-            catch (Exception e) { Store.Log($"没能叫出第 {id} 只: " + e.Message); }
+            catch (Exception e) { Store.Log($"没能叫出 {id} 号: " + e.Message); }
         }
 
-        /// <summary>再来一只：挑一个没用过的编号，记进名单，开一个新进程</summary>
-        void AddPet(bool desktop)
+        IPetHub hub;
+        bool leaving, isLeader;
+        /// <summary>负责人锁：Program 启动时抢到了就交进来；接手时自己抢。要在界面线程上拿、上面放（互斥量归线程所有）</summary>
+        public Mutex LeaderLock;
+
+        static string InstanceMutex(string id) => Ensure.MutexName + "-pet-" + id;
+        /// <summary>每只一把锁：这个编号是不是已经有一只在跑</summary>
+        public static bool PetRunning(string id)
         {
-            var ids = Store.ExtraPets();
-            if (ids.Count >= Store.MaxExtraPets) { Js($"say({Q("家里住不下啦")})"); return; }
-            var id = Enumerable.Range(2, Store.MaxExtraPets).Select(n => n.ToString()).First(n => !ids.Contains(n));
-            // 这个编号以前用过、又送走了：旧设置不留给新来的
-            try { var old = Path.Combine(Store.Data, "pets", id, "settings.json"); if (File.Exists(old)) File.Delete(old); } catch { }
-            ids.Add(id);
-            try { Store.SaveExtraPets(ids); } catch (Exception e) { Store.Log("保存多开名单失败: " + e.Message); return; }
-            LaunchPet(id, desktop ? "desktop" : "claude");
+            try { using (Mutex.OpenExisting(InstanceMutex(id))) return true; }
+            catch (WaitHandleCannotBeOpenedException) { return false; }
+            catch (UnauthorizedAccessException) { return true; }
+        }
+        public static Mutex TakeInstanceLock(string id)
+        {
+            var m = new Mutex(true, InstanceMutex(id), out var mine);
+            if (mine) return m;
+            m.Dispose(); return null;
+        }
+        /// <summary>抢负责人锁（就是原来的单实例互斥量，插件 / MCP 看它判断在不在跑）；抢不到返回 null</summary>
+        public static Mutex TakeLeaderLock()
+        {
+            var m = new Mutex(false, Ensure.MutexName);
+            try { if (m.WaitOne(0)) return m; }
+            catch (AbandonedMutexException) { return m; }   // 上一任崩溃没放：等于放了
+            m.Dispose(); return null;
         }
 
-        /// <summary>送走这一只（多开的才有）：从名单里去掉，挥手再走</summary>
-        void DismissPet()
+        /// <summary>当负责人：开协调中心、托盘、隐藏快捷键；任务通知、清理旧状态文件也归它（Poll 里看 isLeader）</summary>
+        void BecomeLeader()
         {
-            if (Store.IsMain) return;
-            try { Store.SaveExtraPets(Store.ExtraPets().Where(i => i != Store.PetId)); } catch (Exception e) { Store.Log("保存多开名单失败: " + e.Message); }
+            isLeader = true;
+            Store.Log("当负责人");
+            try { Directory.CreateDirectory(Store.State); File.WriteAllText(Path.Combine(Store.State, "pet.pid"), Process.GetCurrentProcess().Id.ToString()); } catch { }
+            hub?.Close();
+            hub = new PetHubServer(this);
+            hub.Start();
+            tray = new Forms.NotifyIcon { Text = Store.AppName, Visible = true };
+            try { tray.Icon = new System.Drawing.Icon(Path.Combine(Store.Install, "AppIcon.ico")); } catch { tray.Icon = System.Drawing.SystemIcons.Application; }
+            var trayMenu = new Forms.ContextMenuStrip();
+            trayMenu.Opening += (_, e) => { FillTrayMenu(trayMenu); e.Cancel = false; };
+            tray.ContextMenuStrip = trayMenu;
+            tray.DoubleClick += (_, __) => ShowAgain();   // 只叫出来、不挪位置（2026-11-07 用户定）；要回默认位置用菜单
+            RegisterHideHotKey();
+            PushSettings();
+        }
+
+        /// <summary>不当负责人了（要走了）：马上放开锁、关掉托盘和快捷键，下一任才能立刻接手</summary>
+        void GiveUpLeading()
+        {
+            if (!isLeader) return;
+            isLeader = false;
+            if (hwnd != IntPtr.Zero) UnregisterHotKey(hwnd, HotKeyId);
+            if (tray != null) { tray.Visible = false; tray.Dispose(); tray = null; }
+            hub?.Close();
+            if (LeaderLock != null) { try { LeaderLock.ReleaseMutex(); } catch { } LeaderLock.Dispose(); LeaderLock = null; }
+        }
+
+        /// <summary>挥手再走（退出、被送走、大家一起走）</summary>
+        void Leave()
+        {
+            if (leaving) return;
+            leaving = true;
             Js("farewell(null, 2000)");
             After(2000, Quit);
         }
 
-        // 全部退出：多开的那几只里点了，是请第一只来退；第一只退出时把「quit」写进信号文件，大家一起挥手、一起走
-        // （2026-11-10 用户实测：原来是第一只先走，别的过两三秒才发现它不在了）
-        public static string QuitAllEvent => @"Local\Claudia-Quit-" + Environment.UserName;
-        /// <summary>多开的那几只菜单里的「送走所有新加的」：新加的全部送走，第一只不受影响（2026-11-10 用户定）</summary>
-        void DismissExtras()
-        {
-            foreach (var id in Store.ExtraPets().Where(i => i != Store.PetId))
-                try { Store.WriteJson(CommandFile(id), new Dictionary<string, object> { ["action"] = "dismiss", ["value"] = "" }); }
-                catch (Exception e) { Store.Log("没能把指令交给第 " + id + " 只: " + e.Message); }
-            DismissPet();
-        }
-        public void RequestQuit() => UserQuit();
+        /// <summary>claudia-pet --quit 之类请大家一起走（以前的「全部退出」事件），交给负责人</summary>
+        public void RequestQuit() => hub?.Request("quitAll");
 
-        // 藏起来 / 叫出来 / 一起退出由第一只说了算（快捷键、托盘都在它那儿）：它把最新一次写进这个文件，别的每秒看一眼，变了就照做
-        static string PetSignal => Path.Combine(Store.Data, "pets-signal");
-        string seenSignal;
-        static void WriteSignal(string what)
-        {
-            if (!Store.IsMain) return;
-            try { File.WriteAllText(PetSignal, what + " " + DateTime.UtcNow.Ticks); } catch { }
-        }
-        static void WriteHiddenSignal(bool hidden) => WriteSignal(hidden ? "hide" : "show");
-        public static void ClearPetSignal() { try { File.Delete(PetSignal); } catch { } }
-
-        int mainMissing;
-        bool leaving;
-        /// <summary>每秒一次：收设置页发来的指令；多开的那几只还要看第一只在不在、它让藏就藏、让走就走</summary>
-        void PetTick()
-        {
-            if (leaving) return;
-            PollPetCommand();
-            if (Store.IsMain) return;
-            if (Ensure.PetRunning()) mainMissing = 0;
-            else if (++mainMissing >= 3) { Store.Log("第一只不在了，跟着退出"); leaving = true; Quit(); return; }
-            var s = Store.ReadText(PetSignal);
-            if (seenSignal == null) { seenSignal = s ?? ""; return; }   // 刚来：以前的不算
-            if ((s ?? "") == seenSignal) return;
-            seenSignal = s ?? "";
-            if (seenSignal.StartsWith("hide")) SetUserHidden(true);
-            else if (seenSignal.StartsWith("show")) { SetUserHidden(false); SetConcealed(false); }
-            else if (seenSignal.StartsWith("quit")) { leaving = true; Js("farewell(null, 2000)"); After(2000, Quit); }
-        }
-
-        // ---------------- 设置页里一次管理所有的（「多开」页） ----------------
-        // 每只是独立的进程，设置页可能开在任何一只那里：管自己的直接改；管别的就往 pets-cmd\<编号>.json 放一条指令，那一只下一秒读到照做
-        static string CommandFile(string id) => Path.Combine(Store.Data, "pets-cmd", id + ".json");
-        static string SettingsFileOf(string id) => id == "main" ? Path.Combine(Store.Data, "settings.json") : Path.Combine(Store.Data, "pets", id, "settings.json");
-
-        /// <summary>设置页用：现在有哪几只、各叫什么、待在哪</summary>
-        List<Dictionary<string, object>> PetList()
-        {
-            var list = new List<Dictionary<string, object>>();
-            var n = 0;
-            foreach (var id in new[] { "main" }.Concat(Store.ExtraPets()))
-            {
-                var self = id == Store.PetId;
-                var s = self ? Store.Settings : Store.ReadJson(SettingsFileOf(id)) ?? new Dictionary<string, object>();
-                var name = s.TryGetValue("names", out var nv) && nv is Dictionary<string, object> names && names.TryGetValue("claude", out var cn) ? cn as string ?? "" : "";
-                list.Add(new Dictionary<string, object>
-                {
-                    ["id"] = id, ["index"] = ++n, ["self"] = self, ["name"] = name,
-                    ["mode"] = s.TryGetValue("mode", out var m) && m as string == "desktop" ? "desktop" : "claude",
-                });
-            }
-            return list;
-        }
+        /// <summary>设置页「位置与多开」用：现在有哪几只、各叫什么、待在哪</summary>
+        List<Dictionary<string, object>> PetList() => hub?.Roster(Store.PetId) ?? new List<Dictionary<string, object>>();
 
         void RenameSelf(string name)
         {
@@ -152,39 +139,67 @@ namespace Claudia
             LoadCharacters();
             var shown = Characters().FirstOrDefault(x => x.id == cid).name;
             if (shown != null) Js($"setName({Q(cid)}, {Q(shown)})");
+            hub?.Report();
         }
 
-        /// <summary>设置页发来的 {cmd:"pet", id, action, value}</summary>
+        /// <summary>设置页发来的 {cmd:"pet", id, action, value}：改自己的名字 / 待在哪直接改，别的都交给负责人</summary>
         void HandlePetCommand(Dictionary<string, object> msg)
         {
             var action = msg.TryGetValue("action", out var a) ? a as string : null;
             var value = msg.TryGetValue("value", out var v) ? v as string : null;
-            if (action == "add") { AddPet(value == "desktop"); After(1500, PushSettings); After(4000, PushSettings); return; }
             var id = msg.TryGetValue("id", out var i) ? i as string : null;
-            if (id != "main" && !Store.ExtraPets().Contains(id)) return;
-            if (action != "mode" && action != "rename" && action != "dismiss") return;
-            if (id == Store.PetId) { ApplyPetCommand(action, value); return; }
-            try { Store.WriteJson(CommandFile(id), new Dictionary<string, object> { ["action"] = action, ["value"] = value ?? "" }); }
-            catch (Exception e) { Store.Log("没能把指令交给第 " + id + " 只: " + e.Message); }
-            After(1500, PushSettings); After(3500, PushSettings);   // 等那一只照做了再刷新这一页
+            if (action == "add") hub?.Request("add", value: value == "desktop" ? "desktop" : "claude");
+            else if ((action == "mode" || action == "rename") && id == Store.PetId) HubApply(action, value);
+            else if (action == "mode" || action == "rename" || action == "dismiss") hub?.Request("pet", id, action, value);
         }
 
-        void ApplyPetCommand(string action, string value)
+        // ---- PetHub 回调 ----
+        public Dictionary<string, object> HubInfo() => new Dictionary<string, object>
+        {
+            ["name"] = Store.Names.TryGetValue("claude", out var n) ? n as string ?? "" : "", ["mode"] = OnDesktop ? "desktop" : "claude",
+        };
+        public void HubApply(string action, string value)
         {
             if (action == "mode") SetMode(value == "desktop");
             else if (action == "rename") RenameSelf(value);
-            else if (action == "dismiss") DismissPet();
+            else if (action == "dismiss") Leave();
         }
-
-        void PollPetCommand()
+        public void HubRosterChanged() => PushSettings();
+        public void HubNotice(string text) => settings?.Notice(text);
+        public void HubSignal(string what)
         {
-            var file = CommandFile(Store.PetId);
-            if (!File.Exists(file)) return;
-            var cmd = Store.ReadJson(file);
-            try { File.Delete(file); } catch { }
-            if (cmd == null) return;
-            ApplyPetCommand(cmd.TryGetValue("action", out var a) ? a as string : null, cmd.TryGetValue("value", out var v) ? v as string : null);
+            if (what == "hide") ApplyHidden(true);
+            else if (what == "show") { ApplyHidden(false); SetConcealed(false); }
+            else if (what == "quit") Leave();
+        }
+        /// <summary>共用设置（快捷键、通知、鼠标穿透）重读一遍、照着来</summary>
+        public void HubAppChanged()
+        {
+            Store.LoadApp();
+            if (Host != null) Host.ForcePassThrough = concealed || ClickThrough;
+            UpdateDeskLayer();   // 待在桌面上时的层级
+            if (isLeader) RegisterHideHotKey();
             PushSettings();
         }
+        public void HubLaunch(string id, string mode) => LaunchPet(id, mode);
+        public bool HubRunning(string id) => PetRunning(id);
+        public bool HubLeaving() => leaving;
+        public void HubToggle() => SetUserHidden(!userHidden);
+        /// <summary>从菜单退出过（最后一只也走了、全部退出）：之后 Claude 先不把她叫出来，见 Ensure.Run</summary>
+        public void HubUserQuit() { try { File.WriteAllText(UserQuitFlag, ""); } catch { } }
+        /// <summary>负责人自己要走：先交出去，再挥手</summary>
+        public void HubLeaveSelf() { GiveUpLeading(); Leave(); }
+        public bool HubTryLead()
+        {
+            var m = TakeLeaderLock();
+            if (m == null) return false;
+            LeaderLock = m;
+            BecomeLeader();
+            ((PetHubServer)hub).Adopt();   // 崩溃的上一任、没在跑的几只叫回来
+            return true;
+        }
+        public void HubMainLost() { leaving = true; Quit(); }
+        public void Post(Action a) => System.Windows.Application.Current?.Dispatcher.BeginInvoke(a);
+        public void Later(int ms, Action a) => After(ms, a);
     }
 }

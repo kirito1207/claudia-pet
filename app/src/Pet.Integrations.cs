@@ -19,10 +19,10 @@ namespace Claudia
                 ["size"] = Scale, ["textSize"] = TextScale, ["textLinked"] = TextLinked, ["showName"] = ShowName,
                 ["aura"] = AuraMode, ["quotaStyle"] = QuotaStyle,
                 ["clickBounce"] = SettingOn("clickBounce"), ["tumbleActions"] = SettingOn("tumbleActions"), ["idleEnabled"] = SettingOn("idleEnabled"), ["idleFrequency"] = IdleFrequency,
-                ["notifyResults"] = SettingOn("notifyResults"), ["notifyWaiting"] = SettingOn("notifyWaiting"), ["notifyBackgroundOnly"] = SettingOn("notifyBackgroundOnly"),
+                ["notifyResults"] = Store.AppOn("notifyResults"), ["notifyWaiting"] = Store.AppOn("notifyWaiting"), ["notifyBackgroundOnly"] = Store.AppOn("notifyBackgroundOnly"),
                 ["physicsEnabled"] = PhysicsEnabled, ["ceilingBounce"] = CeilingBounce,
                 ["physics"] = PhysicsRanges.ToDictionary(k => k.Key, k => PhysicsValue(k.Key)),
-                ["hideHotkey"] = HideHotkey, ["hotkeyFailed"] = hotkeyFailed,
+                ["hideHotkey"] = HideHotkey, ["hotkeyFailed"] = hotkeyFailed && isLeader,
                 ["hotkeys"] = new[] { new Dictionary<string, object> { ["id"] = "off", ["label"] = "不用快捷键" } }
                     .Concat(HotkeyChoices.Select(h => new Dictionary<string, object> { ["id"] = h.id, ["label"] = h.label })).ToList(),
                 ["character"] = current,
@@ -40,9 +40,9 @@ namespace Claudia
                 }).ToList(),
                 ["integrations"] = ClaudeIntegrations(),
                 ["runMode"] = Store.Standalone ? "standalone" : "claude",
-                ["pets"] = PetList(), ["maxPets"] = Store.MaxExtraPets + 1,
+                ["pets"] = PetList(), ["maxPets"] = Store.MaxPets,
                 ["deskLayer"] = DeskLayer,
-                ["clickThrough"] = Store.IsMain ? (object)ClickThrough : null,   // 只有第一只有（关的入口在托盘），别的几只设置页不显示这一项
+                ["clickThrough"] = ClickThrough,   // 所有桌宠共用
             };
         }
 
@@ -58,22 +58,23 @@ namespace Claudia
                     switch (key)
                     {
                         case "clickBounce": case "tumbleActions": case "idleEnabled": case "idleFrequency": SetBehavior(key, value); break;
-                        case "notifyResults": case "notifyWaiting": case "notifyBackgroundOnly":
-                            if (value is bool) { Store.Settings[key] = value; Store.SaveSettings(); } break;
+                        case "notifyResults": case "notifyWaiting": case "notifyBackgroundOnly":   // 共用设置
+                            if (value is bool) { Store.App[key] = value; Store.SaveApp(); AppChanged(); } break;
                         case "physicsEnabled": case "ceilingBounce":
                         case "throwPower": case "gravity": case "restitution": case "groundFriction": case "elasticity":
                             SetPhysics(key, value); break;
                         case "size":
                             var v = Math.Min(1.6, Math.Max(0.6, Math.Round(Convert.ToDouble(value) * 100) / 100));
-                            Store.Settings["size"] = v; Store.SaveSettings(); ApplySizes(v);
-                            break;
+                            // 拖滑块时每一下都会来：只改内存、跟着缩放，文件停下来再写；这一页自己已经显示了新值，不用整页重推
+                            Store.Settings["size"] = v; Store.SaveSettingsSoon(); ApplySizes(v);
+                            return;
                         case "textSize":   // 单独调文字：同时记为解锁
                             Store.Settings["textSize"] = Math.Min(1.6, Math.Max(0.6, Math.Round(Convert.ToDouble(value) * 100) / 100));
-                            Store.Settings["textLinked"] = false; Store.SaveSettings(); ApplySizes();
-                            break;
+                            Store.Settings["textLinked"] = false; Store.SaveSettingsSoon(); ApplySizes();
+                            return;   // 同上；解锁状态这一页自己已经改了
                         case "textLinked": Store.Settings["textLinked"] = !(value is bool lb) || lb; Store.SaveSettings(); ApplySizes(); break;
                         case "showName": Store.Settings["showName"] = on; Store.SaveSettings(); Js($"setShowName({(on ? "true" : "false")})"); break;
-                        case "hideHotkey": if (value is string hk) { Store.Settings["hideHotkey"] = hk; Store.SaveSettings(); RegisterHideHotKey(); } break;
+                        case "hideHotkey": if (value is string hk) { Store.App["hideHotkey"] = hk; Store.SaveApp(); AppChanged(); } break;   // 共用设置：负责人重新注册
                         case "quotaStyle":
                             if (value is string qs && (qs == "text" || qs == "bars")) { Store.Settings["quotaStyle"] = qs; Store.SaveSettings(); Js($"setQuotaStyle({Q(qs)})"); }
                             break;
@@ -81,7 +82,7 @@ namespace Claudia
                             if (value is string rm && (rm == "claude" || rm == "standalone")) { Store.SetStandalone(rm == "standalone"); CheckRunMode(); }
                             break;
                         case "deskLayer": SetDeskLayer(value); break;
-                        case "clickThrough": if (Store.IsMain && value is bool) SetClickThrough(on); break;
+                        case "clickThrough": if (value is bool) SetClickThrough(on); break;
                         case "aura":
                             if (value is string m && (m == "auto" || m == "on" || m == "off")) { Store.Settings["auraMode"] = m; Store.SaveSettings(); Js($"setAuraMode({Q(m)})"); }
                             break;
@@ -101,6 +102,7 @@ namespace Claudia
                         Store.SaveSettings();
                         LoadCharacters();
                         Js($"setName({Q(cid)}, {Q(Characters().First(x => x.id == cid).name)})");
+                        hub?.Report();   // 这个名字也是「位置与多开」里这一只的名字
                     }
                     break;
                 case "pet": HandlePetCommand(msg); break;

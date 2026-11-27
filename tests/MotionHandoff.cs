@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Linq;
+using System.Threading;
 
 namespace Claudia
 {
@@ -157,6 +159,130 @@ namespace Claudia
             Console.WriteLine("PASS: legacy mirrors are backed up, same-size edits are preserved, and a usable replacement is required");
         }
 
+        // 多开协调（PetHub，2026-11-27 起每只平级、负责人可以交接）：真的命名管道，一个进程里开几只；回调都排进队列，在测试线程上跑
+        sealed class FakeFamily { public string Owner; public string Pipe; public readonly Dictionary<string, FakeHubHost> Pets = new Dictionary<string, FakeHubHost>(); }
+
+        sealed class FakeHubHost : IPetHubHost
+        {
+            public readonly System.Collections.Concurrent.ConcurrentQueue<Action> Queue = new System.Collections.Concurrent.ConcurrentQueue<Action>();
+            readonly List<Timer> timers = new List<Timer>();
+            public readonly string Id; readonly FakeFamily family;
+            public string Name = "", Mode = "claude";
+            public IPetHub Hub;
+            public readonly List<string> Applied = new List<string>(), Signals = new List<string>(), Launched = new List<string>();
+            public bool Lost, Left, UserQuit;
+            public FakeHubHost(string id, FakeFamily family) { Id = id; this.family = family; family.Pets[id] = this; }
+            public void Lead() { family.Owner = Id; var s = new PetHubServer(this, family.Pipe, Id) { RelaunchMs = 100 }; Hub = s; s.Start(); }
+            public bool IsLeader => Hub is PetHubServer s && !s.Closed;
+            public Dictionary<string, object> HubInfo() => new Dictionary<string, object> { ["name"] = Name, ["mode"] = Mode };
+            public void HubApply(string action, string value)
+            {
+                Applied.Add(action + ":" + value);
+                if (action == "rename") Name = value; else if (action == "mode") Mode = value;
+                if (action == "dismiss") Left = true; else Hub.Report();
+            }
+            public void HubRosterChanged() { }
+            public void HubNotice(string text) { }
+            public void HubSignal(string what) { Signals.Add(what); if (what == "quit") Left = true; }
+            public void HubAppChanged() { }
+            public void HubLaunch(string id, string mode) => Launched.Add(id + ":" + mode);
+            public bool HubRunning(string id) => false;
+            public bool HubLeaving() => Left;
+            public void HubToggle() => Signals.Add("toggle");
+            public void HubUserQuit() => UserQuit = true;
+            public void HubLeaveSelf() { family.Owner = null; Hub.Close(); Left = true; }
+            public bool HubTryLead() { if (family.Owner != null) return false; Lead(); ((PetHubServer)Hub).Adopt(); return true; }
+            public void HubMainLost() => Lost = true;
+            public void Post(Action a) => Queue.Enqueue(a);
+            public void Later(int ms, Action a) { lock (timers) timers.Add(new Timer(_ => Queue.Enqueue(a), null, ms, Timeout.Infinite)); }
+        }
+
+        static bool Pump(FakeFamily f, Func<bool> done, int ms = 6000)
+        {
+            for (var end = Environment.TickCount + ms; Environment.TickCount < end;)
+            {
+                if (done()) return true;
+                var ran = false;
+                foreach (var h in f.Pets.Values.ToList()) while (h.Queue.TryDequeue(out var a)) { a(); ran = true; }
+                if (!ran) Thread.Sleep(5);
+            }
+            return done();
+        }
+
+        static string Order(IPetHub hub, string self) => string.Join(",", hub.Roster(self).Select(p => p["index"] + ":" + p["id"]));
+
+        static FakeFamily NewFamily()
+        {
+            var f = new FakeFamily { Pipe = "Claudia-Pets-test-" + Guid.NewGuid().ToString("N") };
+            Store.SaveRoster(new[] { "main", "2", "3" });
+            new FakeHubHost("main", f).Lead();
+            foreach (var id in new[] { "2", "3" })
+            {
+                var h = new FakeHubHost(id, f);
+                h.Hub = new PetHubClient(h, id, f.Pipe) { StepMs = 400, LostWaitMs = 1500 };
+                h.Hub.Start();
+            }
+            if (!Pump(f, () => ((PetHubServer)f.Pets["main"].Hub).Connected.Count() == 2 && Order(f.Pets["3"].Hub, "3") == "1:main,2:2,3:3"))
+                throw new Exception("Pets did not join the hub");
+            return f;
+        }
+
+        static void CloseFamily(FakeFamily f) { foreach (var h in f.Pets.Values) h.Hub?.Close(); }
+
+        static void TestPetHub()
+        {
+            var f = NewFamily();
+            try
+            {
+                FakeHubHost main = f.Pets["main"], two = f.Pets["2"], three = f.Pets["3"];
+                // Two commands back to back to the same pet: the old command file kept only the last one
+                var replies = new List<bool>();
+                two.Hub.Request("pet", "3", "rename", "小三", (ok, e) => replies.Add(ok));
+                two.Hub.Request("pet", "3", "mode", "desktop", (ok, e) => replies.Add(ok));
+                if (!Pump(f, () => replies.Count == 2) || !replies.All(r => r)) throw new Exception("Forwarded commands were not answered");
+                if (!three.Applied.SequenceEqual(new[] { "rename:小三", "mode:desktop" })) throw new Exception("Forwarded commands were lost or reordered: " + string.Join(",", three.Applied));
+
+                two.Hub.Request("hide"); two.Hub.Request("show");
+                if (!Pump(f, () => f.Pets.Values.All(h => h.Signals.SequenceEqual(new[] { "hide", "show" })))) throw new Exception("Hide / show did not reach every pet including the leader");
+                if (!PetHubNames.SendCli("toggle", f.Pipe) || !Pump(f, () => main.Signals.Contains("toggle"))) throw new Exception("Command line did not reach the leader");
+
+                // 1 leaves: 2 takes over, 3 becomes number 2
+                main.Hub.Request("leave");
+                if (!Pump(f, () => f.Owner == "2" && two.IsLeader && ((PetHubServer)two.Hub).Connected.Contains("3"))) throw new Exception("Leader handoff did not go to the next pet");
+                if (!Pump(f, () => Order(three.Hub, "3") == "1:2,2:3")) throw new Exception("Numbers did not shift after the leader left: " + Order(three.Hub, "3"));
+                if (!main.Left || three.Lost) throw new Exception("Handoff left the wrong pets");
+                Console.WriteLine("PASS: multi-pet hub forwards commands in order with replies, signals reach everyone, leader handoff goes to the next pet and numbers shift");
+            }
+            finally { CloseFamily(f); }
+
+            f = NewFamily();
+            try
+            {
+                FakeHubHost main = f.Pets["main"], two = f.Pets["2"], three = f.Pets["3"];
+                // Two pets leaving at once: the old roster was rewritten by each, one could come back
+                two.Hub.Request("leave"); three.Hub.Request("pet", "3", "dismiss");
+                if (!Pump(f, () => two.Left && three.Left)) throw new Exception("Leaving pets were not told to go");
+                if (!Store.Roster().SequenceEqual(new[] { "main" })) throw new Exception("Simultaneous leaves left the roster as " + string.Join(",", Store.Roster()));
+                if (main.UserQuit) throw new Exception("User-quit was marked while a pet remained");
+            }
+            finally { CloseFamily(f); }
+
+            f = NewFamily();
+            try
+            {
+                FakeHubHost main = f.Pets["main"], two = f.Pets["2"], three = f.Pets["3"];
+                // A pet that drops without saying bye is brought back; the leader crashing goes to the next in line
+                ((PetHubClient)three.Hub).Drop();
+                if (!Pump(f, () => main.Launched.Contains("3:"))) throw new Exception("A crashed pet was not brought back");
+                f.Owner = null; main.Hub.Close();   // the leader is gone without a word
+                if (!Pump(f, () => f.Owner != null)) throw new Exception("Nobody took over after the leader crashed");
+                if (f.Owner != "2") throw new Exception("The next pet in the roster must take over first, got " + f.Owner);
+                if (!Pump(f, () => two.Launched.Contains("main:"))) throw new Exception("The new leader did not bring back the crashed one");
+                Console.WriteLine("PASS: two pets leave at once, crashed pets are brought back, and a crashed leader is replaced by the next in line");
+            }
+            finally { CloseFamily(f); }
+        }
+
         [STAThread]
         static int Main()
         {
@@ -164,7 +290,7 @@ namespace Claudia
             var data = Path.Combine(Path.GetTempPath(), "claudia-" + id);
             Environment.SetEnvironmentVariable("CLAUDIA_DATA_DIR", data);
             Environment.SetEnvironmentVariable("CLAUDIA_STATE_DIR", Path.Combine(data, "state"));
-            try { Pet.TestHandoff(); TestCharacterMigration(id); TestLegacyMirrorMigration(id + "-legacy"); return 0; }
+            try { Pet.TestHandoff(); TestCharacterMigration(id); TestLegacyMirrorMigration(id + "-legacy"); TestPetHub(); return 0; }
             catch (Exception e) { Console.Error.WriteLine(e); return 1; }
             finally { if (Directory.Exists(data)) Directory.Delete(data, true); }
         }

@@ -121,14 +121,17 @@ namespace Claudia
 
         /// <summary>人物大小 / 文字大小变了：交给网页算画布（规则在 app/web/text-size.js），按回来的尺寸设窗口。
         /// target：人物大小要动画到哪（底边不动）；null = 文字变了（Feet）或网页刚加载完（Corner），按现在的人物大小重设一次</summary>
+        int sizeRequest;   // 拖滑块时好几次在路上：只按最后一次的结果设窗口（2026-11-27）
         async void ApplySizes(double? target = null, Anchor anchor = Anchor.Feet)
         {
             StopMotion();
+            var request = ++sizeRequest;
             if (ready && web?.CoreWebView2 != null)   // 网页还没加载完：先按旧画布，加载完（NavigationCompleted）会再调一次
             {
                 try
                 {
                     var json = await Eval($"setSizes({Num(target ?? Scale)}, {Num(TextScale)}, {(TextLinked ? "true" : "false")})");
+                    if (request != sizeRequest) return;   // 后面又来了新的，这次的结果作废
                     if (Store.Json.DeserializeObject(Store.Json.Deserialize<string>(json)) is Dictionary<string, object> o)
                     {
                         double w = Convert.ToDouble(o["w"]), h = Convert.ToDouble(o["h"]), foot = Convert.ToDouble(o["foot"]);

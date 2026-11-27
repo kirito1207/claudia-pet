@@ -12,25 +12,19 @@ namespace Claudia
         // Claude 关掉重开、重启电脑后作废，自己双击打开也会清掉（见 Program）。
         public static string UserQuitFlag => Path.Combine(Store.Data, "user-quit");
 
-        /// 菜单里的「退出」：挥手道别再走；第一次退出时说明什么时候会再出来，多停一会儿让人看清
-        void UserQuit()
+        /// <summary>菜单里的「退出」：只走这一只（请负责人把我从名单去掉，它再叫我挥手走）</summary>
+        void QuitSelf()
         {
-            try { File.WriteAllText(UserQuitFlag, ""); } catch { }
-            WriteSignal("quit");   // 多开的几只一起挥手、一起走
-            var hint = !Store.Flag("quitHinted");
-            if (hint) { Store.Settings["quitHinted"] = true; Store.SaveSettings(); }
-            var when = Store.Standalone ? "下次打开我就回来" : "下次打开 Claude 我再出来";
-            Js(hint ? $"farewell('我先走啦～{when}', 5000)" : "farewell(null, 2000)");
-            var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(hint ? 5 : 2) };
-            t.Tick += (_, __) => { t.Stop(); Quit(); };
-            t.Start();
+            if (hub != null) hub.Request("leave");
+            else Leave();
         }
 
         public void Quit()
         {
             StopMotion();
+            GiveUpLeading();
+            hub?.Close();
             UnregisterAppBar();
-            if (tray != null) { tray.Visible = false; tray.Dispose(); }   // 多开的几只没有托盘图标
             Application.Current.Shutdown();
         }
     }
